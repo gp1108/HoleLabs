@@ -32,5 +32,8 @@ MonoBehaviour:
   bookmarks:
   - _go: {fileID: 0}
     globalId:
+      globalObjectIdString: GlobalObjectId_V1-2-99c9720ab356a0642a771bea13969a05-1751933011-0
+  - _go: {fileID: 0}
+    globalId:
       globalObjectIdString: GlobalObjectId_V1-2-99c9720ab356a0642a771bea13969a05-1358518319-0
   bookmarkedScenePaths: []
