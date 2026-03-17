@@ -6,12 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-<<<<<<< HEAD
-    path: Assets/03_Scenes/SampleScene.unity
-    guid: 99c9720ab356a0642a771bea13969a05
-=======
-    path: Assets/Scenes/M.V.P.unity
+    path: Assets/03_Scenes/M.V.P.unity
     guid: cb5c0b2fbedc2334d8eb2f6630f0bdf7
->>>>>>> PremergeMVP-Code
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0
