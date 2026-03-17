@@ -63,6 +63,9 @@ public sealed class HotbarController : MonoBehaviour
     [Tooltip("Current selected hotbar slot index.")]
     [SerializeField] private int SelectedIndex = 0;
 
+    [SerializeField] private float ScrollCooldown = 0.1f;
+    private float LastScrollTime;
+
     private PlayerInput PlayerInput;
     private InputAction HotbarScrollAction;
     private InputAction UsePrimaryAction;
@@ -446,6 +449,10 @@ public sealed class HotbarController : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Handles selection input using scroll and direct slot actions.
+    /// Includes a cooldown to avoid overly sensitive scroll behaviour.
+    /// </summary>
     private void HandleSelectionInput()
     {
         if (HotbarScrollAction != null)
@@ -454,6 +461,14 @@ public sealed class HotbarController : MonoBehaviour
 
             if (Mathf.Abs(scrollValue) > 0.01f)
             {
+                // Cooldown check
+                if (Time.time - LastScrollTime < ScrollCooldown)
+                {
+                    return;
+                }
+
+                LastScrollTime = Time.time;
+
                 int direction = scrollValue > 0f ? 1 : -1;
                 int nextIndex = SelectedIndex + direction;
 

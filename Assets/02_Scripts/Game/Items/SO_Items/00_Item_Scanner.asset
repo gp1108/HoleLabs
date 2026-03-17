@@ -15,9 +15,9 @@ MonoBehaviour:
   ItemId: Scanner
   DisplayName: Scanner
   Icon: {fileID: 10901, guid: 0000000000000000f000000000000000, type: 0}
-  WorldPrefab: {fileID: 5518616535938060810, guid: fe0cba9a6be572342b888e4a69086d64, type: 3}
-  EquippedPrefab: {fileID: 5518616535938060810, guid: 1e159aa1a0358fb43af393a8c9ff6d58, type: 3}
+  WorldPrefab: {fileID: 2881106816910279862, guid: 2d00b0a7bb904a54f9078813616068de, type: 3}
+  EquippedPrefab: {fileID: 2881106816910279862, guid: 3576d4bae4f00594db4a27f2b25bb998, type: 3}
   IsStackable: 0
   MaxStackSize: 1
-  DefaultDurability: 100000000
+  DefaultDurability: -1
   AutoEquipWhenSelected: 1
