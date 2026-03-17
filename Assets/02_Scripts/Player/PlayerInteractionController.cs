@@ -2,46 +2,85 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Handles player interaction with carryable physical objects using a single forward raycast.
-/// Designed to be scalable by centralizing detection in the player instead of in each object.
+/// Handles player interaction with both physical carryable objects and world inventory items.
+/// This version extends the previous interaction raycast so world items can be picked up,
+/// inserted into the hotbar, swapped with the selected slot or ignored when no inventory space exists.
 /// </summary>
 [RequireComponent(typeof(PlayerInput))]
-public class PlayerInteractionController : MonoBehaviour
+[RequireComponent(typeof(HotbarController))]
+public sealed class PlayerInteractionController : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("Camera used to perform the interaction raycast.")]
+    [Tooltip("Camera used to cast the interaction ray.")]
     [SerializeField] private Camera PlayerCamera;
 
-    [Tooltip("Transform used as the target position for held objects.")]
-    [SerializeField] private Transform HoldPoint;
+    [Tooltip("Player collider used to ignore collisions while holding a physics carryable object.")]
+    [SerializeField] private Collider PlayerCollider;
 
-    [Header("Interaction Settings")]
-    [Tooltip("Maximum distance used to detect carryable objects.")]
+    [Tooltip("Transform used as the hold anchor target for carried physical objects.")]
+    [SerializeField] private Transform HoldAnchor;
+
+    [Tooltip("Hotbar controller used to store and swap inventory items.")]
+    [SerializeField] private HotbarController HotbarController;
+
+    [Header("Interaction")]
+    [Tooltip("Maximum distance used to detect interactable objects.")]
     [SerializeField] private float InteractionDistance = 4f;
 
-    [Tooltip("Layers considered valid for interaction.")]
-    [SerializeField] private LayerMask InteractionLayers;
+    [Tooltip("Layers considered valid for interaction raycasts.")]
+    [SerializeField] private LayerMask InteractionLayers = ~0;
 
-    [Header("Input")]
-    [Tooltip("Name of the interact action inside the assigned Input Actions asset.")]
+    [Tooltip("Name of the interact action in the Input Actions asset.")]
     [SerializeField] private string InteractActionName = "Interact";
+
+    [Header("Hold Anchor")]
+    [Tooltip("If true, a hold anchor will be created automatically as a child of the camera when none is assigned.")]
+    [SerializeField] private bool AutoCreateHoldAnchor = true;
+
+    [Tooltip("Forward distance from the camera to the hold anchor.")]
+    [SerializeField] private float HoldDistance = 2.5f;
+
+    [Tooltip("Vertical local offset applied to the hold anchor.")]
+    [SerializeField] private float HoldHeightOffset = -0.15f;
+
+    [Header("Debug")]
+    [Tooltip("Draws the interaction ray in the Scene view.")]
+    [SerializeField] private bool DrawDebugRay = false;
+
+    [Tooltip("Logs interaction events to the console.")]
+    [SerializeField] private bool DebugLogs = false;
 
     private PlayerInput PlayerInput;
     private InputAction InteractAction;
 
-    private PhysicsCarryable CurrentHeldObject;
-    private PhysicsCarryable CurrentLookedObject;
+    private PhysicsCarryable CurrentHeldCarryable;
+    private PhysicsCarryable CurrentLookedCarryable;
+    private WorldItem CurrentLookedWorldItem;
 
-    /// <summary>
-    /// Caches input references and required scene references.
-    /// </summary>
     private void Awake()
     {
         PlayerInput = GetComponent<PlayerInput>();
 
-        if (PlayerInput == null)
+        if (PlayerCamera == null)
         {
-            Debug.LogError("PlayerInput component is missing.");
+            PlayerCamera = Camera.main;
+        }
+
+        if (PlayerCollider == null)
+        {
+            PlayerCollider = GetComponent<Collider>();
+        }
+
+        if (HotbarController == null)
+        {
+            HotbarController = GetComponent<HotbarController>();
+        }
+
+        EnsureHoldAnchor();
+
+        if (PlayerInput == null || PlayerInput.actions == null)
+        {
+            Debug.LogError("PlayerInput or Input Actions asset is missing.");
             enabled = false;
             return;
         }
@@ -50,109 +89,308 @@ public class PlayerInteractionController : MonoBehaviour
 
         if (InteractAction == null)
         {
-            Debug.LogError($"Input action '{InteractActionName}' was not found.");
+            Debug.LogError("The interact action named '" + InteractActionName + "' was not found.");
             enabled = false;
             return;
         }
 
-        if (PlayerCamera == null)
+        if (PlayerCamera == null || PlayerCollider == null || HoldAnchor == null || HotbarController == null)
         {
-            PlayerCamera = Camera.main;
-        }
-
-        if (PlayerCamera == null)
-        {
-            Debug.LogError("Player camera reference is missing.");
+            Debug.LogError("One or more required references are missing on PlayerInteractionController.");
             enabled = false;
-            return;
-        }
-
-        if (HoldPoint == null)
-        {
-            Debug.LogError("HoldPoint reference is missing.");
-            enabled = false;
-            return;
         }
     }
 
-    /// <summary>
-    /// Subscribes to the interact input callback.
-    /// </summary>
     private void OnEnable()
     {
-        InteractAction.performed += OnInteractPerformed;
+        if (InteractAction != null)
+        {
+            InteractAction.Enable();
+        }
     }
 
-    /// <summary>
-    /// Unsubscribes from the interact input callback.
-    /// </summary>
     private void OnDisable()
     {
-        InteractAction.performed -= OnInteractPerformed;
+        if (InteractAction != null)
+        {
+            InteractAction.Disable();
+        }
     }
 
-    /// <summary>
-    /// Updates the currently looked carryable object using a single forward raycast.
-    /// </summary>
     private void Update()
     {
-        UpdateLookedObject();
+        UpdateHoldAnchor();
+        UpdateLookTargets();
+        HandleInteractInput();
     }
 
-    /// <summary>
-    /// Detects the carryable object currently being looked at.
-    /// </summary>
-    private void UpdateLookedObject()
+    private void UpdateHoldAnchor()
     {
-        CurrentLookedObject = null;
-
-        Ray CameraRay = new Ray(PlayerCamera.transform.position, PlayerCamera.transform.forward);
-
-        if (Physics.Raycast(CameraRay, out RaycastHit HitInfo, InteractionDistance, InteractionLayers, QueryTriggerInteraction.Ignore))
-        {
-            CurrentLookedObject = HitInfo.collider.GetComponentInParent<PhysicsCarryable>();
-        }
-    }
-
-    /// <summary>
-    /// Handles picking up or dropping a carryable object when the interact key is pressed.
-    /// </summary>
-    /// <param name="Context">Input callback context.</param>
-    private void OnInteractPerformed(InputAction.CallbackContext Context)
-    {
-        if (CurrentHeldObject != null)
-        {
-            DropCurrentObject();
-            return;
-        }
-
-        if (CurrentLookedObject != null)
-        {
-            PickUpObject(CurrentLookedObject);
-        }
-    }
-
-    /// <summary>
-    /// Starts carrying the provided object.
-    /// </summary>
-    /// <param name="TargetObject">Object to be picked up.</param>
-    private void PickUpObject(PhysicsCarryable TargetObject)
-    {
-        CurrentHeldObject = TargetObject;
-        CurrentHeldObject.PickUp(HoldPoint);
-    }
-
-    /// <summary>
-    /// Drops the currently held object if any.
-    /// </summary>
-    private void DropCurrentObject()
-    {
-        if (CurrentHeldObject == null)
+        if (HoldAnchor == null || PlayerCamera == null)
         {
             return;
         }
 
-        CurrentHeldObject.Drop();
-        CurrentHeldObject = null;
+        float clampedHoldDistance = Mathf.Max(HoldDistance, 1.2f);
+
+        HoldAnchor.SetLocalPositionAndRotation(
+            new Vector3(0f, HoldHeightOffset, clampedHoldDistance),
+            Quaternion.identity
+        );
+    }
+
+    private void UpdateLookTargets()
+    {
+        CurrentLookedWorldItem = null;
+        CurrentLookedCarryable = null;
+
+        if (PlayerCamera == null)
+        {
+            return;
+        }
+
+        Ray viewRay = PlayerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+
+        if (DrawDebugRay)
+        {
+            Debug.DrawRay(viewRay.origin, viewRay.direction * InteractionDistance, Color.cyan);
+        }
+
+        if (!Physics.Raycast(viewRay, out RaycastHit hitInfo, InteractionDistance, InteractionLayers, QueryTriggerInteraction.Ignore))
+        {
+            return;
+        }
+
+        CurrentLookedWorldItem = ResolveWorldItem(hitInfo);
+        CurrentLookedCarryable = ResolveCarryable(hitInfo);
+    }
+
+    private void HandleInteractInput()
+    {
+        if (InteractAction == null || !InteractAction.WasPressedThisFrame())
+        {
+            return;
+        }
+
+        if (CurrentLookedWorldItem != null)
+        {
+            TryInteractWithWorldItem(CurrentLookedWorldItem);
+            return;
+        }
+
+        if (CurrentHeldCarryable != null)
+        {
+            DropCurrentCarryable();
+            return;
+        }
+
+        if (CurrentLookedCarryable != null)
+        {
+            PickUpCarryable(CurrentLookedCarryable);
+            return;
+        }
+
+        Log("Interact pressed but no valid target was found.");
+    }
+
+    /// <summary>
+    /// Attempts to pick up or swap a world item into the hotbar.
+    /// The swap path now destroys the looked item and respawns the replaced inventory item
+    /// so the world visuals and data cannot get desynchronized.
+    /// </summary>
+    private void TryInteractWithWorldItem(WorldItem worldItem)
+    {
+        if (worldItem == null)
+        {
+            return;
+        }
+
+        ItemInstance worldItemInstance = worldItem.CreateItemInstance();
+
+        if (worldItemInstance == null)
+        {
+            Log("The looked world item has no valid item definition.");
+            return;
+        }
+
+        int insertedSlotIndex;
+        bool wasAdded = HotbarController.TryAddItem(
+            worldItemInstance.Clone(),
+            HotbarController.GetSelectedIndex(),
+            out insertedSlotIndex
+        );
+
+        if (wasAdded)
+        {
+            Log("Picked world item into hotbar slot: " + insertedSlotIndex);
+            Destroy(worldItem.gameObject);
+            CurrentLookedWorldItem = null;
+            return;
+        }
+
+        if (!HotbarController.HasSelectedItem())
+        {
+            Log("Hotbar is full and there is no selected item to swap.");
+            return;
+        }
+
+        Vector3 spawnPosition = worldItem.GetWorldPosition();
+        Quaternion spawnRotation = worldItem.GetWorldRotation();
+        Vector3 spawnLinearVelocity = worldItem.GetLinearVelocity();
+        Vector3 spawnAngularVelocity = worldItem.GetAngularVelocity();
+
+        Destroy(worldItem.gameObject);
+        CurrentLookedWorldItem = null;
+
+        ItemInstance previousSelectedItem = HotbarController.ReplaceSelectedItem(worldItemInstance.Clone());
+
+        if (previousSelectedItem == null)
+        {
+            Log("Swap failed because the selected hotbar slot was unexpectedly empty.");
+            return;
+        }
+
+        HotbarController.SpawnWorldItem(
+            previousSelectedItem,
+            spawnPosition,
+            spawnRotation,
+            spawnLinearVelocity,
+            spawnAngularVelocity,
+            false
+        );
+
+        Log("Swapped looked world item with currently selected hotbar item.");
+    }
+
+    private WorldItem ResolveWorldItem(RaycastHit hitInfo)
+    {
+        if (hitInfo.collider == null)
+        {
+            return null;
+        }
+
+        WorldItem worldItem = hitInfo.collider.GetComponent<WorldItem>();
+
+        if (worldItem != null)
+        {
+            return worldItem;
+        }
+
+        worldItem = hitInfo.collider.GetComponentInParent<WorldItem>();
+
+        if (worldItem != null)
+        {
+            return worldItem;
+        }
+
+        if (hitInfo.rigidbody != null)
+        {
+            worldItem = hitInfo.rigidbody.GetComponent<WorldItem>();
+
+            if (worldItem != null)
+            {
+                return worldItem;
+            }
+
+            worldItem = hitInfo.rigidbody.GetComponentInParent<WorldItem>();
+
+            if (worldItem != null)
+            {
+                return worldItem;
+            }
+        }
+
+        return null;
+    }
+
+    private PhysicsCarryable ResolveCarryable(RaycastHit hitInfo)
+    {
+        if (hitInfo.collider == null)
+        {
+            return null;
+        }
+
+        PhysicsCarryable carryable = hitInfo.collider.GetComponent<PhysicsCarryable>();
+
+        if (carryable != null)
+        {
+            return carryable;
+        }
+
+        carryable = hitInfo.collider.GetComponentInParent<PhysicsCarryable>();
+
+        if (carryable != null)
+        {
+            return carryable;
+        }
+
+        if (hitInfo.rigidbody != null)
+        {
+            carryable = hitInfo.rigidbody.GetComponent<PhysicsCarryable>();
+
+            if (carryable != null)
+            {
+                return carryable;
+            }
+
+            carryable = hitInfo.rigidbody.GetComponentInParent<PhysicsCarryable>();
+
+            if (carryable != null)
+            {
+                return carryable;
+            }
+        }
+
+        return null;
+    }
+
+    private void PickUpCarryable(PhysicsCarryable targetObject)
+    {
+        if (targetObject == null)
+        {
+            return;
+        }
+
+        CurrentHeldCarryable = targetObject;
+        CurrentHeldCarryable.BeginHold(HoldAnchor, PlayerCollider);
+
+        Log("Picked up carryable object: " + CurrentHeldCarryable.name);
+    }
+
+    private void DropCurrentCarryable()
+    {
+        if (CurrentHeldCarryable == null)
+        {
+            return;
+        }
+
+        Log("Dropped carryable object: " + CurrentHeldCarryable.name);
+
+        CurrentHeldCarryable.EndHold();
+        CurrentHeldCarryable = null;
+    }
+
+    private void EnsureHoldAnchor()
+    {
+        if (HoldAnchor != null || !AutoCreateHoldAnchor || PlayerCamera == null)
+        {
+            return;
+        }
+
+        GameObject holdAnchorObject = new GameObject("HoldAnchor");
+        HoldAnchor = holdAnchorObject.transform;
+        HoldAnchor.SetParent(PlayerCamera.transform, false);
+        HoldAnchor.localPosition = new Vector3(0f, HoldHeightOffset, HoldDistance);
+        HoldAnchor.localRotation = Quaternion.identity;
+    }
+
+    private void Log(string message)
+    {
+        if (!DebugLogs)
+        {
+            return;
+        }
+
+        Debug.Log("[PlayerInteractionController] " + message);
     }
 }

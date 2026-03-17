@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 5490482785462050560}
   - component: {fileID: 370962134010285459}
   - component: {fileID: 3279825844967807329}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: PhysicsCarriable_Cube
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -69,7 +69,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: d62374407d086424994fc45c2b3c3aa2, type: 2}
+  - {fileID: 2100000, guid: 545b64057ba63924db797930923b26d0, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -138,7 +138,7 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 1
   m_IsKinematic: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_Constraints: 0
   m_CollisionDetection: 0
 --- !u!114 &3279825844967807329
@@ -153,9 +153,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7ac77d39939de7b40a77a96a2ef1c1cb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PhysicsCarryable
-  FollowSpeed: 12
-  MaxDistanceToTarget: 3
-  HeldDrag: 10
-  HeldAngularDrag: 10
-  KeepGravityWhileHeld: 0
+  HoldSpring: 25
+  HoldDamping: 7
+  HeldMaxSpeed: 8
+  MaxHoldErrorDistance: 2
+  MinDistanceFromCamera: 1.2
+  HeldLinearDamping: 4.5
+  HeldAngularDamping: 8
+  DisableGravityWhileHeld: 1
+  IgnorePlayerCollisionWhileHeld: 1
   FreezeRotationWhileHeld: 0
+  DrawDebug: 0

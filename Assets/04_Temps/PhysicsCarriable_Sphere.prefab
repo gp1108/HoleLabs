@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 8590684224937134002}
   - component: {fileID: 1688004395325081184}
   - component: {fileID: 6609126524476219999}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: PhysicsCarriable_Sphere
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -138,7 +138,7 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 1
   m_IsKinematic: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_Constraints: 0
   m_CollisionDetection: 0
 --- !u!114 &6609126524476219999
@@ -153,9 +153,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7ac77d39939de7b40a77a96a2ef1c1cb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PhysicsCarryable
-  FollowSpeed: 12
-  MaxDistanceToTarget: 3
-  HeldDrag: 10
-  HeldAngularDrag: 10
-  KeepGravityWhileHeld: 0
+  HoldSpring: 25
+  HoldDamping: 7
+  HeldMaxSpeed: 8
+  MaxHoldErrorDistance: 2
+  MinDistanceFromCamera: 1.2
+  HeldLinearDamping: 4.5
+  HeldAngularDamping: 8
+  DisableGravityWhileHeld: 1
+  IgnorePlayerCollisionWhileHeld: 1
   FreezeRotationWhileHeld: 0
+  DrawDebug: 0
