@@ -2,32 +2,50 @@ using UnityEngine;
 
 /// <summary>
 /// Handles physical dragging behaviour for a carryable rigidbody object.
-/// While held, the object is pulled towards a target anchor using spring-like acceleration.
-/// This version is adapted for a Rigidbody based player controller and ignores collisions
-/// against the player collider while the object is being held.
+/// While held, the object follows a target anchor using a velocity-driven spring model,
+/// staying relatively close to the player while still feeling heavy.
+/// 
+/// This version:
+/// - follows the hold anchor more tightly while preserving weight,
+/// - keeps release inertia instead of killing velocity,
+/// - auto drops if the object gets stuck too far from the anchor,
+/// - ignores collisions against the player collider while held.
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
 public sealed class PhysicsCarryable : MonoBehaviour
 {
     [Header("Hold Follow")]
-    [Tooltip("Spring strength used to pull the object towards the hold anchor.")]
-    [SerializeField] private float HoldSpring = 55f;
+    [Tooltip("Position strength used to pull the object towards the hold anchor.")]
+    [SerializeField] private float HoldPositionStrength = 22f;
 
-    [Tooltip("Velocity damping applied while correcting the object towards the hold anchor.")]
-    [SerializeField] private float HoldDamping = 14f;
+    [Tooltip("Velocity damping applied while matching the hold target velocity.")]
+    [SerializeField] private float HoldVelocityDamping = 16f;
+
+    [Tooltip("How much of the hold anchor velocity is injected into the object follow behaviour.")]
+    [SerializeField] private float HoldAnchorVelocityInfluence = 1f;
 
     [Tooltip("Maximum linear speed allowed while the object is being dragged.")]
-    [SerializeField] private float HeldMaxSpeed = 8f;
+    [SerializeField] private float HeldMaxSpeed = 12f;
 
-    [Tooltip("Maximum allowed positional error used for force correction.")]
-    [SerializeField] private float MaxHoldErrorDistance = 2f;
+    [Tooltip("Maximum acceleration applied while trying to follow the hold anchor.")]
+    [SerializeField] private float MaxHoldAcceleration = 70f;
 
-    [Tooltip("Minimum distance allowed between the camera and the object while it is held.")]
-    [SerializeField] private float MinDistanceFromCamera = 1.2f;
+    [Tooltip("Maximum positional error considered for follow correction.")]
+    [SerializeField] private float MaxHoldErrorDistance = 1.25f;
+
+    [Tooltip("Minimum forward distance allowed between the camera and the hold target point.")]
+    [SerializeField] private float MinDistanceFromCamera = 1.15f;
+
+    [Header("Release")]
+    [Tooltip("Additional velocity inherited from the hold anchor when the object is released.")]
+    [SerializeField] private float ReleaseVelocityInfluence = 0.35f;
+
+    [Tooltip("Distance from the hold anchor after which the object is dropped automatically.")]
+    [SerializeField] private float BreakHoldDistance = 2.25f;
 
     [Header("Held Physics")]
     [Tooltip("Linear damping applied to the rigidbody while it is being held.")]
-    [SerializeField] private float HeldLinearDamping = 4.5f;
+    [SerializeField] private float HeldLinearDamping = 4f;
 
     [Tooltip("Angular damping applied to the rigidbody while it is being held.")]
     [SerializeField] private float HeldAngularDamping = 8f;
@@ -107,6 +125,16 @@ public sealed class PhysicsCarryable : MonoBehaviour
     private RigidbodyConstraints SavedConstraints;
 
     /// <summary>
+    /// Previous hold anchor position used to estimate anchor velocity.
+    /// </summary>
+    private Vector3 LastHoldAnchorPosition;
+
+    /// <summary>
+    /// Estimated hold anchor velocity in world space.
+    /// </summary>
+    private Vector3 HoldAnchorVelocity;
+
+    /// <summary>
     /// Caches component references and the default rigidbody state.
     /// </summary>
     private void Awake()
@@ -132,7 +160,9 @@ public sealed class PhysicsCarryable : MonoBehaviour
             return;
         }
 
+        UpdateAnchorVelocity();
         UpdateHoldDrag();
+        CheckAutoDrop();
     }
 
     /// <summary>
@@ -159,9 +189,10 @@ public sealed class PhysicsCarryable : MonoBehaviour
         SaveRuntimeState();
         ApplyHeldState();
 
-        Rigidbody.linearVelocity = Vector3.zero;
-        Rigidbody.angularVelocity = Vector3.zero;
         Rigidbody.WakeUp();
+
+        LastHoldAnchorPosition = HoldAnchor.position;
+        HoldAnchorVelocity = Vector3.zero;
 
         SetIgnorePlayerCollision(true);
 
@@ -173,6 +204,7 @@ public sealed class PhysicsCarryable : MonoBehaviour
 
     /// <summary>
     /// Stops holding the object and restores its original rigidbody state.
+    /// The object keeps its physical inertia and also inherits a portion of the hold anchor velocity.
     /// </summary>
     public void EndHold()
     {
@@ -183,14 +215,14 @@ public sealed class PhysicsCarryable : MonoBehaviour
 
         SetIgnorePlayerCollision(false);
 
-        Rigidbody.linearVelocity = Vector3.zero;
-        Rigidbody.angularVelocity = Vector3.zero;
+        Rigidbody.linearVelocity += HoldAnchorVelocity * ReleaseVelocityInfluence;
 
         RestoreRuntimeState();
 
         HoldAnchor = null;
         PlayerCollider = null;
         IsHeld = false;
+        HoldAnchorVelocity = Vector3.zero;
 
         if (DebugLogs)
         {
@@ -208,35 +240,25 @@ public sealed class PhysicsCarryable : MonoBehaviour
     }
 
     /// <summary>
-    /// Applies spring-based dragging towards the hold anchor.
+    /// Estimates the current hold anchor velocity from its world position delta.
+    /// </summary>
+    private void UpdateAnchorVelocity()
+    {
+        float DeltaTime = Mathf.Max(Time.fixedDeltaTime, 0.0001f);
+        Vector3 CurrentAnchorPosition = HoldAnchor.position;
+        HoldAnchorVelocity = (CurrentAnchorPosition - LastHoldAnchorPosition) / DeltaTime;
+        LastHoldAnchorPosition = CurrentAnchorPosition;
+    }
+
+    /// <summary>
+    /// Applies velocity-driven dragging towards the hold anchor.
+    /// The object follows the anchor more tightly by matching both anchor position error
+    /// and anchor velocity, which reduces visible lag while still feeling weighted.
     /// </summary>
     private void UpdateHoldDrag()
     {
-        Vector3 DesiredPoint = HoldAnchor.position;
+        Vector3 DesiredPoint = GetClampedDesiredPoint();
         Vector3 CurrentPoint = Rigidbody.worldCenterOfMass;
-
-        Camera ActiveCamera = OverrideCamera != null ? OverrideCamera : Camera.main;
-
-        if (ActiveCamera != null)
-        {
-            Vector3 CameraToBody = CurrentPoint - ActiveCamera.transform.position;
-
-            if (CameraToBody.sqrMagnitude < MinDistanceFromCamera * MinDistanceFromCamera)
-            {
-                Vector3 SafeDirection = ActiveCamera.transform.forward;
-
-                if (SafeDirection.sqrMagnitude < 0.0001f)
-                {
-                    SafeDirection = Vector3.forward;
-                }
-
-                Vector3 PushedPoint = ActiveCamera.transform.position + SafeDirection.normalized * MinDistanceFromCamera;
-                Vector3 PushDelta = PushedPoint - CurrentPoint;
-
-                Rigidbody.AddForce(PushDelta * HoldSpring, ForceMode.Acceleration);
-                CurrentPoint = Rigidbody.worldCenterOfMass;
-            }
-        }
 
         Vector3 PositionError = DesiredPoint - CurrentPoint;
 
@@ -245,8 +267,15 @@ public sealed class PhysicsCarryable : MonoBehaviour
             PositionError = PositionError.normalized * MaxHoldErrorDistance;
         }
 
-        Vector3 Acceleration = (PositionError * HoldSpring) - (Rigidbody.linearVelocity * HoldDamping);
-        Rigidbody.AddForce(Acceleration, ForceMode.Acceleration);
+        Vector3 DesiredVelocity =
+            (PositionError * HoldPositionStrength) +
+            (HoldAnchorVelocity * HoldAnchorVelocityInfluence);
+
+        Vector3 VelocityError = DesiredVelocity - Rigidbody.linearVelocity;
+        Vector3 RequiredAcceleration = VelocityError * HoldVelocityDamping;
+        Vector3 ClampedAcceleration = Vector3.ClampMagnitude(RequiredAcceleration, MaxHoldAcceleration);
+
+        Rigidbody.AddForce(ClampedAcceleration, ForceMode.Acceleration);
 
         float MaxSpeedSquared = HeldMaxSpeed * HeldMaxSpeed;
 
@@ -258,7 +287,65 @@ public sealed class PhysicsCarryable : MonoBehaviour
         if (DrawDebug)
         {
             Debug.DrawLine(CurrentPoint, DesiredPoint, Color.yellow);
+            Debug.DrawRay(DesiredPoint, HoldAnchorVelocity * 0.05f, Color.cyan);
         }
+    }
+
+    /// <summary>
+    /// Returns the desired hold point clamped so it never targets a position too close to the camera.
+    /// </summary>
+    /// <returns>Clamped desired hold point in world space.</returns>
+    private Vector3 GetClampedDesiredPoint()
+    {
+        Vector3 DesiredPoint = HoldAnchor.position;
+        Camera ActiveCamera = OverrideCamera != null ? OverrideCamera : Camera.main;
+
+        if (ActiveCamera == null)
+        {
+            return DesiredPoint;
+        }
+
+        Vector3 CameraPosition = ActiveCamera.transform.position;
+        Vector3 CameraForward = ActiveCamera.transform.forward;
+
+        if (CameraForward.sqrMagnitude < 0.0001f)
+        {
+            CameraForward = Vector3.forward;
+        }
+
+        CameraForward.Normalize();
+
+        Vector3 DesiredFromCamera = DesiredPoint - CameraPosition;
+        float ForwardDistance = Vector3.Dot(DesiredFromCamera, CameraForward);
+
+        if (ForwardDistance < MinDistanceFromCamera)
+        {
+            DesiredPoint = CameraPosition + CameraForward * MinDistanceFromCamera;
+        }
+
+        return DesiredPoint;
+    }
+
+    /// <summary>
+    /// Drops the held object automatically if it gets too far away from the hold anchor,
+    /// which usually means it became obstructed or stuck in the environment.
+    /// </summary>
+    private void CheckAutoDrop()
+    {
+        Vector3 DesiredPoint = GetClampedDesiredPoint();
+        float DistanceToAnchor = Vector3.Distance(Rigidbody.worldCenterOfMass, DesiredPoint);
+
+        if (DistanceToAnchor <= BreakHoldDistance)
+        {
+            return;
+        }
+
+        if (DebugLogs)
+        {
+            Debug.Log($"Auto drop because '{name}' exceeded break distance.");
+        }
+
+        EndHold();
     }
 
     /// <summary>

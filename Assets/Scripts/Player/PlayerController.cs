@@ -282,15 +282,13 @@ public sealed class PlayerController : MonoBehaviour
     /// <summary>
     /// Smoothly updates capsule height, collider center and camera height while crouching.
     /// </summary>
+    /// <summary>
+    /// Smoothly updates capsule height, collider center and camera height while crouching.
+    /// This version does not force automatic crouch when headroom is blocked.
+    /// The player can crouch manually, but can only stand up if there is enough space.
+    /// </summary>
     private void UpdateCrouch()
     {
-        if (!IsCrouching && !CanStandUp())
-        {
-            IsCrouching = true;
-            TargetCapsuleHeight = CrouchingHeight;
-            TargetCameraLocalY = CrouchingCameraLocalY;
-        }
-
         float NewHeight = Mathf.Lerp(CapsuleCollider.height, TargetCapsuleHeight, CrouchTransitionSpeed * Time.deltaTime);
         CapsuleCollider.height = NewHeight;
         CapsuleCollider.center = new Vector3(0f, NewHeight * 0.5f, 0f);
@@ -551,7 +549,12 @@ public sealed class PlayerController : MonoBehaviour
         return Vector3.MoveTowards(CurrentVelocity, TargetVelocity, AirAcceleration * Time.fixedDeltaTime);
     }
 
-   
+
+    /// Checks whether there is enough headroom to return to standing height.
+    /// This version ignores the player own collider explicitly.
+    /// </summary>
+    /// <returns>True if the player can stand up safely.</returns>
+    /// <summary>
     /// Checks whether there is enough headroom to return to standing height.
     /// This version ignores the player own collider explicitly.
     /// </summary>
@@ -573,19 +576,18 @@ public sealed class PlayerController : MonoBehaviour
         Vector3 Bottom = StandingCenterWorld - transform.up * StandingOffset;
         Vector3 Top = StandingCenterWorld + transform.up * StandingOffset;
 
-        Collider[] Hits = new Collider[8];
         int HitCount = Physics.OverlapCapsuleNonAlloc(
             Bottom,
             Top,
             Radius,
-            Hits,
+            StandUpHits,
             GroundLayers,
             QueryTriggerInteraction.Ignore
         );
 
         for (int Index = 0; Index < HitCount; Index++)
         {
-            Collider HitCollider = Hits[Index];
+            Collider HitCollider = StandUpHits[Index];
 
             if (HitCollider == null)
             {
