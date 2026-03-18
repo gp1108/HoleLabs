@@ -17,28 +17,19 @@ public sealed class UpgradeManager : MonoBehaviour
         [Tooltip("Current purchased level of the upgrade.")]
         [SerializeField] private int CurrentLevel = 0;
 
-        /// <summary>
-        /// Gets the upgrade definition tracked by this entry.
-        /// </summary>
         public UpgradeDefinition GetDefinition()
         {
             return Definition;
         }
 
-        /// <summary>
-        /// Gets the current purchased level of the upgrade.
-        /// </summary>
         public int GetCurrentLevel()
         {
             return CurrentLevel;
         }
 
-        /// <summary>
-        /// Sets the current purchased level of the upgrade.
-        /// </summary>
-        public void SetCurrentLevel(int level)
+        public void SetCurrentLevel(int Level)
         {
-            CurrentLevel = Mathf.Max(0, level);
+            CurrentLevel = Mathf.Max(0, Level);
         }
     }
 
@@ -63,21 +54,9 @@ public sealed class UpgradeManager : MonoBehaviour
     private readonly HashSet<string> ActiveVisualEffectIds = new();
     private readonly HashSet<ItemDefinition> ActiveUnlockedItems = new();
 
-    /// <summary>
-    /// Fired after an upgrade level changes.
-    /// The first argument is the upgrade definition and the second argument is the new level.
-    /// </summary>
     public event Action<UpgradeDefinition, int> OnUpgradeLevelChanged;
-
-    /// <summary>
-    /// Fired after any stat-affecting or reward-affecting upgrade change occurs.
-    /// Systems that cache values can listen to this event and refresh themselves.
-    /// </summary>
     public event Action OnUpgradeStateChanged;
 
-    /// <summary>
-    /// Initializes references and builds runtime caches.
-    /// </summary>
     private void Awake()
     {
         if (CurrencyWallet == null)
@@ -90,338 +69,307 @@ public sealed class UpgradeManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Gets the current level of the provided upgrade definition.
+    /// Gets all upgrade definitions registered in this manager.
+    /// Useful for UI generation and tooling.
     /// </summary>
-    public int GetUpgradeLevel(UpgradeDefinition upgradeDefinition)
+    public IReadOnlyList<UpgradeDefinition> GetAllUpgradeDefinitions()
     {
-        if (upgradeDefinition == null)
-        {
-            return 0;
-        }
-
-        return GetUpgradeLevelById(upgradeDefinition.GetUpgradeId());
+        return UpgradeDefinitions;
     }
 
-    /// <summary>
-    /// Gets the current level of the upgrade with the provided identifier.
-    /// </summary>
-    public int GetUpgradeLevelById(string upgradeId)
+    public int GetUpgradeLevel(UpgradeDefinition UpgradeDefinition)
     {
-        if (string.IsNullOrWhiteSpace(upgradeId))
+        if (UpgradeDefinition == null)
         {
             return 0;
         }
 
-        if (LevelsById.TryGetValue(upgradeId, out int level))
+        return GetUpgradeLevelById(UpgradeDefinition.GetUpgradeId());
+    }
+
+    public int GetUpgradeLevelById(string UpgradeId)
+    {
+        if (string.IsNullOrWhiteSpace(UpgradeId))
         {
-            return level;
+            return 0;
+        }
+
+        if (LevelsById.TryGetValue(UpgradeId, out int Level))
+        {
+            return Level;
         }
 
         return 0;
     }
 
-    /// <summary>
-    /// Gets the definition registered with the provided upgrade identifier.
-    /// </summary>
-    public UpgradeDefinition GetUpgradeDefinition(string upgradeId)
+    public UpgradeDefinition GetUpgradeDefinition(string UpgradeId)
     {
-        if (string.IsNullOrWhiteSpace(upgradeId))
+        if (string.IsNullOrWhiteSpace(UpgradeId))
         {
             return null;
         }
 
-        if (DefinitionsById.TryGetValue(upgradeId, out UpgradeDefinition definition))
+        if (DefinitionsById.TryGetValue(UpgradeId, out UpgradeDefinition Definition))
         {
-            return definition;
+            return Definition;
         }
 
         return null;
     }
 
-    /// <summary>
-    /// Checks whether the next level of the provided upgrade can be purchased.
-    /// </summary>
-    public bool CanPurchaseUpgrade(UpgradeDefinition upgradeDefinition)
+    public bool CanPurchaseUpgrade(UpgradeDefinition UpgradeDefinition)
     {
-        if (upgradeDefinition == null || CurrencyWallet == null)
+        if (UpgradeDefinition == null || CurrencyWallet == null)
         {
             return false;
         }
 
-        int currentLevel = GetUpgradeLevel(upgradeDefinition);
+        int CurrentLevel = GetUpgradeLevel(UpgradeDefinition);
 
-        if (currentLevel >= upgradeDefinition.GetMaxLevel())
+        if (CurrentLevel >= UpgradeDefinition.GetMaxLevel())
         {
             return false;
         }
 
-        int nextLevel = currentLevel + 1;
-        UpgradeDefinition.UpgradeLevelCost nextCost = upgradeDefinition.GetCostForLevel(nextLevel);
+        int NextLevel = CurrentLevel + 1;
+        UpgradeDefinition.UpgradeLevelCost NextCost = UpgradeDefinition.GetCostForLevel(NextLevel);
 
-        if (nextCost == null)
+        if (NextCost == null)
         {
             return false;
         }
 
-        return CurrencyWallet.HasEnough(nextCost.GetCurrencyType(), nextCost.GetCost());
+        return CurrencyWallet.HasEnough(NextCost.GetCurrencyType(), NextCost.GetCost());
     }
 
-    /// <summary>
-    /// Attempts to purchase the next level of the provided upgrade.
-    /// </summary>
-    public bool TryPurchaseUpgrade(UpgradeDefinition upgradeDefinition)
+    public bool TryPurchaseUpgrade(UpgradeDefinition UpgradeDefinition)
     {
-        if (upgradeDefinition == null || CurrencyWallet == null)
+        if (UpgradeDefinition == null || CurrencyWallet == null)
         {
             return false;
         }
 
-        int currentLevel = GetUpgradeLevel(upgradeDefinition);
+        int CurrentLevel = GetUpgradeLevel(UpgradeDefinition);
 
-        if (currentLevel >= upgradeDefinition.GetMaxLevel())
+        if (CurrentLevel >= UpgradeDefinition.GetMaxLevel())
         {
-            Log("Upgrade is already at max level: " + upgradeDefinition.GetDisplayName());
+            Log("Upgrade is already at max level: " + UpgradeDefinition.GetDisplayName());
             return false;
         }
 
-        int nextLevel = currentLevel + 1;
-        UpgradeDefinition.UpgradeLevelCost nextCost = upgradeDefinition.GetCostForLevel(nextLevel);
+        int NextLevel = CurrentLevel + 1;
+        UpgradeDefinition.UpgradeLevelCost NextCost = UpgradeDefinition.GetCostForLevel(NextLevel);
 
-        if (nextCost == null)
+        if (NextCost == null)
         {
-            Log("Missing configured cost for level " + nextLevel + " on upgrade " + upgradeDefinition.GetDisplayName());
+            Log("Missing configured cost for level " + NextLevel + " on upgrade " + UpgradeDefinition.GetDisplayName());
             return false;
         }
 
-        if (!CurrencyWallet.TrySpendCurrency(nextCost.GetCurrencyType(), nextCost.GetCost()))
+        if (!CurrencyWallet.TrySpendCurrency(NextCost.GetCurrencyType(), NextCost.GetCost()))
         {
-            Log("Not enough currency to purchase upgrade " + upgradeDefinition.GetDisplayName());
+            Log("Not enough currency to purchase upgrade " + UpgradeDefinition.GetDisplayName());
             return false;
         }
 
-        SetUpgradeLevel(upgradeDefinition, nextLevel);
-        Log("Purchased upgrade " + upgradeDefinition.GetDisplayName() + " to level " + nextLevel);
+        SetUpgradeLevel(UpgradeDefinition, NextLevel);
+        Log("Purchased upgrade " + UpgradeDefinition.GetDisplayName() + " to level " + NextLevel);
         return true;
     }
 
-    /// <summary>
-    /// Sets the exact level of the provided upgrade definition.
-    /// Useful for debugging, progression grants or loading save data.
-    /// </summary>
-    public void SetUpgradeLevel(UpgradeDefinition upgradeDefinition, int level)
+    public void SetUpgradeLevel(UpgradeDefinition UpgradeDefinition, int Level)
     {
-        if (upgradeDefinition == null)
+        if (UpgradeDefinition == null)
         {
             return;
         }
 
-        string upgradeId = upgradeDefinition.GetUpgradeId();
-        int clampedLevel = Mathf.Clamp(level, 0, upgradeDefinition.GetMaxLevel());
+        string UpgradeId = UpgradeDefinition.GetUpgradeId();
+        int ClampedLevel = Mathf.Clamp(Level, 0, UpgradeDefinition.GetMaxLevel());
 
-        LevelsById[upgradeId] = clampedLevel;
-        SyncDebugRuntimeLevels(upgradeDefinition, clampedLevel);
+        LevelsById[UpgradeId] = ClampedLevel;
+        SyncDebugRuntimeLevels(UpgradeDefinition, ClampedLevel);
         RebuildRewardCache();
 
-        OnUpgradeLevelChanged?.Invoke(upgradeDefinition, clampedLevel);
+        OnUpgradeLevelChanged?.Invoke(UpgradeDefinition, ClampedLevel);
         OnUpgradeStateChanged?.Invoke();
     }
 
-    /// <summary>
-    /// Returns the modified float stat after evaluating all purchased upgrades.
-    /// </summary>
-    public float GetModifiedFloatStat(UpgradeStatType statType, float baseValue)
+    public float GetModifiedFloatStat(UpgradeStatType StatType, float BaseValue)
     {
-        float currentValue = baseValue;
+        float CurrentValue = BaseValue;
 
-        foreach (UpgradeDefinition definition in UpgradeDefinitions)
+        foreach (UpgradeDefinition Definition in UpgradeDefinitions)
         {
-            if (definition == null)
+            if (Definition == null)
             {
                 continue;
             }
 
-            int currentLevel = GetUpgradeLevel(definition);
+            int CurrentLevel = GetUpgradeLevel(Definition);
 
-            if (currentLevel <= 0)
+            if (CurrentLevel <= 0)
             {
                 continue;
             }
 
-            IReadOnlyList<UpgradeDefinition.StatModifierDefinition> modifiers = definition.GetStatModifiers();
+            IReadOnlyList<UpgradeDefinition.StatModifierDefinition> Modifiers = Definition.GetStatModifiers();
 
-            for (int index = 0; index < modifiers.Count; index++)
+            for (int Index = 0; Index < Modifiers.Count; Index++)
             {
-                UpgradeDefinition.StatModifierDefinition modifier = modifiers[index];
+                UpgradeDefinition.StatModifierDefinition Modifier = Modifiers[Index];
 
-                if (modifier == null || modifier.GetStatType() != statType)
+                if (Modifier == null || Modifier.GetStatType() != StatType)
                 {
                     continue;
                 }
 
-                float modifierValue = modifier.EvaluateValue(currentLevel);
-                currentValue = ApplyModifier(currentValue, modifier.GetModifierType(), modifierValue);
+                float ModifierValue = Modifier.EvaluateValue(CurrentLevel);
+                CurrentValue = ApplyModifier(CurrentValue, Modifier.GetModifierType(), ModifierValue);
             }
         }
 
-        return currentValue;
+        return CurrentValue;
     }
 
-    /// <summary>
-    /// Returns the modified integer stat after evaluating all purchased upgrades.
-    /// </summary>
-    public int GetModifiedIntStat(UpgradeStatType statType, int baseValue)
+    public int GetModifiedIntStat(UpgradeStatType StatType, int BaseValue)
     {
-        float modifiedValue = GetModifiedFloatStat(statType, baseValue);
-        return Mathf.RoundToInt(modifiedValue);
+        float ModifiedValue = GetModifiedFloatStat(StatType, BaseValue);
+        return Mathf.RoundToInt(ModifiedValue);
     }
 
-    /// <summary>
-    /// Checks whether a feature flag reward is currently unlocked.
-    /// </summary>
-    public bool IsFeatureUnlocked(string featureFlagId)
+    public bool IsFeatureUnlocked(string FeatureFlagId)
     {
-        if (string.IsNullOrWhiteSpace(featureFlagId))
+        if (string.IsNullOrWhiteSpace(FeatureFlagId))
         {
             return false;
         }
 
-        return ActiveFeatureFlags.Contains(featureFlagId);
+        return ActiveFeatureFlags.Contains(FeatureFlagId);
     }
 
-    /// <summary>
-    /// Checks whether a visual effect reward is currently unlocked.
-    /// </summary>
-    public bool IsVisualEffectUnlocked(string visualEffectId)
+    public bool IsVisualEffectUnlocked(string VisualEffectId)
     {
-        if (string.IsNullOrWhiteSpace(visualEffectId))
+        if (string.IsNullOrWhiteSpace(VisualEffectId))
         {
             return false;
         }
 
-        return ActiveVisualEffectIds.Contains(visualEffectId);
+        return ActiveVisualEffectIds.Contains(VisualEffectId);
     }
 
-    /// <summary>
-    /// Checks whether an item reward is currently unlocked.
-    /// </summary>
-    public bool IsItemUnlocked(ItemDefinition itemDefinition)
+    public bool IsItemUnlocked(ItemDefinition ItemDefinition)
     {
-        if (itemDefinition == null)
+        if (ItemDefinition == null)
         {
             return false;
         }
 
-        return ActiveUnlockedItems.Contains(itemDefinition);
+        return ActiveUnlockedItems.Contains(ItemDefinition);
     }
 
-    /// <summary>
-    /// Rebuilds the runtime definition and level caches.
-    /// </summary>
     private void RebuildDefinitionCache()
     {
         DefinitionsById.Clear();
 
-        foreach (UpgradeDefinition definition in UpgradeDefinitions)
+        foreach (UpgradeDefinition Definition in UpgradeDefinitions)
         {
-            if (definition == null)
+            if (Definition == null)
             {
                 continue;
             }
 
-            string upgradeId = definition.GetUpgradeId();
+            string UpgradeId = Definition.GetUpgradeId();
 
-            if (string.IsNullOrWhiteSpace(upgradeId))
+            if (string.IsNullOrWhiteSpace(UpgradeId))
             {
                 continue;
             }
 
-            DefinitionsById[upgradeId] = definition;
+            DefinitionsById[UpgradeId] = Definition;
 
-            if (!LevelsById.ContainsKey(upgradeId))
+            if (!LevelsById.ContainsKey(UpgradeId))
             {
-                LevelsById[upgradeId] = 0;
+                LevelsById[UpgradeId] = 0;
             }
         }
 
-        for (int index = 0; index < DebugRuntimeLevels.Count; index++)
+        for (int Index = 0; Index < DebugRuntimeLevels.Count; Index++)
         {
-            UpgradeLevelEntry entry = DebugRuntimeLevels[index];
+            UpgradeLevelEntry Entry = DebugRuntimeLevels[Index];
 
-            if (entry == null || entry.GetDefinition() == null)
+            if (Entry == null || Entry.GetDefinition() == null)
             {
                 continue;
             }
 
-            string upgradeId = entry.GetDefinition().GetUpgradeId();
+            string UpgradeId = Entry.GetDefinition().GetUpgradeId();
 
-            if (string.IsNullOrWhiteSpace(upgradeId))
+            if (string.IsNullOrWhiteSpace(UpgradeId))
             {
                 continue;
             }
 
-            LevelsById[upgradeId] = Mathf.Clamp(entry.GetCurrentLevel(), 0, entry.GetDefinition().GetMaxLevel());
+            LevelsById[UpgradeId] = Mathf.Clamp(Entry.GetCurrentLevel(), 0, Entry.GetDefinition().GetMaxLevel());
         }
     }
 
-    /// <summary>
-    /// Rebuilds all non numeric unlock caches from the current purchased levels.
-    /// </summary>
     private void RebuildRewardCache()
     {
         ActiveFeatureFlags.Clear();
         ActiveVisualEffectIds.Clear();
         ActiveUnlockedItems.Clear();
 
-        foreach (UpgradeDefinition definition in UpgradeDefinitions)
+        foreach (UpgradeDefinition Definition in UpgradeDefinitions)
         {
-            if (definition == null)
+            if (Definition == null)
             {
                 continue;
             }
 
-            int currentLevel = GetUpgradeLevel(definition);
+            int CurrentLevel = GetUpgradeLevel(Definition);
 
-            if (currentLevel <= 0)
+            if (CurrentLevel <= 0)
             {
                 continue;
             }
 
-            IReadOnlyList<UpgradeDefinition.UnlockRewardDefinition> rewards = definition.GetUnlockRewards();
+            IReadOnlyList<UpgradeDefinition.UnlockRewardDefinition> Rewards = Definition.GetUnlockRewards();
 
-            for (int index = 0; index < rewards.Count; index++)
+            for (int Index = 0; Index < Rewards.Count; Index++)
             {
-                UpgradeDefinition.UnlockRewardDefinition reward = rewards[index];
+                UpgradeDefinition.UnlockRewardDefinition Reward = Rewards[Index];
 
-                if (reward == null)
+                if (Reward == null)
                 {
                     continue;
                 }
 
-                if (currentLevel < reward.GetRequiredLevel())
+                if (CurrentLevel < Reward.GetRequiredLevel())
                 {
                     continue;
                 }
 
-                switch (reward.GetRewardType())
+                switch (Reward.GetRewardType())
                 {
                     case UpgradeDefinition.UnlockRewardDefinition.UnlockRewardType.FeatureFlag:
-                        if (!string.IsNullOrWhiteSpace(reward.GetRewardId()))
+                        if (!string.IsNullOrWhiteSpace(Reward.GetRewardId()))
                         {
-                            ActiveFeatureFlags.Add(reward.GetRewardId());
+                            ActiveFeatureFlags.Add(Reward.GetRewardId());
                         }
                         break;
 
                     case UpgradeDefinition.UnlockRewardDefinition.UnlockRewardType.VisualEffect:
-                        if (!string.IsNullOrWhiteSpace(reward.GetRewardId()))
+                        if (!string.IsNullOrWhiteSpace(Reward.GetRewardId()))
                         {
-                            ActiveVisualEffectIds.Add(reward.GetRewardId());
+                            ActiveVisualEffectIds.Add(Reward.GetRewardId());
                         }
                         break;
 
                     case UpgradeDefinition.UnlockRewardDefinition.UnlockRewardType.Item:
-                        if (reward.GetItemDefinition() != null)
+                        if (Reward.GetItemDefinition() != null)
                         {
-                            ActiveUnlockedItems.Add(reward.GetItemDefinition());
+                            ActiveUnlockedItems.Add(Reward.GetItemDefinition());
                         }
                         break;
                 }
@@ -429,67 +377,52 @@ public sealed class UpgradeManager : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Synchronizes the optional debug runtime list with a new upgrade level.
-    /// </summary>
-    private void SyncDebugRuntimeLevels(UpgradeDefinition definition, int level)
+    private void SyncDebugRuntimeLevels(UpgradeDefinition UpgradeDefinition, int Level)
     {
-        for (int index = 0; index < DebugRuntimeLevels.Count; index++)
+        for (int Index = 0; Index < DebugRuntimeLevels.Count; Index++)
         {
-            UpgradeLevelEntry entry = DebugRuntimeLevels[index];
+            UpgradeLevelEntry Entry = DebugRuntimeLevels[Index];
 
-            if (entry == null || entry.GetDefinition() != definition)
+            if (Entry == null || Entry.GetDefinition() != UpgradeDefinition)
             {
                 continue;
             }
 
-            entry.SetCurrentLevel(level);
+            Entry.SetCurrentLevel(Level);
             return;
         }
     }
 
-    /// <summary>
-    /// Applies a numeric modifier operation to the provided value.
-    /// </summary>
-    private float ApplyModifier(float currentValue, UpgradeModifierType modifierType, float modifierValue)
+    private float ApplyModifier(float CurrentValue, UpgradeModifierType ModifierType, float ModifierValue)
     {
-        switch (modifierType)
+        switch (ModifierType)
         {
             case UpgradeModifierType.Add:
-                return currentValue + modifierValue;
-
+                return CurrentValue + ModifierValue;
             case UpgradeModifierType.Subtract:
-                return currentValue - modifierValue;
-
+                return CurrentValue - ModifierValue;
             case UpgradeModifierType.Multiply:
-                return currentValue * modifierValue;
-
+                return CurrentValue * ModifierValue;
             case UpgradeModifierType.Divide:
-                if (Mathf.Approximately(modifierValue, 0f))
+                if (Mathf.Approximately(ModifierValue, 0f))
                 {
-                    return currentValue;
+                    return CurrentValue;
                 }
-
-                return currentValue / modifierValue;
-
+                return CurrentValue / ModifierValue;
             case UpgradeModifierType.Override:
-                return modifierValue;
-
+                return ModifierValue;
             default:
-                return currentValue;
+                return CurrentValue;
         }
     }
 
-    /// <summary>
-    /// Logs upgrade messages if debug logging is enabled.
-    /// </summary>
-    private void Log(string message)
+    private void Log(string Message)
     {
         if (!DebugLogs)
         {
             return;
         }
 
-        Debug.Log("[UpgradeManager] " + message);
+        Debug.Log("[UpgradeManager] " + Message);
     }
 }

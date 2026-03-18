@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using static CurrencyWallet;
 
 /// <summary>
 /// Stores and manages every gameplay currency owned by the player.
@@ -88,9 +89,17 @@ public sealed class CurrencyWallet : MonoBehaviour
         }
     }
 
+    [ContextMenu("DebugCurrency")]
+    public void DebugCurrency()
+    {
+        Debug.Log(GetBalance(CurrencyType.Gold) + " gold");
+        Debug.Log(GetBalance(CurrencyType.Research) + " research");
+    }
+
     /// <summary>
     /// Gets the current balance for the provided currency type.
     /// </summary>
+    /// 
     public int GetBalance(CurrencyType currencyType)
     {
         if (Balances.TryGetValue(currencyType, out int amount))

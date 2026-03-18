@@ -16,7 +16,11 @@ public enum UpgradeStatType
     OreSellValueMultiplier = 6,
     ScannerRange = 7,
     ScannerDuration = 8,
-    CarryCapacity = 9
+    CarryCapacity = 9,
+    OreRespawnTimeMultiplier = 10,
+    OrePurityMultiplier = 11,
+    OreSizeMultiplier = 12,
+    ResearchSellValueMultiplier = 13
 }
 
 /// <summary>

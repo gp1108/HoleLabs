@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &9064466084255291524
+--- !u!1 &3375198301939659550
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,48 +8,48 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 2792458911393649782}
-  - component: {fileID: 1228397526222411607}
-  - component: {fileID: 1288121349196888164}
-  - component: {fileID: -6096927757574500954}
-  - component: {fileID: 1868414549583801516}
-  m_Layer: 10
-  m_Name: SM_PickAxe_a01
+  - component: {fileID: 5918580969464410555}
+  - component: {fileID: 3888508619695669727}
+  - component: {fileID: 961532202861406600}
+  - component: {fileID: 3232991491439679324}
+  - component: {fileID: 2372228392467524737}
+  m_Layer: 11
+  m_Name: SM_CoalVein_a01
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &2792458911393649782
+--- !u!4 &5918580969464410555
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9064466084255291524}
+  m_GameObject: {fileID: 3375198301939659550}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0, y: 0, z: 0}
+  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: -14.35338, y: -0.92, z: -10.31787}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &1228397526222411607
+  m_LocalEulerAnglesHint: {x: -90, y: 0, z: 0}
+--- !u!33 &3888508619695669727
 MeshFilter:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9064466084255291524}
-  m_Mesh: {fileID: -2192998171376069114, guid: 45b795526c1e4e44ab7ef9a79ec0fbbe, type: 3}
---- !u!23 &1288121349196888164
+  m_GameObject: {fileID: 3375198301939659550}
+  m_Mesh: {fileID: 3789467480760146129, guid: 8ffc95ab9e36e7a47994d6029a2dcb45, type: 3}
+--- !u!23 &961532202861406600
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9064466084255291524}
+  m_GameObject: {fileID: 3375198301939659550}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -68,7 +68,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 95c4e78a5e41b7c4f8ebdb2a1538b0f6, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -92,55 +92,43 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &-6096927757574500954
+--- !u!64 &3232991491439679324
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3375198301939659550}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 1
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 3789467480760146129, guid: 8ffc95ab9e36e7a47994d6029a2dcb45, type: 3}
+--- !u!114 &2372228392467524737
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9064466084255291524}
+  m_GameObject: {fileID: 3375198301939659550}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2c68f19089fb6174db50d62dc31d46b7, type: 3}
+  m_Script: {fileID: 11500000, guid: b41b654641fe84040afe8de56de6eb9d, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PickaxeItemBehaviour
-  ItemAnimator: {fileID: 1868414549583801516}
-  PrimaryActionDuration: 0.3
-  PrimaryActionImpactTime: 0.2
-  AllowPrimaryHoldRepeat: 0
-  SecondaryActionDuration: 0.3
-  SecondaryActionImpactTime: 0.1
-  AllowSecondaryHoldRepeat: 0
-  PrimaryUseTriggerName: PrimaryUse
-  SecondaryUseTriggerName: SecondaryUse
-  IsUsingBoolName: IsUsing
-  DebugLogs: 1
-  PlayerCamera: {fileID: 0}
-  MiningPower: 1
-  MiningDistance: 4
-  MiningLayers:
-    serializedVersion: 2
-    m_Bits: 2048
-  DrawDebugRay: 1
---- !u!95 &1868414549583801516
-Animator:
-  serializedVersion: 7
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9064466084255291524}
-  m_Enabled: 1
-  m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 9100000, guid: 9352643a80dfc8d41b364528462dacf7, type: 2}
-  m_CullingMode: 0
-  m_UpdateMode: 0
-  m_ApplyRootMotion: 0
-  m_LinearVelocityBlending: 0
-  m_StabilizeFeet: 0
-  m_AnimatePhysics: 0
-  m_WarningMessage: 
-  m_HasTransformHierarchy: 1
-  m_AllowConstantClipSamplingOptimization: 1
-  m_KeepAnimatorStateOnDisable: 0
-  m_WriteDefaultValuesOnDisable: 0
+  m_EditorClassIdentifier: Assembly-CSharp::OreVein
+  VisualRoot: {fileID: 5918580969464410555}
+  MinimumGrowthScale: 0.05
+  AnimateGrowth: 1
+  DropScatterRadius: 0.45
+  DropVerticalOffset: 0.2
+  DebugLogs: 0

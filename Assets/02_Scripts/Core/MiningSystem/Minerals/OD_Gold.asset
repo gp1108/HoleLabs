@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6979692974f2b1740b6862861ad5e422, type: 3}
+  m_Name: OD_Gold
+  m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
+  OreId: Gold
+  DisplayName: Gold
+  Icon: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
+  VeinPrefab: {fileID: 8622291342529352686, guid: 2087dcaab6f128149bedefa7b415c935, type: 3}
+  DroppedOrePrefab: {fileID: 7046480720709691670, guid: 1b5a5d4b05379fb49840300b5eb2bb6e, type: 3}
+  BaseHitsRequired: 3
+  BaseRespawnTime: 30
+  BaseDropCountMin: 2
+  BaseDropCountMax: 3
+  BaseGoldValue: 20
+  BaseResearchValue: 3
+  PropertyRanges:
+  - PropertyType: 1
+    MinValue: 0
+    MaxValue: 1
+    AffectedByUpgrades: 1
+  - PropertyType: 2
+    MinValue: 0
+    MaxValue: 1
+    AffectedByUpgrades: 1

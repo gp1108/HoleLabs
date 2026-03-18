@@ -1,59 +1,124 @@
 using UnityEngine;
 
 /// <summary>
-/// Example equipped pickaxe behaviour.
+/// Equipped pickaxe behaviour built on top of the animation-event item action system.
+/// The mining hit now happens only when the animation clip explicitly sends the impact event,
+/// which keeps the visible swing and the gameplay hit perfectly synchronized.
 /// </summary>
-public sealed class PickaxeItemBehaviour : EquippedItemBehaviour
+public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
 {
+    [Header("References")]
+    [Tooltip("Camera used to cast mining rays. If empty, the item looks for one on the owner.")]
+    [SerializeField] private Camera PlayerCamera;
+
     [Header("Mining")]
     [Tooltip("Mining strength applied by this pickaxe.")]
     [SerializeField] private float MiningPower = 1f;
 
+    [Tooltip("Maximum distance used to detect mineable targets.")]
+    [SerializeField] private float MiningDistance = 4f;
+
+    [Tooltip("Layers considered valid mining targets.")]
+    [SerializeField] private LayerMask MiningLayers = ~0;
+
+    [Header("Debug")]
+    [Tooltip("Draws the mining ray in the Scene view when attempting a hit.")]
+    [SerializeField] private bool DrawDebugRay = false;
+
     /// <summary>
-    /// Called when the primary use input starts.
+    /// Initializes the pickaxe and resolves missing owner references.
     /// </summary>
-    public override void OnPrimaryUseStarted()
+    public override void Initialize(HotbarController ownerHotbar, ItemInstance itemInstance)
     {
-        Debug.Log("Pickaxe primary use started.");
+        base.Initialize(ownerHotbar, itemInstance);
+
+        if (PlayerCamera == null && OwnerHotbar != null)
+        {
+            PlayerCamera = OwnerHotbar.GetComponentInChildren<Camera>();
+        }
     }
 
     /// <summary>
-    /// Called every frame while the primary use input is held.
+    /// Applies the mining effect exactly when the animation impact event is fired.
     /// </summary>
-    public override void OnPrimaryUseHeld()
+    protected override void OnPrimaryActionImpact()
     {
-        Debug.Log("Pickaxe mining...");
+        if (PlayerCamera == null)
+        {
+            Log("No camera was found for the pickaxe mining ray.");
+            return;
+        }
+
+        Ray miningRay = PlayerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+
+        if (DrawDebugRay)
+        {
+            Debug.DrawRay(miningRay.origin, miningRay.direction * MiningDistance, Color.yellow, 0.5f);
+        }
+
+        if (!Physics.Raycast(miningRay, out RaycastHit hitInfo, MiningDistance, MiningLayers, QueryTriggerInteraction.Ignore))
+        {
+            Log("Mining ray hit nothing.");
+            return;
+        }
+
+        IMineable mineable = ResolveMineable(hitInfo);
+
+        if (mineable == null)
+        {
+            Log("Mining ray hit a non-mineable target.");
+            return;
+        }
+
+        bool wasMined = mineable.TryMine(MiningPower);
+
+        if (wasMined)
+        {
+            Log("Mineable target was successfully hit at animation impact time.");
+        }
     }
 
     /// <summary>
-    /// Called when the primary use input ends.
+    /// Resolves a mineable target from the current raycast hit.
     /// </summary>
-    public override void OnPrimaryUseEnded()
+    private IMineable ResolveMineable(RaycastHit hitInfo)
     {
-        Debug.Log("Pickaxe primary use ended.");
-    }
+        if (hitInfo.collider == null)
+        {
+            return null;
+        }
 
-    /// <summary>
-    /// Called when the primary use input starts.
-    /// </summary>
-    public override void OnSecondaryUseStarted()
-    {
-        Debug.Log("Pickaxe secondary use started.");
-    }
+        IMineable mineable = hitInfo.collider.GetComponent<IMineable>();
 
-    /// <summary>
-    /// Called every frame while the primary use input is held.
-    /// </summary>
-    public override void OnSecondaryUseHeld()
-    {
-        Debug.Log("Pickaxe mining secondary...");
-    }
+        if (mineable != null)
+        {
+            return mineable;
+        }
 
-    /// <summary>
-    /// Called when the primary use input ends.
-    /// </summary>
-    public override void OnSecondaryUseEnded()
-    {
-        Debug.Log("Pickaxe secondary use ended.");
+        mineable = hitInfo.collider.GetComponentInParent<IMineable>();
+
+        if (mineable != null)
+        {
+            return mineable;
+        }
+
+        if (hitInfo.rigidbody != null)
+        {
+            mineable = hitInfo.rigidbody.GetComponent<IMineable>();
+
+            if (mineable != null)
+            {
+                return mineable;
+            }
+
+            mineable = hitInfo.rigidbody.GetComponentInParent<IMineable>();
+
+            if (mineable != null)
+            {
+                return mineable;
+            }
+        }
+
+        return null;
     }
 }
