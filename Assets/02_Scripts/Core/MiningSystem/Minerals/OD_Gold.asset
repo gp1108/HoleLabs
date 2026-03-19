@@ -17,10 +17,10 @@ MonoBehaviour:
   Icon: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
   VeinPrefab: {fileID: 8622291342529352686, guid: 2087dcaab6f128149bedefa7b415c935, type: 3}
   DroppedOrePrefab: {fileID: 7046480720709691670, guid: 1b5a5d4b05379fb49840300b5eb2bb6e, type: 3}
-  BaseHitsRequired: 3
+  BaseHitsRequired: 1
   BaseRespawnTime: 30
-  BaseDropCountMin: 2
-  BaseDropCountMax: 3
+  BaseDropCountMin: 3
+  BaseDropCountMax: 7
   BaseGoldValue: 20
   BaseResearchValue: 3
   PropertyRanges:

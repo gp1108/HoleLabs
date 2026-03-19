@@ -168,6 +168,17 @@ MonoBehaviour:
   DisableGravityWhileHeld: 1
   IgnorePlayerCollisionWhileHeld: 1
   FreezeRotationWhileHeld: 0
+  MagnetInfluenceGraceTime: 0.08
+  UsePlayerIgnoredInteractionLayer: 1
+  FreeLayerName: PhysicsObjects
+  PlayerIgnoredInteractionLayerName: PlayerIgnoredPhysicsObjects
+  EnableAutoSleep: 1
+  SleepDelay: 0.05
+  SleepLinearVelocityThreshold: 0.05
+  SleepAngularVelocityThreshold: 0.05
+  WakeImpactImpulseThreshold: 0.2
+  WakeOnCollision: 0
+  WakeOnCollisionWithPhysicObject: 1
   DrawDebug: 0
   DebugLogs: 0
   OverrideCamera: {fileID: 0}

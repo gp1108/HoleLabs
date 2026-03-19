@@ -114,7 +114,12 @@ public sealed class PlayerController : MonoBehaviour
 
     private Rigidbody Rigidbody;
     private CapsuleCollider CapsuleCollider;
+    private BoxCollider PlayerCollider;
+    private BoxCollider MagnetCollider;
     private PlayerInput PlayerInput;
+    private float PlayerColliderBaseHeight;
+    private float MagnetColliderBaseHeight;
+    private Vector3 MagnetColliderOriginalCenter;
 
     private InputAction MoveAction;
     private InputAction LookAction;
@@ -152,6 +157,27 @@ public sealed class PlayerController : MonoBehaviour
     {
         Rigidbody = GetComponent<Rigidbody>();
         CapsuleCollider = GetComponent<CapsuleCollider>();
+        BoxCollider[] boxcolliders = GetComponentsInChildren<BoxCollider>();
+        for (int i = 0; i < boxcolliders.Length; i++)
+        {
+            if(boxcolliders[i].gameObject.layer == LayerMask.NameToLayer("Default"))
+            {
+                MagnetCollider = boxcolliders[i];
+            }
+
+            if (boxcolliders[i].gameObject.layer == LayerMask.NameToLayer("Player"))
+            {
+                PlayerCollider = boxcolliders[i];
+            }
+
+
+        }
+
+        // Guardamos alturas base
+        MagnetColliderOriginalCenter = MagnetCollider.center;
+        PlayerColliderBaseHeight = PlayerCollider.size.y;
+        MagnetColliderBaseHeight = MagnetCollider.size.y;
+
         PlayerInput = GetComponent<PlayerInput>();
 
         MoveAction = PlayerInput.actions["Move"];
@@ -168,6 +194,8 @@ public sealed class PlayerController : MonoBehaviour
         TargetCameraLocalY = StandingCameraLocalY;
 
         CapsuleCollider.height = StandingHeight;
+        PlayerCollider.size = new Vector3(PlayerCollider.size.x,StandingHeight, PlayerCollider.size.z);
+        MagnetCollider.size = new Vector3(MagnetCollider.size.x, StandingHeight/2, MagnetCollider.size.z);
         CapsuleCollider.center = new Vector3(0f, StandingHeight * 0.5f, 0f);
 
         Yaw = transform.eulerAngles.y;
@@ -289,14 +317,64 @@ public sealed class PlayerController : MonoBehaviour
     /// </summary>
     private void UpdateCrouch()
     {
-        float NewHeight = Mathf.Lerp(CapsuleCollider.height, TargetCapsuleHeight, CrouchTransitionSpeed * Time.deltaTime);
+        float NewHeight = Mathf.Lerp(
+            CapsuleCollider.height,
+            TargetCapsuleHeight,
+            CrouchTransitionSpeed * Time.deltaTime
+        );
+
         CapsuleCollider.height = NewHeight;
         CapsuleCollider.center = new Vector3(0f, NewHeight * 0.5f, 0f);
 
+        // 🔹 FACTOR DE ESCALA respecto a la altura original
+        float HeightRatio = NewHeight / StandingHeight;
+
+        // -------------------------
+        // PLAYER COLLIDER (principal)
+        // -------------------------
+        float PlayerHeight = PlayerColliderBaseHeight * HeightRatio;
+
+        Vector3 PlayerSize = PlayerCollider.size;
+        PlayerSize.y = PlayerHeight;
+        PlayerCollider.size = PlayerSize;
+
+        Vector3 PlayerCenter = PlayerCollider.center;
+        PlayerCenter.y = PlayerHeight * 0.5f;
+        PlayerCollider.center = PlayerCenter;
+
+        // -------------------------
+        // MAGNET COLLIDER (especial)
+        // -------------------------
+        float MagnetHeight = MagnetColliderBaseHeight * HeightRatio;
+
+        Vector3 MagnetSize = MagnetCollider.size;
+        MagnetSize.y = MagnetHeight;
+        MagnetCollider.size = MagnetSize;
+
+        // 🔹 Si está completamente de pie → restaurar center original
+        if (!IsCrouching && Mathf.Abs(NewHeight - StandingHeight) < 0.01f)
+        {
+            MagnetCollider.center = MagnetColliderOriginalCenter;
+        }
+        else
+        {
+            // 🔹 Durante crouch → comportamiento adaptativo
+            Vector3 MagnetCenter = MagnetCollider.center;
+            MagnetCenter.y = MagnetHeight * 0.5f;
+            MagnetCollider.center = MagnetCenter;
+        }
+
+        // -------------------------
+        // CAMERA
+        // -------------------------
         if (CameraPivot != null)
         {
             Vector3 LocalPosition = CameraPivot.localPosition;
-            LocalPosition.y = Mathf.Lerp(LocalPosition.y, TargetCameraLocalY, CameraCrouchTransitionSpeed * Time.deltaTime);
+            LocalPosition.y = Mathf.Lerp(
+                LocalPosition.y,
+                TargetCameraLocalY,
+                CameraCrouchTransitionSpeed * Time.deltaTime
+            );
             CameraPivot.localPosition = LocalPosition;
         }
     }

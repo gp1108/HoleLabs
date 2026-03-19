@@ -10,13 +10,13 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 16572f81317e202449edc153865672cb, type: 3}
-  m_Name: 00_Item_Scanner
+  m_Name: 02_Item_Magnet
   m_EditorClassIdentifier: Assembly-CSharp::ItemDefinition
-  ItemId: Scanner
-  DisplayName: Scanner
-  Icon: {fileID: 10901, guid: 0000000000000000f000000000000000, type: 0}
-  WorldPrefab: {fileID: 2881106816910279862, guid: 2d00b0a7bb904a54f9078813616068de, type: 3}
-  EquippedPrefab: {fileID: 2881106816910279862, guid: 3576d4bae4f00594db4a27f2b25bb998, type: 3}
+  ItemId: Magnet
+  DisplayName: Magnet
+  Icon: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
+  WorldPrefab: {fileID: 8032385564765958399, guid: 7eb26941ae3231d47a094f0f7d948576, type: 3}
+  EquippedPrefab: {fileID: 1128976999655024685, guid: 29a0506db42ea3c40926262b3b469028, type: 3}
   IsStackable: 0
   MaxStackSize: 1
   DefaultDurability: -1

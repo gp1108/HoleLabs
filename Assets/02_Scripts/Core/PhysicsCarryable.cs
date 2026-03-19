@@ -1,19 +1,22 @@
 using UnityEngine;
 
 /// <summary>
-/// Handles physical dragging behaviour for a carryable rigidbody object.
-/// While held, the object follows a target anchor using a velocity-driven spring model,
-/// staying relatively close to the player while still feeling heavy.
-/// 
-/// This version:
-/// - follows the hold anchor more tightly while preserving weight,
-/// - keeps release inertia instead of killing velocity,
-/// - auto drops if the object gets stuck too far from the anchor,
-/// - ignores collisions against the player collider while held.
+/// Handles physical dragging and interaction state for a carryable rigidbody object.
+/// Adds explicit runtime states, optional layer swap while interacted, automatic sleeping,
+/// magnetized support, and wake hooks for moving supports such as elevators.
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
 public sealed class PhysicsCarryable : MonoBehaviour
 {
+    public enum InteractionState
+    {
+        Free = 0,
+        Held = 1,
+        Magnetized = 2,
+        ConveyorDriven = 3,
+        Sleeping = 4
+    }
+
     [Header("Hold Follow")]
     [Tooltip("Position strength used to pull the object towards the hold anchor.")]
     [SerializeField] private float HoldPositionStrength = 22f;
@@ -53,147 +56,175 @@ public sealed class PhysicsCarryable : MonoBehaviour
     [Tooltip("If true, gravity is disabled while the object is being held.")]
     [SerializeField] private bool DisableGravityWhileHeld = true;
 
-    [Tooltip("If true, collisions against the player collider are ignored while the object is held.")]
+    [Tooltip("If true, collisions against the player colliders are ignored while the object is held.")]
     [SerializeField] private bool IgnorePlayerCollisionWhileHeld = true;
 
     [Tooltip("If true, the object rotation is frozen while the object is held.")]
     [SerializeField] private bool FreezeRotationWhileHeld = false;
 
+    [Header("Magnetized Physics")]
+    [Tooltip("Time after the last magnet influence frame before the object leaves the magnetized state.")]
+    [SerializeField] private float MagnetInfluenceGraceTime = 0.08f;
+
+    [Header("Interaction Layers")]
+    [Tooltip("If true, the object swaps to a player-ignored layer while being held or magnetized.")]
+    [SerializeField] private bool UsePlayerIgnoredInteractionLayer = true;
+
+    [Tooltip("Layer name used while the object is free or sleeping.")]
+    [SerializeField] private string FreeLayerName = "PhysicsObjects";
+
+    [Tooltip("Layer name used while the object is held or magnetized so it no longer collides with the player.")]
+    [SerializeField] private string PlayerIgnoredInteractionLayerName = "PlayerIgnoredPhysicsObjects";
+
+    [Header("Sleep")]
+    [Tooltip("If true, the rigidbody is automatically put to sleep when idle.")]
+    [SerializeField] private bool EnableAutoSleep = true;
+
+    [Tooltip("Minimum time the object must stay almost still before sleeping.")]
+    [SerializeField] private float SleepDelay = 0.75f;
+
+    [Tooltip("Linear speed threshold used to consider the object idle.")]
+    [SerializeField] private float SleepLinearVelocityThreshold = 0.05f;
+
+    [Tooltip("Angular speed threshold used to consider the object idle.")]
+    [SerializeField] private float SleepAngularVelocityThreshold = 0.05f;
+
+    [Tooltip("Minimum collision impulse required from another physics object to wake this sleeping object.")]
+    [SerializeField] private float WakeImpactImpulseThreshold = 1.5f;
+
+    [Tooltip("If true, collisions wake the object back up when it was sleeping.")]
+    [SerializeField] private bool WakeOnCollision = true;
+    [Tooltip("If true, collisions with other physicsObjects wake the object back up when it was sleeping.")]
+    [SerializeField] private bool WakeOnCollisionWithPhysicObject = true;
+
     [Header("Debug")]
     [Tooltip("Draws the hold target relation in the Scene view.")]
     [SerializeField] private bool DrawDebug = false;
 
-    [Tooltip("Logs hold state changes to the console.")]
+    [Tooltip("Logs interaction state changes to the console.")]
     [SerializeField] private bool DebugLogs = false;
 
     [Tooltip("Optional camera override used for the minimum camera distance check.")]
     [SerializeField] private Camera OverrideCamera;
 
-    /// <summary>
-    /// Rigidbody that drives the carryable object movement.
-    /// </summary>
-    private Rigidbody Rigidbody;
-
-    /// <summary>
-    /// Anchor transform that defines the target held position.
-    /// </summary>
+    private Rigidbody RigidbodyComponent;
     private Transform HoldAnchor;
-
-    /// <summary>
-    /// Player collider ignored while the object is being held.
-    /// </summary>
-    private Collider PlayerCollider;
-
-    /// <summary>
-    /// Cached colliders that belong to this carryable object hierarchy.
-    /// </summary>
+    private Collider[] PlayerColliders;
     private Collider[] CachedColliders;
+    private Transform[] CachedHierarchyTransforms;
+    private InteractionState CurrentState = InteractionState.Free;
 
-    /// <summary>
-    /// Whether the object is currently held.
-    /// </summary>
-    private bool IsHeld;
-
-    /// <summary>
-    /// Original linear damping restored when the object is released.
-    /// </summary>
     private float SavedLinearDamping;
-
-    /// <summary>
-    /// Original angular damping restored when the object is released.
-    /// </summary>
     private float SavedAngularDamping;
-
-    /// <summary>
-    /// Original gravity usage restored when the object is released.
-    /// </summary>
     private bool SavedUseGravity;
-
-    /// <summary>
-    /// Original collision detection mode restored when the object is released.
-    /// </summary>
     private CollisionDetectionMode SavedCollisionDetectionMode;
-
-    /// <summary>
-    /// Original interpolation mode restored when the object is released.
-    /// </summary>
     private RigidbodyInterpolation SavedInterpolation;
-
-    /// <summary>
-    /// Original rigidbody constraints restored when the object is released.
-    /// </summary>
     private RigidbodyConstraints SavedConstraints;
 
-    /// <summary>
-    /// Previous hold anchor position used to estimate anchor velocity.
-    /// </summary>
     private Vector3 LastHoldAnchorPosition;
-
-    /// <summary>
-    /// Estimated hold anchor velocity in world space.
-    /// </summary>
     private Vector3 HoldAnchorVelocity;
+    private float LastMagnetInfluenceTime = float.NegativeInfinity;
+    private float IdleTimer;
 
-    /// <summary>
-    /// Caches component references and the default rigidbody state.
-    /// </summary>
+    private int ResolvedFreeLayer = -1;
+    private int ResolvedPlayerIgnoredLayer = -1;
+    private bool HasResolvedPlayerIgnoredLayer;
+
     private void Awake()
     {
-        Rigidbody = GetComponent<Rigidbody>();
+        RigidbodyComponent = GetComponent<Rigidbody>();
         CachedColliders = GetComponentsInChildren<Collider>(true);
+        CachedHierarchyTransforms = GetComponentsInChildren<Transform>(true);
 
-        SavedLinearDamping = Rigidbody.linearDamping;
-        SavedAngularDamping = Rigidbody.angularDamping;
-        SavedUseGravity = Rigidbody.useGravity;
-        SavedCollisionDetectionMode = Rigidbody.collisionDetectionMode;
-        SavedInterpolation = Rigidbody.interpolation;
-        SavedConstraints = Rigidbody.constraints;
+        SavedLinearDamping = RigidbodyComponent.linearDamping;
+        SavedAngularDamping = RigidbodyComponent.angularDamping;
+        SavedUseGravity = RigidbodyComponent.useGravity;
+        SavedCollisionDetectionMode = RigidbodyComponent.collisionDetectionMode;
+        SavedInterpolation = RigidbodyComponent.interpolation;
+        SavedConstraints = RigidbodyComponent.constraints;
+
+        ResolveInteractionLayers();
+        ApplyFreeState();
     }
 
-    /// <summary>
-    /// Updates the dragged rigidbody movement while held.
-    /// </summary>
     private void FixedUpdate()
     {
-        if (!IsHeld || HoldAnchor == null)
+        switch (CurrentState)
+        {
+            case InteractionState.Held:
+                if (HoldAnchor != null)
+                {
+                    UpdateAnchorVelocity();
+                    UpdateHoldDrag();
+                    CheckAutoDrop();
+                }
+                break;
+
+            case InteractionState.Magnetized:
+                if (Time.time - LastMagnetInfluenceTime > MagnetInfluenceGraceTime)
+                {
+                    SetInteractionState(InteractionState.Free);
+                }
+                break;
+
+            case InteractionState.ConveyorDriven:
+                RigidbodyComponent.WakeUp();
+                break;
+        }
+
+        UpdateSleepState();
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (CurrentState != InteractionState.Sleeping)
         {
             return;
         }
 
-        UpdateAnchorVelocity();
-        UpdateHoldDrag();
-        CheckAutoDrop();
+        if (WakeOnCollision)
+        {
+            ForceWakeUp();
+            return;
+        }
+
+        if (!WakeOnCollisionWithPhysicObject)
+        {
+            return;
+        }
+
+        if (collision.gameObject.layer != LayerMask.NameToLayer("PhysicsObjects") &&
+            collision.gameObject.layer != LayerMask.NameToLayer("PlayerIgnoredPhysicsObjects"))
+        {
+            return;
+        }
+
+        if (collision.impulse.magnitude < WakeImpactImpulseThreshold)
+        {
+            return;
+        }
+
+        ForceWakeUp();
     }
 
-    /// <summary>
-    /// Starts holding the object using the provided hold anchor and player collider.
-    /// </summary>
-    /// <param name="NewHoldAnchor">Target anchor the object should follow.</param>
-    /// <param name="NewPlayerCollider">Player collider used to ignore collisions while held.</param>
-    public void BeginHold(Transform NewHoldAnchor, Collider NewPlayerCollider)
+    public void BeginHold(Transform NewHoldAnchor, Collider[] NewPlayerColliders)
     {
         if (NewHoldAnchor == null)
         {
             return;
         }
 
-        if (IsHeld)
+        if (CurrentState == InteractionState.Held)
         {
             EndHold();
         }
 
         HoldAnchor = NewHoldAnchor;
-        PlayerCollider = NewPlayerCollider;
-        IsHeld = true;
-
-        SaveRuntimeState();
-        ApplyHeldState();
-
-        Rigidbody.WakeUp();
-
+        PlayerColliders = NewPlayerColliders;
         LastHoldAnchorPosition = HoldAnchor.position;
         HoldAnchorVelocity = Vector3.zero;
 
+        SetInteractionState(InteractionState.Held);
         SetIgnorePlayerCollision(true);
 
         if (DebugLogs)
@@ -202,27 +233,21 @@ public sealed class PhysicsCarryable : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Stops holding the object and restores its original rigidbody state.
-    /// The object keeps its physical inertia and also inherits a portion of the hold anchor velocity.
-    /// </summary>
     public void EndHold()
     {
-        if (!IsHeld)
+        if (CurrentState != InteractionState.Held)
         {
             return;
         }
 
         SetIgnorePlayerCollision(false);
-
-        Rigidbody.linearVelocity += HoldAnchorVelocity * ReleaseVelocityInfluence;
-
-        RestoreRuntimeState();
+        RigidbodyComponent.linearVelocity += HoldAnchorVelocity * ReleaseVelocityInfluence;
 
         HoldAnchor = null;
-        PlayerCollider = null;
-        IsHeld = false;
+        PlayerColliders = null;
         HoldAnchorVelocity = Vector3.zero;
+
+        SetInteractionState(InteractionState.Free);
 
         if (DebugLogs)
         {
@@ -230,18 +255,70 @@ public sealed class PhysicsCarryable : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Returns whether the object is currently being held.
-    /// </summary>
-    /// <returns>True if the object is being held.</returns>
-    public bool GetIsHeld()
+    public void NotifyMagnetInfluence()
     {
-        return IsHeld;
+        LastMagnetInfluenceTime = Time.time;
+
+        if (CurrentState == InteractionState.Held)
+        {
+            return;
+        }
+
+        if (CurrentState != InteractionState.Magnetized)
+        {
+            SetInteractionState(InteractionState.Magnetized);
+        }
+        else
+        {
+            RigidbodyComponent.WakeUp();
+        }
     }
 
-    /// <summary>
-    /// Estimates the current hold anchor velocity from its world position delta.
-    /// </summary>
+    public void SetConveyorDriven(bool IsConveyorDriven)
+    {
+        if (CurrentState == InteractionState.Held)
+        {
+            return;
+        }
+
+        if (IsConveyorDriven)
+        {
+            SetInteractionState(InteractionState.ConveyorDriven);
+        }
+        else if (CurrentState == InteractionState.ConveyorDriven)
+        {
+            SetInteractionState(InteractionState.Free);
+        }
+    }
+
+    public void ForceWakeUp()
+    {
+        IdleTimer = 0f;
+
+        RigidbodyComponent.isKinematic = false;
+        RigidbodyComponent.WakeUp();
+
+        if (CurrentState == InteractionState.Sleeping)
+        {
+            SetInteractionState(InteractionState.Free);
+        }
+    }
+
+    public bool GetIsHeld()
+    {
+        return CurrentState == InteractionState.Held;
+    }
+
+    public bool GetIsMagnetized()
+    {
+        return CurrentState == InteractionState.Magnetized;
+    }
+
+    public InteractionState GetInteractionState()
+    {
+        return CurrentState;
+    }
+
     private void UpdateAnchorVelocity()
     {
         float DeltaTime = Mathf.Max(Time.fixedDeltaTime, 0.0001f);
@@ -250,16 +327,10 @@ public sealed class PhysicsCarryable : MonoBehaviour
         LastHoldAnchorPosition = CurrentAnchorPosition;
     }
 
-    /// <summary>
-    /// Applies velocity-driven dragging towards the hold anchor.
-    /// The object follows the anchor more tightly by matching both anchor position error
-    /// and anchor velocity, which reduces visible lag while still feeling weighted.
-    /// </summary>
     private void UpdateHoldDrag()
     {
         Vector3 DesiredPoint = GetClampedDesiredPoint();
-        Vector3 CurrentPoint = Rigidbody.worldCenterOfMass;
-
+        Vector3 CurrentPoint = RigidbodyComponent.worldCenterOfMass;
         Vector3 PositionError = DesiredPoint - CurrentPoint;
 
         if (PositionError.magnitude > MaxHoldErrorDistance)
@@ -271,17 +342,17 @@ public sealed class PhysicsCarryable : MonoBehaviour
             (PositionError * HoldPositionStrength) +
             (HoldAnchorVelocity * HoldAnchorVelocityInfluence);
 
-        Vector3 VelocityError = DesiredVelocity - Rigidbody.linearVelocity;
+        Vector3 VelocityError = DesiredVelocity - RigidbodyComponent.linearVelocity;
         Vector3 RequiredAcceleration = VelocityError * HoldVelocityDamping;
         Vector3 ClampedAcceleration = Vector3.ClampMagnitude(RequiredAcceleration, MaxHoldAcceleration);
 
-        Rigidbody.AddForce(ClampedAcceleration, ForceMode.Acceleration);
+        RigidbodyComponent.AddForce(ClampedAcceleration, ForceMode.Acceleration);
 
         float MaxSpeedSquared = HeldMaxSpeed * HeldMaxSpeed;
 
-        if (Rigidbody.linearVelocity.sqrMagnitude > MaxSpeedSquared)
+        if (RigidbodyComponent.linearVelocity.sqrMagnitude > MaxSpeedSquared)
         {
-            Rigidbody.linearVelocity = Rigidbody.linearVelocity.normalized * HeldMaxSpeed;
+            RigidbodyComponent.linearVelocity = RigidbodyComponent.linearVelocity.normalized * HeldMaxSpeed;
         }
 
         if (DrawDebug)
@@ -291,10 +362,6 @@ public sealed class PhysicsCarryable : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Returns the desired hold point clamped so it never targets a position too close to the camera.
-    /// </summary>
-    /// <returns>Clamped desired hold point in world space.</returns>
     private Vector3 GetClampedDesiredPoint()
     {
         Vector3 DesiredPoint = HoldAnchor.position;
@@ -326,92 +393,229 @@ public sealed class PhysicsCarryable : MonoBehaviour
         return DesiredPoint;
     }
 
-    /// <summary>
-    /// Drops the held object automatically if it gets too far away from the hold anchor,
-    /// which usually means it became obstructed or stuck in the environment.
-    /// </summary>
     private void CheckAutoDrop()
     {
         Vector3 DesiredPoint = GetClampedDesiredPoint();
-        float DistanceToAnchor = Vector3.Distance(Rigidbody.worldCenterOfMass, DesiredPoint);
+        float DistanceToAnchor = Vector3.Distance(RigidbodyComponent.worldCenterOfMass, DesiredPoint);
 
-        if (DistanceToAnchor <= BreakHoldDistance)
+        if (DistanceToAnchor > BreakHoldDistance)
+        {
+            if (DebugLogs)
+            {
+                Debug.Log($"Auto drop because '{name}' exceeded break distance.");
+            }
+
+            EndHold();
+        }
+    }
+
+    private void UpdateSleepState()
+    {
+        if (!EnableAutoSleep)
         {
             return;
+        }
+
+        if (CurrentState == InteractionState.Held || CurrentState == InteractionState.Magnetized || CurrentState == InteractionState.ConveyorDriven)
+        {
+            IdleTimer = 0f;
+            return;
+        }
+
+        if (CurrentState == InteractionState.Sleeping)
+        {
+            return;
+        }
+
+        bool IsNearlyStill =
+            RigidbodyComponent.linearVelocity.magnitude <= SleepLinearVelocityThreshold &&
+            RigidbodyComponent.angularVelocity.magnitude <= SleepAngularVelocityThreshold;
+
+        if (!IsNearlyStill)
+        {
+            IdleTimer = 0f;
+            return;
+        }
+
+        IdleTimer += Time.fixedDeltaTime;
+
+        if (IdleTimer >= SleepDelay)
+        {
+            RigidbodyComponent.Sleep();
+            SetInteractionState(InteractionState.Sleeping);
+        }
+    }
+
+    private void SetInteractionState(InteractionState NewState)
+    {
+        if (CurrentState == NewState)
+        {
+            return;
+        }
+
+        CurrentState = NewState;
+
+        switch (CurrentState)
+        {
+            case InteractionState.Free:
+                ApplyFreeState();
+                break;
+
+            case InteractionState.Held:
+                ApplyHeldState();
+                break;
+
+            case InteractionState.Magnetized:
+                ApplyMagnetizedState();
+                break;
+
+            case InteractionState.ConveyorDriven:
+                ApplyConveyorDrivenState();
+                break;
+
+            case InteractionState.Sleeping:
+                ApplySleepingState();
+                break;
         }
 
         if (DebugLogs)
         {
-            Debug.Log($"Auto drop because '{name}' exceeded break distance.");
+            Debug.Log($"Carryable state changed to {CurrentState}: {name}");
         }
-
-        EndHold();
     }
 
-    /// <summary>
-    /// Saves the current runtime rigidbody state before applying hold settings.
-    /// </summary>
-    private void SaveRuntimeState()
+    private void ApplyFreeState()
     {
-        SavedLinearDamping = Rigidbody.linearDamping;
-        SavedAngularDamping = Rigidbody.angularDamping;
-        SavedUseGravity = Rigidbody.useGravity;
-        SavedCollisionDetectionMode = Rigidbody.collisionDetectionMode;
-        SavedInterpolation = Rigidbody.interpolation;
-        SavedConstraints = Rigidbody.constraints;
+        RigidbodyComponent.isKinematic = false;
+        IdleTimer = 0f;
+        RigidbodyComponent.linearDamping = SavedLinearDamping;
+        RigidbodyComponent.angularDamping = SavedAngularDamping;
+        RigidbodyComponent.useGravity = SavedUseGravity;
+        RigidbodyComponent.collisionDetectionMode = SavedCollisionDetectionMode;
+        RigidbodyComponent.interpolation = SavedInterpolation;
+        RigidbodyComponent.constraints = SavedConstraints;
+
+        ApplyInteractionLayer(false);
+        RigidbodyComponent.WakeUp();
     }
 
-    /// <summary>
-    /// Applies the physical state used while the object is being held.
-    /// </summary>
     private void ApplyHeldState()
     {
-        Rigidbody.linearDamping = HeldLinearDamping;
-        Rigidbody.angularDamping = HeldAngularDamping;
-        Rigidbody.useGravity = DisableGravityWhileHeld ? false : SavedUseGravity;
-        Rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        Rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+        RigidbodyComponent.isKinematic = false;
+        IdleTimer = 0f;
+        RigidbodyComponent.linearDamping = HeldLinearDamping;
+        RigidbodyComponent.angularDamping = HeldAngularDamping;
+        RigidbodyComponent.useGravity = DisableGravityWhileHeld ? false : SavedUseGravity;
+        RigidbodyComponent.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        RigidbodyComponent.interpolation = RigidbodyInterpolation.Interpolate;
+        RigidbodyComponent.constraints = FreezeRotationWhileHeld
+            ? SavedConstraints | RigidbodyConstraints.FreezeRotation
+            : SavedConstraints;
 
-        if (FreezeRotationWhileHeld)
+        ApplyInteractionLayer(true);
+        RigidbodyComponent.WakeUp();
+    }
+
+    private void ApplyMagnetizedState()
+    {
+        RigidbodyComponent.isKinematic = false;
+        IdleTimer = 0f;
+        RigidbodyComponent.linearDamping = 0f;
+        RigidbodyComponent.angularDamping = 0f;
+        RigidbodyComponent.useGravity = DisableGravityWhileHeld ? false : SavedUseGravity;
+        RigidbodyComponent.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        RigidbodyComponent.interpolation = RigidbodyInterpolation.Interpolate;
+        RigidbodyComponent.constraints = FreezeRotationWhileHeld
+            ? SavedConstraints | RigidbodyConstraints.FreezeRotation
+            : SavedConstraints;
+
+        ApplyInteractionLayer(true);
+        RigidbodyComponent.WakeUp();
+    }
+
+    private void ApplyConveyorDrivenState()
+    {
+        RigidbodyComponent.isKinematic = false;
+        IdleTimer = 0f;
+        RigidbodyComponent.linearDamping = SavedLinearDamping;
+        RigidbodyComponent.angularDamping = SavedAngularDamping;
+        RigidbodyComponent.useGravity = SavedUseGravity;
+        RigidbodyComponent.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        RigidbodyComponent.interpolation = RigidbodyInterpolation.Interpolate;
+        RigidbodyComponent.constraints = SavedConstraints;
+
+        ApplyInteractionLayer(false);
+        RigidbodyComponent.WakeUp();
+    }
+
+    private void ApplySleepingState()
+    {
+        ApplyInteractionLayer(false);
+        RigidbodyComponent.isKinematic = true;
+    }
+
+    private void ResolveInteractionLayers()
+    {
+        ResolvedFreeLayer = LayerMask.NameToLayer(FreeLayerName);
+        ResolvedPlayerIgnoredLayer = LayerMask.NameToLayer(PlayerIgnoredInteractionLayerName);
+        HasResolvedPlayerIgnoredLayer = ResolvedPlayerIgnoredLayer >= 0;
+
+        if (UsePlayerIgnoredInteractionLayer && !HasResolvedPlayerIgnoredLayer && DebugLogs)
         {
-            Rigidbody.constraints = SavedConstraints | RigidbodyConstraints.FreezeRotation;
+            Debug.LogWarning(
+                $"Player ignored layer '{PlayerIgnoredInteractionLayerName}' was not found. " +
+                $"The carryable will keep its normal layer while magnetized or held."
+            );
         }
     }
 
-    /// <summary>
-    /// Restores the original runtime rigidbody state after the object is released.
-    /// </summary>
-    private void RestoreRuntimeState()
+    private void ApplyInteractionLayer(bool UsePlayerIgnoredLayer)
     {
-        Rigidbody.linearDamping = SavedLinearDamping;
-        Rigidbody.angularDamping = SavedAngularDamping;
-        Rigidbody.useGravity = SavedUseGravity;
-        Rigidbody.collisionDetectionMode = SavedCollisionDetectionMode;
-        Rigidbody.interpolation = SavedInterpolation;
-        Rigidbody.constraints = SavedConstraints;
-    }
-
-    /// <summary>
-    /// Enables or disables collisions between the held object and the player collider.
-    /// </summary>
-    /// <param name="Ignore">True to ignore collisions, false to restore them.</param>
-    private void SetIgnorePlayerCollision(bool Ignore)
-    {
-        if (!IgnorePlayerCollisionWhileHeld || PlayerCollider == null || CachedColliders == null)
+        if (!UsePlayerIgnoredInteractionLayer || !HasResolvedPlayerIgnoredLayer || CachedHierarchyTransforms == null)
         {
             return;
         }
 
-        for (int Index = 0; Index < CachedColliders.Length; Index++)
-        {
-            Collider CurrentCollider = CachedColliders[Index];
+        int TargetLayer = UsePlayerIgnoredLayer ? ResolvedPlayerIgnoredLayer : ResolvedFreeLayer;
 
-            if (CurrentCollider == null)
+        if (TargetLayer < 0)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < CachedHierarchyTransforms.Length; Index++)
+        {
+            CachedHierarchyTransforms[Index].gameObject.layer = TargetLayer;
+        }
+    }
+
+    private void SetIgnorePlayerCollision(bool Ignore)
+    {
+        if (!IgnorePlayerCollisionWhileHeld || PlayerColliders == null || CachedColliders == null)
+        {
+            return;
+        }
+
+        for (int PlayerIndex = 0; PlayerIndex < PlayerColliders.Length; PlayerIndex++)
+        {
+            Collider CurrentPlayerCollider = PlayerColliders[PlayerIndex];
+
+            if (CurrentPlayerCollider == null)
             {
                 continue;
             }
 
-            Physics.IgnoreCollision(PlayerCollider, CurrentCollider, Ignore);
+            for (int CarryableIndex = 0; CarryableIndex < CachedColliders.Length; CarryableIndex++)
+            {
+                Collider CurrentCarryableCollider = CachedColliders[CarryableIndex];
+
+                if (CurrentCarryableCollider == null)
+                {
+                    continue;
+                }
+
+                Physics.IgnoreCollision(CurrentPlayerCollider, CurrentCarryableCollider, Ignore);
+            }
         }
     }
 }

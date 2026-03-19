@@ -4,8 +4,15 @@ using UnityEngine;
 /// Base class for equipped items driven by animation events.
 /// The gameplay effect and the action end are both triggered by the Animator clip itself,
 /// which keeps gameplay timing aligned with the actual visible animation.
-/// This is the correct approach for tools such as pickaxes, scanners and similar items
-/// where the effect must happen at an exact frame.
+/// 
+/// Important:
+/// - Primary and secondary clicks are hard-locked while their action is running.
+/// - Hold repeat no longer tries to start directly from OnPrimaryUseHeld.
+/// - Hold only queues a pending repeat, and the base class starts it only when the Animator
+///   is truly ready to accept a new trigger.
+/// 
+/// This avoids the common issue where the action visually finishes but the Animator is still
+/// inside the action state or in transition, causing the next trigger to be lost.
 /// </summary>
 public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviour
 {
@@ -23,26 +30,22 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     [Tooltip("Animator bool enabled while any action is running.")]
     [SerializeField] protected string IsUsingBoolName = "IsUsing";
 
+    [Header("Animator Readiness")]
+    [Tooltip("Animator layer index checked before starting a new primary action.")]
+    [SerializeField] protected int ActionAnimatorLayer = 0;
+
+    [Tooltip("Tag used by action animation states such as mining, scan or pull.")]
+    [SerializeField] protected string ActionStateTag = "Action";
+
+    [Tooltip("If true, the item waits until the Animator is fully out of an action state before retriggering hold repeat.")]
+    [SerializeField] protected bool WaitUntilAnimatorLeavesActionState = true;
+
     [Header("Behaviour")]
     [Tooltip("If true, holding the primary input starts a new action when the current one finishes.")]
     [SerializeField] protected bool AllowPrimaryHoldRepeat = true;
 
     [Tooltip("If true, holding the secondary input starts a new action when the current one finishes.")]
     [SerializeField] protected bool AllowSecondaryHoldRepeat = false;
-
-    [Header("Repeat")]
-    [Tooltip("If true, hold-repeat waits until the next frame after the current action finishes before starting a new one.")]
-    [SerializeField] protected bool DeferHoldRepeatToNextFrame = true;
-
-    /// <summary>
-    /// Whether a new primary action should be started as soon as the animator is ready.
-    /// </summary>
-    protected bool PendingPrimaryRepeat;
-
-    /// <summary>
-    /// Whether a new secondary action should be started as soon as the animator is ready.
-    /// </summary>
-    protected bool PendingSecondaryRepeat;
 
     [Header("Debug")]
     [Tooltip("Logs animation-event item flow.")]
@@ -59,6 +62,16 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     protected bool IsSecondaryActionRunning;
 
     /// <summary>
+    /// Whether a new primary action should be started as soon as the Animator is ready.
+    /// </summary>
+    protected bool PendingPrimaryRepeat;
+
+    /// <summary>
+    /// Whether a new secondary action should be started as soon as the Animator is ready.
+    /// </summary>
+    protected bool PendingSecondaryRepeat;
+
+    /// <summary>
     /// Initializes runtime references and resolves missing animator references.
     /// </summary>
     public override void Initialize(HotbarController ownerHotbar, ItemInstance itemInstance)
@@ -72,75 +85,12 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     }
 
     /// <summary>
-    /// Processes queued hold repeats after the Animator had time to update its state.
-    /// This avoids losing triggers when the previous action has just finished.
+    /// Processes queued hold repeats after the Animator finished updating for the frame.
     /// </summary>
     protected virtual void LateUpdate()
     {
         ProcessPendingPrimaryRepeat();
         ProcessPendingSecondaryRepeat();
-    }
-
-    /// <summary>
-    /// Tries to process a queued primary repeat when the action is no longer running.
-    /// </summary>
-    protected virtual void ProcessPendingPrimaryRepeat()
-    {
-        if (!PendingPrimaryRepeat)
-        {
-            return;
-        }
-
-        if (!AllowPrimaryHoldRepeat || !IsPrimaryUseActive)
-        {
-            PendingPrimaryRepeat = false;
-            return;
-        }
-
-        if (IsPrimaryActionRunning)
-        {
-            return;
-        }
-
-        if (!CanStartPrimaryAction())
-        {
-            PendingPrimaryRepeat = false;
-            return;
-        }
-
-        PendingPrimaryRepeat = false;
-        TryStartPrimaryAction();
-    }
-
-    /// <summary>
-    /// Tries to process a queued secondary repeat when the action is no longer running.
-    /// </summary>
-    protected virtual void ProcessPendingSecondaryRepeat()
-    {
-        if (!PendingSecondaryRepeat)
-        {
-            return;
-        }
-
-        if (!AllowSecondaryHoldRepeat || !IsSecondaryUseActive)
-        {
-            PendingSecondaryRepeat = false;
-            return;
-        }
-
-        if (IsSecondaryActionRunning)
-        {
-            return;
-        }
-
-        if (!CanStartSecondaryAction())
-        {
-            PendingSecondaryRepeat = false;
-            return;
-        }
-
-        PendingSecondaryRepeat = false;
-        TryStartSecondaryAction();
     }
 
     /// <summary>
@@ -161,7 +111,8 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     }
 
     /// <summary>
-    /// Repeats the primary action only after the current one is fully finished.
+    /// While holding, the base class only queues a repeat request.
+    /// The actual restart is deferred until the Animator is ready.
     /// </summary>
     public override void OnPrimaryUseHeld()
     {
@@ -175,7 +126,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
             return;
         }
 
-        TryStartPrimaryAction();
+        PendingPrimaryRepeat = true;
     }
 
     /// <summary>
@@ -184,6 +135,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     public override void OnPrimaryUseEnded()
     {
         base.OnPrimaryUseEnded();
+        PendingPrimaryRepeat = false;
     }
 
     /// <summary>
@@ -204,7 +156,8 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     }
 
     /// <summary>
-    /// Repeats the secondary action only after the current one is fully finished.
+    /// While holding, the base class only queues a secondary repeat request.
+    /// The actual restart is deferred until the Animator is ready.
     /// </summary>
     public override void OnSecondaryUseHeld()
     {
@@ -218,7 +171,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
             return;
         }
 
-        TryStartSecondaryAction();
+        PendingSecondaryRepeat = true;
     }
 
     /// <summary>
@@ -227,6 +180,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     public override void OnSecondaryUseEnded()
     {
         base.OnSecondaryUseEnded();
+        PendingSecondaryRepeat = false;
     }
 
     /// <summary>
@@ -239,7 +193,6 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
 
         IsPrimaryActionRunning = false;
         IsSecondaryActionRunning = false;
-
         PendingPrimaryRepeat = false;
         PendingSecondaryRepeat = false;
 
@@ -251,11 +204,61 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     }
 
     /// <summary>
+    /// Tries to process a queued primary repeat when the action and the Animator are ready.
+    /// </summary>
+    protected virtual void ProcessPendingPrimaryRepeat()
+    {
+        if (!PendingPrimaryRepeat)
+        {
+            return;
+        }
+
+        if (!AllowPrimaryHoldRepeat || !IsPrimaryUseActive)
+        {
+            PendingPrimaryRepeat = false;
+            return;
+        }
+
+        if (IsPrimaryActionRunning || !IsAnimatorReadyForPrimaryAction())
+        {
+            return;
+        }
+
+        PendingPrimaryRepeat = false;
+        TryStartPrimaryAction();
+    }
+
+    /// <summary>
+    /// Tries to process a queued secondary repeat when the action and the Animator are ready.
+    /// </summary>
+    protected virtual void ProcessPendingSecondaryRepeat()
+    {
+        if (!PendingSecondaryRepeat)
+        {
+            return;
+        }
+
+        if (!AllowSecondaryHoldRepeat || !IsSecondaryUseActive)
+        {
+            PendingSecondaryRepeat = false;
+            return;
+        }
+
+        if (IsSecondaryActionRunning || !IsAnimatorReadyForSecondaryAction())
+        {
+            return;
+        }
+
+        PendingSecondaryRepeat = false;
+        TryStartSecondaryAction();
+    }
+
+    /// <summary>
     /// Attempts to start the primary action and trigger the corresponding animation.
     /// </summary>
     protected virtual void TryStartPrimaryAction()
     {
-        if (IsPrimaryActionRunning || !CanStartPrimaryAction())
+        if (IsPrimaryActionRunning || !CanStartPrimaryAction() || !IsAnimatorReadyForPrimaryAction())
         {
             return;
         }
@@ -271,7 +274,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     /// </summary>
     protected virtual void TryStartSecondaryAction()
     {
-        if (IsSecondaryActionRunning || !CanStartSecondaryAction())
+        if (IsSecondaryActionRunning || !CanStartSecondaryAction() || !IsAnimatorReadyForSecondaryAction())
         {
             return;
         }
@@ -280,6 +283,52 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
         SetAnimatorUsingState(true);
         TryPlayAnimatorTrigger(SecondaryUseTriggerName);
         OnSecondaryActionStarted();
+    }
+
+    /// <summary>
+    /// Checks whether the Animator is ready to accept a new primary trigger.
+    /// </summary>
+    protected virtual bool IsAnimatorReadyForPrimaryAction()
+    {
+        return IsAnimatorReadyForNewAction();
+    }
+
+    /// <summary>
+    /// Checks whether the Animator is ready to accept a new secondary trigger.
+    /// </summary>
+    protected virtual bool IsAnimatorReadyForSecondaryAction()
+    {
+        return IsAnimatorReadyForNewAction();
+    }
+
+    /// <summary>
+    /// Returns whether the Animator is outside transitions and no longer inside an action-tagged state.
+    /// </summary>
+    protected virtual bool IsAnimatorReadyForNewAction()
+    {
+        if (ItemAnimator == null)
+        {
+            return true;
+        }
+
+        if (ItemAnimator.IsInTransition(ActionAnimatorLayer))
+        {
+            return false;
+        }
+
+        if (!WaitUntilAnimatorLeavesActionState)
+        {
+            return true;
+        }
+
+        AnimatorStateInfo currentStateInfo = ItemAnimator.GetCurrentAnimatorStateInfo(ActionAnimatorLayer);
+
+        if (!string.IsNullOrWhiteSpace(ActionStateTag) && currentStateInfo.IsTag(ActionStateTag))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -390,14 +439,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
 
         if (AllowPrimaryHoldRepeat && IsPrimaryUseActive)
         {
-            if (DeferHoldRepeatToNextFrame)
-            {
-                PendingPrimaryRepeat = true;
-            }
-            else
-            {
-                TryStartPrimaryAction();
-            }
+            PendingPrimaryRepeat = true;
         }
     }
 
@@ -438,14 +480,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
 
         if (AllowSecondaryHoldRepeat && IsSecondaryUseActive)
         {
-            if (DeferHoldRepeatToNextFrame)
-            {
-                PendingSecondaryRepeat = true;
-            }
-            else
-            {
-                TryStartSecondaryAction();
-            }
+            PendingSecondaryRepeat = true;
         }
     }
 
