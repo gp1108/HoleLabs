@@ -12,12 +12,12 @@ TagManager:
   - Water
   - UI
   - PhysicsObjects
-  - ItemPhysicsLayer
-  - PlayerPhysicsLayerForObjects
+  - PlayerIgnoredPhysicsObjects
+  - 
   - Player
   - Tools
   - MiningLayer
-  - PlayerIgnoredPhysicsObjects
+  - 
   - 
   - 
   - 

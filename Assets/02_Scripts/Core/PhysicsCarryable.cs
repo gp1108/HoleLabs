@@ -1,212 +1,313 @@
 using UnityEngine;
 
 /// <summary>
-/// Handles physical dragging and interaction state for a carryable rigidbody object.
-/// Adds explicit runtime states, optional layer swap while interacted, automatic sleeping,
-/// magnetized support, and wake hooks for moving supports such as elevators.
+/// Physical carryable object driven by runtime spring anchors.
+/// This component owns the full interaction lifecycle for:
+/// - Player hold.
+/// - Magnet attachment.
+/// - Temporary post-release recovery.
+/// - Player collision ignore and temporary layer switching.
+/// - Automatic magnet break when the object lags too far behind.
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
 public sealed class PhysicsCarryable : MonoBehaviour
 {
+    /// <summary>
+    /// Runtime interaction state currently affecting this carryable.
+    /// </summary>
     public enum InteractionState
     {
-        Free = 0,
-        Held = 1,
-        Magnetized = 2,
-        ConveyorDriven = 3,
-        Sleeping = 4
+        Free,
+        Held,
+        Magnetized,
+        Released
     }
 
-    [Header("Hold Follow")]
-    [Tooltip("Position strength used to pull the object towards the hold anchor.")]
-    [SerializeField] private float HoldPositionStrength = 22f;
+    /// <summary>
+    /// Group of spring and rigidbody values used while attached to an anchor.
+    /// </summary>
+    [System.Serializable]
+    private struct AttachmentSettings
+    {
+        [Tooltip("Spring force applied by the runtime anchor joint.")]
+        public float Spring;
 
-    [Tooltip("Velocity damping applied while matching the hold target velocity.")]
-    [SerializeField] private float HoldVelocityDamping = 16f;
+        [Tooltip("Damping applied by the runtime anchor joint.")]
+        public float Damper;
 
-    [Tooltip("How much of the hold anchor velocity is injected into the object follow behaviour.")]
-    [SerializeField] private float HoldAnchorVelocityInfluence = 1f;
+        [Tooltip("Maximum allowed distance inside the spring joint.")]
+        public float MaxDistance;
 
-    [Tooltip("Maximum linear speed allowed while the object is being dragged.")]
-    [SerializeField] private float HeldMaxSpeed = 12f;
+        [Tooltip("Linear damping applied to the rigidbody while attached.")]
+        public float LinearDamping;
 
-    [Tooltip("Maximum acceleration applied while trying to follow the hold anchor.")]
-    [SerializeField] private float MaxHoldAcceleration = 70f;
+        [Tooltip("Angular damping applied to the rigidbody while attached.")]
+        public float AngularDamping;
 
-    [Tooltip("Maximum positional error considered for follow correction.")]
-    [SerializeField] private float MaxHoldErrorDistance = 1.25f;
+        [Tooltip("If true, gravity is disabled while attached.")]
+        public bool DisableGravity;
+    }
 
-    [Tooltip("Minimum forward distance allowed between the camera and the hold target point.")]
-    [SerializeField] private float MinDistanceFromCamera = 1.15f;
+    /// <summary>
+    /// Group of settings used while the object is transitioning from attached back to free state.
+    /// </summary>
+    [System.Serializable]
+    private struct ReleaseSettings
+    {
+        [Tooltip("Minimum time after releasing during which the object keeps ignoring the player.")]
+        public float IgnoreMinimumTime;
+
+        [Tooltip("Maximum time after releasing before the object is forced back to its normal collision state.")]
+        public float IgnoreMaximumTime;
+
+        [Tooltip("If true, the object can finish its release state immediately once it falls asleep.")]
+        public bool RestoreOnSleep;
+
+        [Tooltip("Velocity inherited from the followed anchor when the player releases a held object.")]
+        public float HeldReleaseVelocityInfluence;
+
+        [Tooltip("Impulse multiplier applied when the object is launched from the magnet.")]
+        public float MagnetLaunchImpulseMultiplier;
+
+        [Tooltip("Seconds that interpolation remains enabled after releasing the object.")]
+        public float InterpolationGraceTime;
+    }
+
+    /// <summary>
+    /// Group of settings used to break a magnet attachment when the object cannot keep up.
+    /// </summary>
+    [System.Serializable]
+    private struct MagnetBreakSettings
+    {
+        [Tooltip("Soft distance from the magnet target after which break time starts accumulating.")]
+        public float BreakDistance;
+
+        [Tooltip("Hard distance from the magnet target that forces an immediate detach.")]
+        public float HardBreakDistance;
+
+        [Tooltip("Time allowed beyond the soft break distance before the object detaches.")]
+        public float BreakGraceTime;
+
+        [Tooltip("Time during which the object cannot be magnetized again after a forced break.")]
+        public float ReattachCooldown;
+    }
+
+    [Header("Shared")]
+    [Tooltip("Maximum distance allowed between the hold anchor and the rigidbody before manual carry breaks automatically.")]
+    [SerializeField] private float BreakHoldDistance = 2.6f;
+
+    [Tooltip("If true, interpolation is forced while attached to a runtime anchor.")]
+    [SerializeField] private bool ForceInterpolationWhileAttached = true;
+
+    [Header("Hold Settings")]
+    [SerializeField]
+    private AttachmentSettings HeldSettings = new AttachmentSettings
+    {
+        Spring = 115f,
+        Damper = 22f,
+        MaxDistance = 0.02f,
+        LinearDamping = 3f,
+        AngularDamping = 1.2f,
+        DisableGravity = false
+    };
+
+    [Header("Magnet Settings")]
+    [SerializeField]
+    private AttachmentSettings MagnetSettings = new AttachmentSettings
+    {
+        Spring = 100f,
+        Damper = 25f,
+        MaxDistance = 0.01f,
+        LinearDamping = 3f,
+        AngularDamping = 1.5f,
+        DisableGravity = false
+    };
+
+    [SerializeField]
+    private MagnetBreakSettings MagnetBreakConfig = new MagnetBreakSettings
+    {
+        BreakDistance = 1.25f,
+        HardBreakDistance = 1.9f,
+        BreakGraceTime = 0.12f,
+        ReattachCooldown = 0.35f
+    };
 
     [Header("Release")]
-    [Tooltip("Additional velocity inherited from the hold anchor when the object is released.")]
-    [SerializeField] private float ReleaseVelocityInfluence = 0.35f;
+    [SerializeField]
+    private ReleaseSettings ReleaseConfig = new ReleaseSettings
+    {
+        IgnoreMinimumTime = 0.15f,
+        IgnoreMaximumTime = 1.25f,
+        RestoreOnSleep = true,
+        HeldReleaseVelocityInfluence = 0.35f,
+        MagnetLaunchImpulseMultiplier = 1f,
+        InterpolationGraceTime = 0.2f
+    };
 
-    [Tooltip("Distance from the hold anchor after which the object is dropped automatically.")]
-    [SerializeField] private float BreakHoldDistance = 2.25f;
-
-    [Header("Held Physics")]
-    [Tooltip("Linear damping applied to the rigidbody while it is being held.")]
-    [SerializeField] private float HeldLinearDamping = 4f;
-
-    [Tooltip("Angular damping applied to the rigidbody while it is being held.")]
-    [SerializeField] private float HeldAngularDamping = 8f;
-
-    [Tooltip("If true, gravity is disabled while the object is being held.")]
-    [SerializeField] private bool DisableGravityWhileHeld = true;
-
-    [Tooltip("If true, collisions against the player colliders are ignored while the object is held.")]
-    [SerializeField] private bool IgnorePlayerCollisionWhileHeld = true;
-
-    [Tooltip("If true, the object rotation is frozen while the object is held.")]
-    [SerializeField] private bool FreezeRotationWhileHeld = false;
-
-    [Header("Magnetized Physics")]
-    [Tooltip("Time after the last magnet influence frame before the object leaves the magnetized state.")]
-    [SerializeField] private float MagnetInfluenceGraceTime = 0.08f;
-
-    [Header("Interaction Layers")]
-    [Tooltip("If true, the object swaps to a player-ignored layer while being held or magnetized.")]
-    [SerializeField] private bool UsePlayerIgnoredInteractionLayer = true;
-
-    [Tooltip("Layer name used while the object is free or sleeping.")]
-    [SerializeField] private string FreeLayerName = "PhysicsObjects";
-
-    [Tooltip("Layer name used while the object is held or magnetized so it no longer collides with the player.")]
-    [SerializeField] private string PlayerIgnoredInteractionLayerName = "PlayerIgnoredPhysicsObjects";
-
-    [Header("Sleep")]
-    [Tooltip("If true, the rigidbody is automatically put to sleep when idle.")]
-    [SerializeField] private bool EnableAutoSleep = true;
-
-    [Tooltip("Minimum time the object must stay almost still before sleeping.")]
-    [SerializeField] private float SleepDelay = 0.75f;
-
-    [Tooltip("Linear speed threshold used to consider the object idle.")]
-    [SerializeField] private float SleepLinearVelocityThreshold = 0.05f;
-
-    [Tooltip("Angular speed threshold used to consider the object idle.")]
-    [SerializeField] private float SleepAngularVelocityThreshold = 0.05f;
-
-    [Tooltip("Minimum collision impulse required from another physics object to wake this sleeping object.")]
-    [SerializeField] private float WakeImpactImpulseThreshold = 1.5f;
-
-    [Tooltip("If true, collisions wake the object back up when it was sleeping.")]
-    [SerializeField] private bool WakeOnCollision = true;
-    [Tooltip("If true, collisions with other physicsObjects wake the object back up when it was sleeping.")]
-    [SerializeField] private bool WakeOnCollisionWithPhysicObject = true;
+    [Header("Collision")]
+    [Tooltip("Temporary layer applied while this carryable must ignore collisions against the player.")]
+    [SerializeField] private string IgnoredByPlayerLayerName = "PlayerIgnoredPhysicsObjects";
 
     [Header("Debug")]
-    [Tooltip("Draws the hold target relation in the Scene view.")]
-    [SerializeField] private bool DrawDebug = false;
-
-    [Tooltip("Logs interaction state changes to the console.")]
+    [Tooltip("Logs state changes and attachment events to the console.")]
     [SerializeField] private bool DebugLogs = false;
 
-    [Tooltip("Optional camera override used for the minimum camera distance check.")]
-    [SerializeField] private Camera OverrideCamera;
-
+    /// <summary>
+    /// Cached rigidbody driven by the runtime anchor.
+    /// </summary>
     private Rigidbody RigidbodyComponent;
-    private Transform HoldAnchor;
-    private Collider[] PlayerColliders;
+
+    /// <summary>
+    /// Cached colliders that belong to this carryable hierarchy.
+    /// </summary>
     private Collider[] CachedColliders;
-    private Transform[] CachedHierarchyTransforms;
+
+    /// <summary>
+    /// Cached transforms used to restore original layers after temporary interaction changes.
+    /// </summary>
+    private Transform[] CachedTransforms;
+
+    /// <summary>
+    /// Original layer of every transform in the hierarchy.
+    /// </summary>
+    private int[] CachedOriginalLayers;
+
+    /// <summary>
+    /// Resolved layer used while the carryable must ignore the player.
+    /// </summary>
+    private int IgnoredByPlayerLayer = -1;
+
+    /// <summary>
+    /// Current runtime interaction state.
+    /// </summary>
     private InteractionState CurrentState = InteractionState.Free;
 
-    private float SavedLinearDamping;
-    private float SavedAngularDamping;
-    private bool SavedUseGravity;
-    private CollisionDetectionMode SavedCollisionDetectionMode;
-    private RigidbodyInterpolation SavedInterpolation;
-    private RigidbodyConstraints SavedConstraints;
+    /// <summary>
+    /// Default interpolation restored after temporary interaction smoothing.
+    /// </summary>
+    private RigidbodyInterpolation DefaultInterpolation;
 
-    private Vector3 LastHoldAnchorPosition;
-    private Vector3 HoldAnchorVelocity;
-    private float LastMagnetInfluenceTime = float.NegativeInfinity;
-    private float IdleTimer;
+    /// <summary>
+    /// Default collision mode restored after temporary interaction changes.
+    /// </summary>
+    private CollisionDetectionMode DefaultCollisionDetectionMode;
 
-    private int ResolvedFreeLayer = -1;
-    private int ResolvedPlayerIgnoredLayer = -1;
-    private bool HasResolvedPlayerIgnoredLayer;
+    /// <summary>
+    /// Default linear damping restored after temporary interaction changes.
+    /// </summary>
+    private float DefaultLinearDamping;
 
+    /// <summary>
+    /// Default angular damping restored after temporary interaction changes.
+    /// </summary>
+    private float DefaultAngularDamping;
+
+    /// <summary>
+    /// Default gravity flag restored after temporary interaction changes.
+    /// </summary>
+    private bool DefaultUseGravity;
+
+    /// <summary>
+    /// Current runtime anchor target followed by the anchor follower.
+    /// </summary>
+    private Transform ActiveAnchorTarget;
+
+    /// <summary>
+    /// Runtime anchor object created while attached.
+    /// </summary>
+    private GameObject ActiveAnchorObject;
+
+    /// <summary>
+    /// Component that keeps the runtime anchor aligned to its target transform.
+    /// </summary>
+    private JointAnchorFollower ActiveAnchorFollower;
+
+    /// <summary>
+    /// Spring joint created on the runtime anchor and connected to this rigidbody.
+    /// </summary>
+    private SpringJoint ActiveJoint;
+
+    /// <summary>
+    /// Player colliders currently ignored by this carryable.
+    /// </summary>
+    private Collider[] IgnoredPlayerColliders;
+
+    /// <summary>
+    /// Previous anchor position used to estimate anchor velocity.
+    /// </summary>
+    private Vector3 LastAnchorPosition;
+
+    /// <summary>
+    /// Current anchor velocity used for manual release inheritance.
+    /// </summary>
+    private Vector3 AnchorVelocity;
+
+    /// <summary>
+    /// Countdown used to restore default interpolation after releasing.
+    /// </summary>
+    private float InterpolationGraceTimer;
+
+    /// <summary>
+    /// Time spent in the temporary released state.
+    /// </summary>
+    private float ReleasedTimer;
+
+    /// <summary>
+    /// Time accumulated while the magnetized object stays too far away from its target.
+    /// </summary>
+    private float MagnetBreakTimer;
+
+    /// <summary>
+    /// Remaining cooldown that blocks magnet reattachment after a forced break.
+    /// </summary>
+    private float MagnetReattachCooldownTimer;
+
+    /// <summary>
+    /// Exposes the cached rigidbody to external systems that need direct physics access.
+    /// </summary>
+    public Rigidbody Rigidbody => RigidbodyComponent;
+
+    /// <summary>
+    /// Initializes cached references and stores default rigidbody values.
+    /// </summary>
     private void Awake()
     {
         RigidbodyComponent = GetComponent<Rigidbody>();
         CachedColliders = GetComponentsInChildren<Collider>(true);
-        CachedHierarchyTransforms = GetComponentsInChildren<Transform>(true);
+        CachedTransforms = GetComponentsInChildren<Transform>(true);
 
-        SavedLinearDamping = RigidbodyComponent.linearDamping;
-        SavedAngularDamping = RigidbodyComponent.angularDamping;
-        SavedUseGravity = RigidbodyComponent.useGravity;
-        SavedCollisionDetectionMode = RigidbodyComponent.collisionDetectionMode;
-        SavedInterpolation = RigidbodyComponent.interpolation;
-        SavedConstraints = RigidbodyComponent.constraints;
+        DefaultInterpolation = RigidbodyComponent.interpolation;
+        DefaultCollisionDetectionMode = RigidbodyComponent.collisionDetectionMode;
+        DefaultLinearDamping = RigidbodyComponent.linearDamping;
+        DefaultAngularDamping = RigidbodyComponent.angularDamping;
+        DefaultUseGravity = RigidbodyComponent.useGravity;
 
-        ResolveInteractionLayers();
-        ApplyFreeState();
+        CacheOriginalLayers();
+        ResolveIgnoredByPlayerLayer();
     }
 
+    /// <summary>
+    /// Updates anchor tracking, magnet break checks, released recovery and interpolation restoration.
+    /// </summary>
     private void FixedUpdate()
     {
-        switch (CurrentState)
-        {
-            case InteractionState.Held:
-                if (HoldAnchor != null)
-                {
-                    UpdateAnchorVelocity();
-                    UpdateHoldDrag();
-                    CheckAutoDrop();
-                }
-                break;
-
-            case InteractionState.Magnetized:
-                if (Time.time - LastMagnetInfluenceTime > MagnetInfluenceGraceTime)
-                {
-                    SetInteractionState(InteractionState.Free);
-                }
-                break;
-
-            case InteractionState.ConveyorDriven:
-                RigidbodyComponent.WakeUp();
-                break;
-        }
-
-        UpdateSleepState();
+        UpdateMagnetReattachCooldown();
+        UpdateAnchorTracking();
+        UpdateReleasedState();
+        UpdateInterpolationGrace();
     }
 
-    private void OnCollisionEnter(Collision collision)
+    /// <summary>
+    /// Ensures the object is fully restored if it gets disabled while attached.
+    /// </summary>
+    private void OnDisable()
     {
-        if (CurrentState != InteractionState.Sleeping)
-        {
-            return;
-        }
-
-        if (WakeOnCollision)
-        {
-            ForceWakeUp();
-            return;
-        }
-
-        if (!WakeOnCollisionWithPhysicObject)
-        {
-            return;
-        }
-
-        if (collision.gameObject.layer != LayerMask.NameToLayer("PhysicsObjects") &&
-            collision.gameObject.layer != LayerMask.NameToLayer("PlayerIgnoredPhysicsObjects"))
-        {
-            return;
-        }
-
-        if (collision.impulse.magnitude < WakeImpactImpulseThreshold)
-        {
-            return;
-        }
-
-        ForceWakeUp();
+        ClearAttachmentImmediate(true, false);
     }
 
+    /// <summary>
+    /// Starts manual carry using the provided hold anchor.
+    /// </summary>
     public void BeginHold(Transform NewHoldAnchor, Collider[] NewPlayerColliders)
     {
         if (NewHoldAnchor == null)
@@ -214,25 +315,12 @@ public sealed class PhysicsCarryable : MonoBehaviour
             return;
         }
 
-        if (CurrentState == InteractionState.Held)
-        {
-            EndHold();
-        }
-
-        HoldAnchor = NewHoldAnchor;
-        PlayerColliders = NewPlayerColliders;
-        LastHoldAnchorPosition = HoldAnchor.position;
-        HoldAnchorVelocity = Vector3.zero;
-
-        SetInteractionState(InteractionState.Held);
-        SetIgnorePlayerCollision(true);
-
-        if (DebugLogs)
-        {
-            Debug.Log($"Begin hold: {name}");
-        }
+        BeginAttachment(InteractionState.Held, NewHoldAnchor, NewPlayerColliders, HeldSettings, "HeldAnchor");
     }
 
+    /// <summary>
+    /// Ends manual carry and enters the released state.
+    /// </summary>
     public void EndHold()
     {
         if (CurrentState != InteractionState.Held)
@@ -240,382 +328,572 @@ public sealed class PhysicsCarryable : MonoBehaviour
             return;
         }
 
-        SetIgnorePlayerCollision(false);
-        RigidbodyComponent.linearVelocity += HoldAnchorVelocity * ReleaseVelocityInfluence;
-
-        HoldAnchor = null;
-        PlayerColliders = null;
-        HoldAnchorVelocity = Vector3.zero;
-
-        SetInteractionState(InteractionState.Free);
-
-        if (DebugLogs)
-        {
-            Debug.Log($"End hold: {name}");
-        }
+        RigidbodyComponent.linearVelocity += AnchorVelocity * ReleaseConfig.HeldReleaseVelocityInfluence;
+        BeginReleasedState();
     }
 
-    public void NotifyMagnetInfluence()
+    /// <summary>
+    /// Returns true when the object is currently allowed to attach to a magnet.
+    /// </summary>
+    public bool CanAttachToMagnet()
     {
-        LastMagnetInfluenceTime = Time.time;
+        return CurrentState != InteractionState.Held && MagnetReattachCooldownTimer <= 0f;
+    }
 
-        if (CurrentState == InteractionState.Held)
+    /// <summary>
+    /// Starts magnet attachment if the object is allowed to attach.
+    /// </summary>
+    public void BeginMagnet(Transform MagnetTarget, Collider[] NewPlayerColliders)
+    {
+        if (MagnetTarget == null || !CanAttachToMagnet())
         {
             return;
         }
 
+        BeginAttachment(InteractionState.Magnetized, MagnetTarget, NewPlayerColliders, MagnetSettings, "MagnetAnchor");
+    }
+
+    /// <summary>
+    /// Ends magnet attachment and enters the released state.
+    /// </summary>
+    public void EndMagnet(Collider[] CurrentPlayerColliders)
+    {
         if (CurrentState != InteractionState.Magnetized)
         {
-            SetInteractionState(InteractionState.Magnetized);
-        }
-        else
-        {
-            RigidbodyComponent.WakeUp();
-        }
-    }
-
-    public void SetConveyorDriven(bool IsConveyorDriven)
-    {
-        if (CurrentState == InteractionState.Held)
-        {
             return;
         }
 
-        if (IsConveyorDriven)
-        {
-            SetInteractionState(InteractionState.ConveyorDriven);
-        }
-        else if (CurrentState == InteractionState.ConveyorDriven)
-        {
-            SetInteractionState(InteractionState.Free);
-        }
+        BeginReleasedState();
     }
 
-    public void ForceWakeUp()
+    /// <summary>
+    /// Compatibility method kept for older callers. It only wakes the rigidbody.
+    /// </summary>
+    public void NotifyMagnetInfluence()
     {
-        IdleTimer = 0f;
-
-        RigidbodyComponent.isKinematic = false;
         RigidbodyComponent.WakeUp();
-
-        if (CurrentState == InteractionState.Sleeping)
-        {
-            SetInteractionState(InteractionState.Free);
-        }
     }
 
+    /// <summary>
+    /// Compatibility method kept for older conveyor integrations. It intentionally does nothing.
+    /// </summary>
+    public void SetConveyorDriven(bool IsConveyorDriven)
+    {
+    }
+
+    /// <summary>
+    /// Launches the object away from the magnet with an impulse.
+    /// </summary>
+    public void LaunchFromMagnet(Vector3 WorldImpulse)
+    {
+        if (CurrentState == InteractionState.Magnetized)
+        {
+            BeginReleasedState();
+        }
+
+        RigidbodyComponent.AddForce(WorldImpulse * ReleaseConfig.MagnetLaunchImpulseMultiplier, ForceMode.Impulse);
+    }
+
+    /// <summary>
+    /// Returns true when the object is currently held by the player.
+    /// </summary>
     public bool GetIsHeld()
     {
         return CurrentState == InteractionState.Held;
     }
 
+    /// <summary>
+    /// Returns true when the object is currently attached to a magnet.
+    /// </summary>
     public bool GetIsMagnetized()
     {
         return CurrentState == InteractionState.Magnetized;
     }
 
+    /// <summary>
+    /// Returns the current runtime interaction state.
+    /// </summary>
     public InteractionState GetInteractionState()
     {
         return CurrentState;
     }
 
-    private void UpdateAnchorVelocity()
+    /// <summary>
+    /// Begins a new attachment mode using the provided settings and anchor target.
+    /// </summary>
+    private void BeginAttachment(
+        InteractionState NewState,
+        Transform NewAnchorTarget,
+        Collider[] NewPlayerColliders,
+        AttachmentSettings Settings,
+        string AnchorName)
     {
-        float DeltaTime = Mathf.Max(Time.fixedDeltaTime, 0.0001f);
-        Vector3 CurrentAnchorPosition = HoldAnchor.position;
-        HoldAnchorVelocity = (CurrentAnchorPosition - LastHoldAnchorPosition) / DeltaTime;
-        LastHoldAnchorPosition = CurrentAnchorPosition;
+        if (NewState == CurrentState && ActiveAnchorTarget == NewAnchorTarget)
+        {
+            return;
+        }
+
+        ClearAttachmentImmediate(false, false);
+
+        ActiveAnchorTarget = NewAnchorTarget;
+        IgnoredPlayerColliders = NewPlayerColliders;
+        LastAnchorPosition = ActiveAnchorTarget.position;
+        AnchorVelocity = Vector3.zero;
+        MagnetBreakTimer = 0f;
+
+        CreateRuntimeAnchor(AnchorName, Settings);
+        ApplyAttachmentPhysics(Settings);
+
+        SetIgnorePlayerCollision(true);
+        SetIgnoredByPlayerLayer(true);
+
+        if (NewState == InteractionState.Magnetized)
+        {
+            MagnetReattachCooldownTimer = 0f;
+        }
+
+        CurrentState = NewState;
+        Log("Attached as " + CurrentState + ".");
     }
 
-    private void UpdateHoldDrag()
+    /// <summary>
+    /// Creates the runtime anchor, follower and spring joint used by the current attachment.
+    /// </summary>
+    private void CreateRuntimeAnchor(string AnchorName, AttachmentSettings Settings)
     {
-        Vector3 DesiredPoint = GetClampedDesiredPoint();
-        Vector3 CurrentPoint = RigidbodyComponent.worldCenterOfMass;
-        Vector3 PositionError = DesiredPoint - CurrentPoint;
+        ActiveAnchorObject = new GameObject(AnchorName);
+        ActiveAnchorObject.transform.SetPositionAndRotation(ActiveAnchorTarget.position, ActiveAnchorTarget.rotation);
 
-        if (PositionError.magnitude > MaxHoldErrorDistance)
+        Rigidbody AnchorRigidbody = ActiveAnchorObject.AddComponent<Rigidbody>();
+        AnchorRigidbody.isKinematic = true;
+        AnchorRigidbody.useGravity = false;
+        AnchorRigidbody.interpolation = RigidbodyInterpolation.Interpolate;
+
+        ActiveAnchorFollower = ActiveAnchorObject.AddComponent<JointAnchorFollower>();
+        ActiveAnchorFollower.TargetTransform = ActiveAnchorTarget;
+        ActiveAnchorFollower.FollowRotation = true;
+
+        ActiveJoint = ActiveAnchorObject.AddComponent<SpringJoint>();
+        ActiveJoint.connectedBody = RigidbodyComponent;
+        ActiveJoint.autoConfigureConnectedAnchor = false;
+        ActiveJoint.connectedAnchor = RigidbodyComponent.transform.InverseTransformPoint(RigidbodyComponent.worldCenterOfMass);
+        ActiveJoint.anchor = Vector3.zero;
+        ActiveJoint.spring = Settings.Spring;
+        ActiveJoint.damper = Settings.Damper;
+        ActiveJoint.maxDistance = Settings.MaxDistance;
+        ActiveJoint.minDistance = 0f;
+        ActiveJoint.tolerance = 0f;
+        ActiveJoint.enableCollision = false;
+        ActiveJoint.breakForce = Mathf.Infinity;
+        ActiveJoint.breakTorque = Mathf.Infinity;
+    }
+
+    /// <summary>
+    /// Applies the rigidbody values required while attached to a runtime anchor.
+    /// </summary>
+    private void ApplyAttachmentPhysics(AttachmentSettings Settings)
+    {
+        RigidbodyComponent.linearDamping = Settings.LinearDamping;
+        RigidbodyComponent.angularDamping = Settings.AngularDamping;
+        RigidbodyComponent.useGravity = !Settings.DisableGravity;
+        RigidbodyComponent.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        RigidbodyComponent.WakeUp();
+
+        if (ForceInterpolationWhileAttached)
         {
-            PositionError = PositionError.normalized * MaxHoldErrorDistance;
-        }
-
-        Vector3 DesiredVelocity =
-            (PositionError * HoldPositionStrength) +
-            (HoldAnchorVelocity * HoldAnchorVelocityInfluence);
-
-        Vector3 VelocityError = DesiredVelocity - RigidbodyComponent.linearVelocity;
-        Vector3 RequiredAcceleration = VelocityError * HoldVelocityDamping;
-        Vector3 ClampedAcceleration = Vector3.ClampMagnitude(RequiredAcceleration, MaxHoldAcceleration);
-
-        RigidbodyComponent.AddForce(ClampedAcceleration, ForceMode.Acceleration);
-
-        float MaxSpeedSquared = HeldMaxSpeed * HeldMaxSpeed;
-
-        if (RigidbodyComponent.linearVelocity.sqrMagnitude > MaxSpeedSquared)
-        {
-            RigidbodyComponent.linearVelocity = RigidbodyComponent.linearVelocity.normalized * HeldMaxSpeed;
-        }
-
-        if (DrawDebug)
-        {
-            Debug.DrawLine(CurrentPoint, DesiredPoint, Color.yellow);
-            Debug.DrawRay(DesiredPoint, HoldAnchorVelocity * 0.05f, Color.cyan);
+            RigidbodyComponent.interpolation = RigidbodyInterpolation.Interpolate;
         }
     }
 
-    private Vector3 GetClampedDesiredPoint()
+    /// <summary>
+    /// Enters the temporary released state after hold or magnet detach.
+    /// </summary>
+    private void BeginReleasedState()
     {
-        Vector3 DesiredPoint = HoldAnchor.position;
-        Camera ActiveCamera = OverrideCamera != null ? OverrideCamera : Camera.main;
+        DestroyRuntimeAnchor();
 
-        if (ActiveCamera == null)
-        {
-            return DesiredPoint;
-        }
+        RestoreDefaultPhysics(true);
+        RigidbodyComponent.WakeUp();
 
-        Vector3 CameraPosition = ActiveCamera.transform.position;
-        Vector3 CameraForward = ActiveCamera.transform.forward;
+        ReleasedTimer = 0f;
+        CurrentState = InteractionState.Released;
 
-        if (CameraForward.sqrMagnitude < 0.0001f)
-        {
-            CameraForward = Vector3.forward;
-        }
-
-        CameraForward.Normalize();
-
-        Vector3 DesiredFromCamera = DesiredPoint - CameraPosition;
-        float ForwardDistance = Vector3.Dot(DesiredFromCamera, CameraForward);
-
-        if (ForwardDistance < MinDistanceFromCamera)
-        {
-            DesiredPoint = CameraPosition + CameraForward * MinDistanceFromCamera;
-        }
-
-        return DesiredPoint;
+        Log("Entered released state.");
     }
 
-    private void CheckAutoDrop()
+    /// <summary>
+    /// Finalizes the released state and restores normal collision with the player.
+    /// </summary>
+    private void FinalizeReleasedState()
     {
-        Vector3 DesiredPoint = GetClampedDesiredPoint();
-        float DistanceToAnchor = Vector3.Distance(RigidbodyComponent.worldCenterOfMass, DesiredPoint);
+        SetIgnorePlayerCollision(false);
+        SetIgnoredByPlayerLayer(false);
 
+        IgnoredPlayerColliders = null;
+        ReleasedTimer = 0f;
+        CurrentState = InteractionState.Free;
+
+        Log("Released state finished.");
+    }
+
+    /// <summary>
+    /// Clears the current attachment immediately and fully restores the object state.
+    /// This is intended for disable or hard reset paths.
+    /// </summary>
+    private void ClearAttachmentImmediate(bool RestorePhysicsDefaults, bool UseInterpolationGrace)
+    {
+        SetIgnorePlayerCollision(false);
+        SetIgnoredByPlayerLayer(false);
+
+        DestroyRuntimeAnchor();
+
+        ActiveAnchorTarget = null;
+        IgnoredPlayerColliders = null;
+        AnchorVelocity = Vector3.zero;
+        ReleasedTimer = 0f;
+        MagnetBreakTimer = 0f;
+
+        if (RestorePhysicsDefaults && RigidbodyComponent != null)
+        {
+            RestoreDefaultPhysics(UseInterpolationGrace);
+        }
+
+        CurrentState = InteractionState.Free;
+    }
+
+    /// <summary>
+    /// Destroys the runtime anchor hierarchy if it exists.
+    /// </summary>
+    private void DestroyRuntimeAnchor()
+    {
+        if (ActiveAnchorObject != null)
+        {
+            Destroy(ActiveAnchorObject);
+        }
+
+        ActiveAnchorObject = null;
+        ActiveAnchorFollower = null;
+        ActiveJoint = null;
+        ActiveAnchorTarget = null;
+    }
+
+    /// <summary>
+    /// Restores the rigidbody defaults that were active before attachment.
+    /// </summary>
+    private void RestoreDefaultPhysics(bool UseInterpolationGrace)
+    {
+        RigidbodyComponent.linearDamping = DefaultLinearDamping;
+        RigidbodyComponent.angularDamping = DefaultAngularDamping;
+        RigidbodyComponent.useGravity = DefaultUseGravity;
+        RigidbodyComponent.collisionDetectionMode = DefaultCollisionDetectionMode;
+
+        if (UseInterpolationGrace && ForceInterpolationWhileAttached)
+        {
+            InterpolationGraceTimer = ReleaseConfig.InterpolationGraceTime;
+        }
+        else
+        {
+            InterpolationGraceTimer = 0f;
+            RigidbodyComponent.interpolation = DefaultInterpolation;
+        }
+    }
+
+    /// <summary>
+    /// Updates runtime anchor tracking and evaluates hold and magnet break conditions.
+    /// </summary>
+    private void UpdateAnchorTracking()
+    {
+        if (ActiveAnchorFollower == null || ActiveAnchorTarget == null)
+        {
+            AnchorVelocity = Vector3.zero;
+            return;
+        }
+
+        Vector3 CurrentAnchorPosition = ActiveAnchorTarget.position;
+        AnchorVelocity = (CurrentAnchorPosition - LastAnchorPosition) / Mathf.Max(Time.fixedDeltaTime, 0.0001f);
+        LastAnchorPosition = CurrentAnchorPosition;
+
+        switch (CurrentState)
+        {
+            case InteractionState.Held:
+                UpdateHoldBreakCheck(CurrentAnchorPosition);
+                break;
+
+            case InteractionState.Magnetized:
+                UpdateMagnetBreakCheck(CurrentAnchorPosition);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Breaks manual carry if the object drifts too far away from the hold anchor.
+    /// </summary>
+    private void UpdateHoldBreakCheck(Vector3 CurrentAnchorPosition)
+    {
+        float DistanceToAnchor = Vector3.Distance(RigidbodyComponent.worldCenterOfMass, CurrentAnchorPosition);
         if (DistanceToAnchor > BreakHoldDistance)
         {
-            if (DebugLogs)
-            {
-                Debug.Log($"Auto drop because '{name}' exceeded break distance.");
-            }
-
             EndHold();
         }
     }
 
-    private void UpdateSleepState()
+    /// <summary>
+    /// Breaks magnet attachment when the object lags too far behind the magnet target.
+    /// </summary>
+    private void UpdateMagnetBreakCheck(Vector3 CurrentAnchorPosition)
     {
-        if (!EnableAutoSleep)
+        float DistanceToAnchor = Vector3.Distance(RigidbodyComponent.worldCenterOfMass, CurrentAnchorPosition);
+
+        if (DistanceToAnchor >= MagnetBreakConfig.HardBreakDistance)
+        {
+            ForceBreakMagnet();
+            return;
+        }
+
+        if (DistanceToAnchor >= MagnetBreakConfig.BreakDistance)
+        {
+            MagnetBreakTimer += Time.fixedDeltaTime;
+
+            if (MagnetBreakTimer >= MagnetBreakConfig.BreakGraceTime)
+            {
+                ForceBreakMagnet();
+            }
+
+            return;
+        }
+
+        MagnetBreakTimer = 0f;
+    }
+
+    /// <summary>
+    /// Forces the current magnet attachment to break and starts a reattach cooldown.
+    /// </summary>
+    private void ForceBreakMagnet()
+    {
+        if (CurrentState != InteractionState.Magnetized)
         {
             return;
         }
 
-        if (CurrentState == InteractionState.Held || CurrentState == InteractionState.Magnetized || CurrentState == InteractionState.ConveyorDriven)
-        {
-            IdleTimer = 0f;
-            return;
-        }
+        MagnetBreakTimer = 0f;
+        MagnetReattachCooldownTimer = MagnetBreakConfig.ReattachCooldown;
 
-        if (CurrentState == InteractionState.Sleeping)
-        {
-            return;
-        }
-
-        bool IsNearlyStill =
-            RigidbodyComponent.linearVelocity.magnitude <= SleepLinearVelocityThreshold &&
-            RigidbodyComponent.angularVelocity.magnitude <= SleepAngularVelocityThreshold;
-
-        if (!IsNearlyStill)
-        {
-            IdleTimer = 0f;
-            return;
-        }
-
-        IdleTimer += Time.fixedDeltaTime;
-
-        if (IdleTimer >= SleepDelay)
-        {
-            RigidbodyComponent.Sleep();
-            SetInteractionState(InteractionState.Sleeping);
-        }
+        BeginReleasedState();
+        Log("Magnet attachment broke.");
     }
 
-    private void SetInteractionState(InteractionState NewState)
+    /// <summary>
+    /// Updates the temporary released state and restores normal collision when safe.
+    /// </summary>
+    private void UpdateReleasedState()
     {
-        if (CurrentState == NewState)
+        if (CurrentState != InteractionState.Released)
         {
             return;
         }
 
-        CurrentState = NewState;
+        ReleasedTimer += Time.fixedDeltaTime;
 
-        switch (CurrentState)
+        bool HasMetMinimumTime = ReleasedTimer >= ReleaseConfig.IgnoreMinimumTime;
+        bool HasReachedMaximumTime = ReleasedTimer >= ReleaseConfig.IgnoreMaximumTime;
+        bool IsSleeping = ReleaseConfig.RestoreOnSleep && RigidbodyComponent.IsSleeping();
+        bool IsStillOverlappingPlayer = IsOverlappingIgnoredPlayerColliders();
+
+        if ((HasMetMinimumTime && !IsStillOverlappingPlayer) || IsSleeping || HasReachedMaximumTime)
         {
-            case InteractionState.Free:
-                ApplyFreeState();
-                break;
-
-            case InteractionState.Held:
-                ApplyHeldState();
-                break;
-
-            case InteractionState.Magnetized:
-                ApplyMagnetizedState();
-                break;
-
-            case InteractionState.ConveyorDriven:
-                ApplyConveyorDrivenState();
-                break;
-
-            case InteractionState.Sleeping:
-                ApplySleepingState();
-                break;
-        }
-
-        if (DebugLogs)
-        {
-            Debug.Log($"Carryable state changed to {CurrentState}: {name}");
+            FinalizeReleasedState();
         }
     }
 
-    private void ApplyFreeState()
+    /// <summary>
+    /// Updates the interpolation grace countdown after release.
+    /// </summary>
+    private void UpdateInterpolationGrace()
     {
-        RigidbodyComponent.isKinematic = false;
-        IdleTimer = 0f;
-        RigidbodyComponent.linearDamping = SavedLinearDamping;
-        RigidbodyComponent.angularDamping = SavedAngularDamping;
-        RigidbodyComponent.useGravity = SavedUseGravity;
-        RigidbodyComponent.collisionDetectionMode = SavedCollisionDetectionMode;
-        RigidbodyComponent.interpolation = SavedInterpolation;
-        RigidbodyComponent.constraints = SavedConstraints;
-
-        ApplyInteractionLayer(false);
-        RigidbodyComponent.WakeUp();
-    }
-
-    private void ApplyHeldState()
-    {
-        RigidbodyComponent.isKinematic = false;
-        IdleTimer = 0f;
-        RigidbodyComponent.linearDamping = HeldLinearDamping;
-        RigidbodyComponent.angularDamping = HeldAngularDamping;
-        RigidbodyComponent.useGravity = DisableGravityWhileHeld ? false : SavedUseGravity;
-        RigidbodyComponent.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        RigidbodyComponent.interpolation = RigidbodyInterpolation.Interpolate;
-        RigidbodyComponent.constraints = FreezeRotationWhileHeld
-            ? SavedConstraints | RigidbodyConstraints.FreezeRotation
-            : SavedConstraints;
-
-        ApplyInteractionLayer(true);
-        RigidbodyComponent.WakeUp();
-    }
-
-    private void ApplyMagnetizedState()
-    {
-        RigidbodyComponent.isKinematic = false;
-        IdleTimer = 0f;
-        RigidbodyComponent.linearDamping = 0f;
-        RigidbodyComponent.angularDamping = 0f;
-        RigidbodyComponent.useGravity = DisableGravityWhileHeld ? false : SavedUseGravity;
-        RigidbodyComponent.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        RigidbodyComponent.interpolation = RigidbodyInterpolation.Interpolate;
-        RigidbodyComponent.constraints = FreezeRotationWhileHeld
-            ? SavedConstraints | RigidbodyConstraints.FreezeRotation
-            : SavedConstraints;
-
-        ApplyInteractionLayer(true);
-        RigidbodyComponent.WakeUp();
-    }
-
-    private void ApplyConveyorDrivenState()
-    {
-        RigidbodyComponent.isKinematic = false;
-        IdleTimer = 0f;
-        RigidbodyComponent.linearDamping = SavedLinearDamping;
-        RigidbodyComponent.angularDamping = SavedAngularDamping;
-        RigidbodyComponent.useGravity = SavedUseGravity;
-        RigidbodyComponent.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-        RigidbodyComponent.interpolation = RigidbodyInterpolation.Interpolate;
-        RigidbodyComponent.constraints = SavedConstraints;
-
-        ApplyInteractionLayer(false);
-        RigidbodyComponent.WakeUp();
-    }
-
-    private void ApplySleepingState()
-    {
-        ApplyInteractionLayer(false);
-        RigidbodyComponent.isKinematic = true;
-    }
-
-    private void ResolveInteractionLayers()
-    {
-        ResolvedFreeLayer = LayerMask.NameToLayer(FreeLayerName);
-        ResolvedPlayerIgnoredLayer = LayerMask.NameToLayer(PlayerIgnoredInteractionLayerName);
-        HasResolvedPlayerIgnoredLayer = ResolvedPlayerIgnoredLayer >= 0;
-
-        if (UsePlayerIgnoredInteractionLayer && !HasResolvedPlayerIgnoredLayer && DebugLogs)
-        {
-            Debug.LogWarning(
-                $"Player ignored layer '{PlayerIgnoredInteractionLayerName}' was not found. " +
-                $"The carryable will keep its normal layer while magnetized or held."
-            );
-        }
-    }
-
-    private void ApplyInteractionLayer(bool UsePlayerIgnoredLayer)
-    {
-        if (!UsePlayerIgnoredInteractionLayer || !HasResolvedPlayerIgnoredLayer || CachedHierarchyTransforms == null)
+        if (InterpolationGraceTimer <= 0f)
         {
             return;
         }
 
-        int TargetLayer = UsePlayerIgnoredLayer ? ResolvedPlayerIgnoredLayer : ResolvedFreeLayer;
+        InterpolationGraceTimer -= Time.fixedDeltaTime;
 
-        if (TargetLayer < 0)
+        if (InterpolationGraceTimer <= 0f && CurrentState == InteractionState.Free)
         {
-            return;
-        }
-
-        for (int Index = 0; Index < CachedHierarchyTransforms.Length; Index++)
-        {
-            CachedHierarchyTransforms[Index].gameObject.layer = TargetLayer;
+            RigidbodyComponent.interpolation = DefaultInterpolation;
         }
     }
 
-    private void SetIgnorePlayerCollision(bool Ignore)
+    /// <summary>
+    /// Updates the timer that blocks magnet reattachment after a forced break.
+    /// </summary>
+    private void UpdateMagnetReattachCooldown()
     {
-        if (!IgnorePlayerCollisionWhileHeld || PlayerColliders == null || CachedColliders == null)
+        if (MagnetReattachCooldownTimer <= 0f)
         {
             return;
         }
 
-        for (int PlayerIndex = 0; PlayerIndex < PlayerColliders.Length; PlayerIndex++)
-        {
-            Collider CurrentPlayerCollider = PlayerColliders[PlayerIndex];
+        MagnetReattachCooldownTimer -= Time.fixedDeltaTime;
+    }
 
-            if (CurrentPlayerCollider == null)
+    /// <summary>
+    /// Returns true if any carryable collider is still intersecting any ignored player collider.
+    /// </summary>
+    private bool IsOverlappingIgnoredPlayerColliders()
+    {
+        if (IgnoredPlayerColliders == null || CachedColliders == null)
+        {
+            return false;
+        }
+
+        for (int CarryableColliderIndex = 0; CarryableColliderIndex < CachedColliders.Length; CarryableColliderIndex++)
+        {
+            Collider CarryableCollider = CachedColliders[CarryableColliderIndex];
+            if (CarryableCollider == null || !CarryableCollider.enabled)
             {
                 continue;
             }
 
-            for (int CarryableIndex = 0; CarryableIndex < CachedColliders.Length; CarryableIndex++)
+            for (int PlayerColliderIndex = 0; PlayerColliderIndex < IgnoredPlayerColliders.Length; PlayerColliderIndex++)
             {
-                Collider CurrentCarryableCollider = CachedColliders[CarryableIndex];
-
-                if (CurrentCarryableCollider == null)
+                Collider PlayerCollider = IgnoredPlayerColliders[PlayerColliderIndex];
+                if (PlayerCollider == null || !PlayerCollider.enabled)
                 {
                     continue;
                 }
 
-                Physics.IgnoreCollision(CurrentPlayerCollider, CurrentCarryableCollider, Ignore);
+                bool IsOverlapping = Physics.ComputePenetration(
+                    CarryableCollider,
+                    CarryableCollider.transform.position,
+                    CarryableCollider.transform.rotation,
+                    PlayerCollider,
+                    PlayerCollider.transform.position,
+                    PlayerCollider.transform.rotation,
+                    out _,
+                    out _);
+
+                if (IsOverlapping)
+                {
+                    return true;
+                }
             }
         }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Applies or removes collision ignores against the current player colliders.
+    /// </summary>
+    private void SetIgnorePlayerCollision(bool Ignore)
+    {
+        if (IgnoredPlayerColliders == null || CachedColliders == null)
+        {
+            return;
+        }
+
+        for (int CarryableColliderIndex = 0; CarryableColliderIndex < CachedColliders.Length; CarryableColliderIndex++)
+        {
+            Collider CarryableCollider = CachedColliders[CarryableColliderIndex];
+            if (CarryableCollider == null)
+            {
+                continue;
+            }
+
+            for (int PlayerColliderIndex = 0; PlayerColliderIndex < IgnoredPlayerColliders.Length; PlayerColliderIndex++)
+            {
+                Collider PlayerCollider = IgnoredPlayerColliders[PlayerColliderIndex];
+                if (PlayerCollider == null)
+                {
+                    continue;
+                }
+
+                Physics.IgnoreCollision(CarryableCollider, PlayerCollider, Ignore);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies or restores the temporary layer used to ignore the player.
+    /// </summary>
+    private void SetIgnoredByPlayerLayer(bool UseIgnoredLayer)
+    {
+        if (CachedTransforms == null || CachedOriginalLayers == null)
+        {
+            return;
+        }
+
+        if (UseIgnoredLayer)
+        {
+            if (IgnoredByPlayerLayer < 0)
+            {
+                return;
+            }
+
+            for (int TransformIndex = 0; TransformIndex < CachedTransforms.Length; TransformIndex++)
+            {
+                Transform CurrentTransform = CachedTransforms[TransformIndex];
+                if (CurrentTransform == null)
+                {
+                    continue;
+                }
+
+                CurrentTransform.gameObject.layer = IgnoredByPlayerLayer;
+            }
+
+            return;
+        }
+
+        for (int TransformIndex = 0; TransformIndex < CachedTransforms.Length; TransformIndex++)
+        {
+            Transform CurrentTransform = CachedTransforms[TransformIndex];
+            if (CurrentTransform == null)
+            {
+                continue;
+            }
+
+            CurrentTransform.gameObject.layer = CachedOriginalLayers[TransformIndex];
+        }
+    }
+
+    /// <summary>
+    /// Caches the original layer of every transform in the hierarchy.
+    /// </summary>
+    private void CacheOriginalLayers()
+    {
+        CachedOriginalLayers = new int[CachedTransforms.Length];
+
+        for (int TransformIndex = 0; TransformIndex < CachedTransforms.Length; TransformIndex++)
+        {
+            CachedOriginalLayers[TransformIndex] = CachedTransforms[TransformIndex].gameObject.layer;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the layer used while temporarily ignoring the player.
+    /// </summary>
+    private void ResolveIgnoredByPlayerLayer()
+    {
+        IgnoredByPlayerLayer = LayerMask.NameToLayer(IgnoredByPlayerLayerName);
+
+        if (IgnoredByPlayerLayer < 0)
+        {
+            Debug.LogError(
+                $"Layer '{IgnoredByPlayerLayerName}' does not exist. Create it in Project Settings > Tags and Layers.",
+                this);
+        }
+    }
+
+    /// <summary>
+    /// Writes a carryable-specific debug message when logging is enabled.
+    /// </summary>
+    private void Log(string Message)
+    {
+        if (!DebugLogs)
+        {
+            return;
+        }
+
+        Debug.Log("[PhysicsCarryable] " + name + " :: " + Message, this);
     }
 }

@@ -1,17 +1,10 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// Equipped magnet tool driven by animation events.
-///
-/// Behaviour:
-/// - Pressing primary use starts the magnet activation animation.
-/// - At the configured animation impact frame, the magnet enters an active hold state.
-/// - While the player keeps holding the primary input, PhysicsCarryable objects inside the
-///   attraction area are continuously pulled towards the magnet target point every FixedUpdate.
-/// - Releasing the button stops the continuous pull immediately.
-///
-/// This version adds stronger target convergence and damping near the target point so objects
-/// stick to the magnet more cleanly instead of orbiting around it due to inertia.
+/// Once the activation impact happens, every valid carryable inside the area receives its own
+/// spring-joint runtime anchor and follows the magnet target until the use input ends.
 /// </summary>
 public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
 {
@@ -32,34 +25,6 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     [Tooltip("Layers considered valid for magnetic attraction checks.")]
     [SerializeField] private LayerMask AttractionLayers = ~0;
 
-    [Header("Magnet Pull")]
-    [Tooltip("Acceleration applied towards the magnet target point.")]
-    [SerializeField] private float AttractionAcceleration = 32f;
-
-    [Tooltip("Maximum allowed speed while a carryable object is being attracted.")]
-    [SerializeField] private float AttractionMaxSpeed = 7f;
-
-    [Tooltip("Extra upward bias added while attracting objects.")]
-    [SerializeField] private float AttractionVerticalBias = 0.1f;
-
-    [Tooltip("Distance from the target point where stronger damping begins to be applied.")]
-    [SerializeField] private float TargetSlowdownRadius = 1.15f;
-
-    [Tooltip("Distance from the target point where the object is considered magnet-locked.")]
-    [SerializeField] private float MagnetLockRadius = 0.35f;
-
-    [Tooltip("Velocity damping applied while the object is inside the slowdown radius.")]
-    [SerializeField] private float NearTargetVelocityDamping = 7f;
-
-    [Tooltip("Extra damping applied specifically to sideways velocity so objects stop orbiting around the target.")]
-    [SerializeField] private float TangentialDamping = 12f;
-
-    [Tooltip("Velocity damping applied when the object is magnet-locked near the target point.")]
-    [SerializeField] private float LockedVelocityDamping = 18f;
-
-    [Tooltip("Maximum speed allowed once the object is magnet-locked near the target point.")]
-    [SerializeField] private float LockedMaxSpeed = 2.25f;
-
     [Tooltip("If true, already held carryable objects are ignored.")]
     [SerializeField] private bool IgnoreHeldObjects = true;
 
@@ -73,10 +38,18 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
 
     /// <summary>
     /// Whether the magnet is currently in its continuous active state.
-    /// This becomes true at the animation impact frame and remains true until the input is released
-    /// or the item is forcefully interrupted.
     /// </summary>
     private bool IsMagnetActive;
+
+    /// <summary>
+    /// Player colliders ignored by every carryable attached to this magnet.
+    /// </summary>
+    [SerializeField]private Collider[] CachedPlayerColliders;
+
+    /// <summary>
+    /// List of carryables currently attached to the magnet target.
+    /// </summary>
+    private readonly List<PhysicsCarryable> ActiveCarryables = new List<PhysicsCarryable>();
 
     /// <summary>
     /// Initializes the magnet and resolves missing camera references.
@@ -89,11 +62,29 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
         {
             PlayerCamera = this.OwnerHotbar.GetComponentInChildren<Camera>();
         }
+
+        if (this.OwnerHotbar != null)
+        {
+            PlayerInteractionController InteractionController = this.OwnerHotbar.GetComponent<PlayerInteractionController>();
+            if (InteractionController == null)
+            {
+                InteractionController = this.OwnerHotbar.GetComponentInParent<PlayerInteractionController>(true);
+            }
+
+            if (InteractionController != null)
+            {
+                CachedPlayerColliders = InteractionController.GetPlayerColliders();
+            }
+
+            if (CachedPlayerColliders == null || CachedPlayerColliders.Length == 0)
+            {
+                CachedPlayerColliders = PhysicsUtils.GetHierarchyColliders(this.OwnerHotbar.gameObject, true);
+            }
+        }
     }
 
     /// <summary>
     /// The magnet should only start one activation action when it is currently inactive.
-    /// Once active, holding the input keeps the pull alive instead of retriggering the action.
     /// </summary>
     protected override bool CanStartPrimaryAction()
     {
@@ -102,7 +93,6 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
 
     /// <summary>
     /// While the magnet is active, the primary action should not automatically repeat.
-    /// The continuous pull is handled every physics step instead.
     /// </summary>
     protected override void ProcessPendingPrimaryRepeat()
     {
@@ -110,7 +100,7 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     }
 
     /// <summary>
-    /// Runs the continuous magnet pull while the magnet is active and the input remains held.
+    /// Runs the continuous magnet attach loop while the magnet is active and the input remains held.
     /// </summary>
     private void FixedUpdate()
     {
@@ -126,6 +116,7 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
         }
 
         ApplyMagnetPull();
+        CleanupDetachedCarryables();
     }
 
     /// <summary>
@@ -140,7 +131,6 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
 
     /// <summary>
     /// Keeps the magnet active after the activation animation finished if the player is still holding.
-    /// If the player already released the button before the animation ended, the magnet is stopped here.
     /// </summary>
     protected override void OnPrimaryActionFinished()
     {
@@ -177,8 +167,7 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     }
 
     /// <summary>
-    /// Applies magnetic acceleration to all valid carryable objects inside the attraction area.
-    /// This version damps tangential velocity and slows objects near the target to reduce orbiting and overshoot.
+    /// Attaches all valid carryables inside the attraction area to the magnet target.
     /// </summary>
     private void ApplyMagnetPull()
     {
@@ -188,39 +177,26 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
         }
 
         Vector3 AreaCenter = GetAreaCenter();
-        Vector3 TargetPoint = GetTargetPoint();
+        Transform TargetTransform = ResolveTargetTransform();
 
         if (DrawDebug)
         {
-            DebugExtension.DrawWireSphere(AreaCenter, AreaRadius, Color.cyan, Time.fixedDeltaTime);
-            Debug.DrawLine(AreaCenter, TargetPoint, Color.magenta, Time.fixedDeltaTime);
-            DebugExtension.DrawWireSphere(TargetPoint, TargetSlowdownRadius, Color.yellow, Time.fixedDeltaTime);
-            DebugExtension.DrawWireSphere(TargetPoint, MagnetLockRadius, Color.green, Time.fixedDeltaTime);
+            //DebugExtension.DrawWireSphere(AreaCenter, AreaRadius, Color.cyan, Time.fixedDeltaTime);
+            //DebugExtension.DrawWireSphere(TargetTransform.position, 0.15f, Color.green, Time.fixedDeltaTime);
+            Debug.DrawLine(AreaCenter, TargetTransform.position, Color.magenta, Time.fixedDeltaTime);
         }
 
-        Collider[] Hits = Physics.OverlapSphere(
-            AreaCenter,
-            AreaRadius,
-            AttractionLayers,
-            QueryTriggerInteraction.Ignore
-        );
+        Collider[] Hits = Physics.OverlapSphere(AreaCenter, AreaRadius, AttractionLayers, QueryTriggerInteraction.Ignore);
 
-        for (int Index = 0; Index < Hits.Length; Index++)
+        for (int HitIndex = 0; HitIndex < Hits.Length; HitIndex++)
         {
-            Collider CurrentCollider = Hits[Index];
-
+            Collider CurrentCollider = Hits[HitIndex];
             if (CurrentCollider == null)
             {
                 continue;
             }
 
-            PhysicsCarryable Carryable = CurrentCollider.GetComponent<PhysicsCarryable>();
-
-            if (Carryable == null)
-            {
-                Carryable = CurrentCollider.GetComponentInParent<PhysicsCarryable>();
-            }
-
+            PhysicsCarryable Carryable = CurrentCollider.GetComponent<PhysicsCarryable>() ?? CurrentCollider.GetComponentInParent<PhysicsCarryable>();
             if (Carryable == null)
             {
                 continue;
@@ -231,151 +207,82 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
                 continue;
             }
 
-            Rigidbody CarryableRigidbody = Carryable.GetComponent<Rigidbody>();
-
-            if (CarryableRigidbody == null)
+            if (!Carryable.CanAttachToMagnet() && !Carryable.GetIsMagnetized())
             {
                 continue;
             }
 
-            //EN CUANTO PONGO ESTA LIENA LSO OBJETOS YA NO PUEDEN SER ARRASTRADOS FUNCIONAN FATAL. REVISALO CHATGPT
-            Carryable.NotifyMagnetInfluence();
-            //---
-            Vector3 CurrentPosition = CarryableRigidbody.worldCenterOfMass;
-            Vector3 ToTarget = TargetPoint - CurrentPosition;
-            ToTarget.y += AttractionVerticalBias;
-
-            float DistanceToTarget = ToTarget.magnitude;
-
-            if (DistanceToTarget <= 0.0001f)
+            if (!ActiveCarryables.Contains(Carryable))
             {
-                continue;
+                ActiveCarryables.Add(Carryable);
             }
 
-            Vector3 TargetDirection = ToTarget / DistanceToTarget;
-            Vector3 CurrentVelocity = CarryableRigidbody.linearVelocity;
-
-            Vector3 RadialVelocity = Vector3.Project(CurrentVelocity, TargetDirection);
-            Vector3 TangentialVelocity = CurrentVelocity - RadialVelocity;
-
-            // Base attraction
-            float PullStrengthMultiplier = 1f;
-            float MaxSpeed = AttractionMaxSpeed;
-            float VelocityDamping = 0f;
-
-            if (DistanceToTarget <= TargetSlowdownRadius)
-            {
-                float NormalizedDistance = Mathf.Clamp01(DistanceToTarget / Mathf.Max(0.001f, TargetSlowdownRadius));
-                PullStrengthMultiplier = Mathf.Lerp(0.35f, 1f, NormalizedDistance);
-                VelocityDamping = NearTargetVelocityDamping;
-                MaxSpeed = Mathf.Lerp(LockedMaxSpeed, AttractionMaxSpeed, NormalizedDistance);
-            }
-
-            if (DistanceToTarget <= MagnetLockRadius)
-            {
-                PullStrengthMultiplier = 0.2f;
-                VelocityDamping = LockedVelocityDamping;
-                MaxSpeed = LockedMaxSpeed;
-            }
-
-            Vector3 DesiredAcceleration = TargetDirection * (AttractionAcceleration * PullStrengthMultiplier);
-            CarryableRigidbody.AddForce(DesiredAcceleration, ForceMode.Acceleration);
-
-            // Strong sideways damping reduces orbiting around the target.
-            if (TangentialVelocity.sqrMagnitude > 0.0001f)
-            {
-                Vector3 TangentialDampingForce = -TangentialVelocity * TangentialDamping;
-                CarryableRigidbody.AddForce(TangentialDampingForce, ForceMode.Acceleration);
-            }
-
-            // Additional global damping near the target keeps the object from overshooting.
-            if (VelocityDamping > 0f && CurrentVelocity.sqrMagnitude > 0.0001f)
-            {
-                Vector3 VelocityDampingForce = -CurrentVelocity * VelocityDamping;
-                CarryableRigidbody.AddForce(VelocityDampingForce, ForceMode.Acceleration);
-            }
-
-            // Clamp final speed.
-            Vector3 UpdatedVelocity = CarryableRigidbody.linearVelocity;
-            float MaxSpeedSquared = MaxSpeed * MaxSpeed;
-
-            if (UpdatedVelocity.sqrMagnitude > MaxSpeedSquared)
-            {
-                CarryableRigidbody.linearVelocity = UpdatedVelocity.normalized * MaxSpeed;
-            }
+            Carryable.BeginMagnet(TargetTransform, CachedPlayerColliders);
         }
     }
 
     /// <summary>
-    /// Disables the continuous pull state.
+    /// Detaches every carryable currently attached to this magnet.
     /// </summary>
     private void StopMagnetPull()
     {
         IsMagnetActive = false;
+
+        for (int CarryableIndex = 0; CarryableIndex < ActiveCarryables.Count; CarryableIndex++)
+        {
+            PhysicsCarryable Carryable = ActiveCarryables[CarryableIndex];
+            if (Carryable == null)
+            {
+                continue;
+            }
+
+            Carryable.EndMagnet(CachedPlayerColliders);
+        }
+
+        ActiveCarryables.Clear();
     }
 
     /// <summary>
-    /// Gets the center point of the magnetic attraction area.
+    /// Removes null or no-longer-magnetized entries from the runtime carryable list.
+    /// </summary>
+    private void CleanupDetachedCarryables()
+    {
+        for (int CarryableIndex = ActiveCarryables.Count - 1; CarryableIndex >= 0; CarryableIndex--)
+        {
+            PhysicsCarryable Carryable = ActiveCarryables[CarryableIndex];
+            if (Carryable == null || !Carryable.GetIsMagnetized())
+            {
+                ActiveCarryables.RemoveAt(CarryableIndex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Computes the world-space center of the spherical attraction area.
     /// </summary>
     private Vector3 GetAreaCenter()
     {
-        if (PlayerCamera == null)
-        {
-            return transform.position;
-        }
-
-        return PlayerCamera.transform.position + (PlayerCamera.transform.forward * AreaForwardDistance);
+        return PlayerCamera.transform.position + PlayerCamera.transform.forward * AreaForwardDistance;
     }
 
     /// <summary>
-    /// Gets the target point towards which objects are attracted.
+    /// Resolves the transform used as the runtime spring-anchor target.
     /// </summary>
-    private Vector3 GetTargetPoint()
+    private Transform ResolveTargetTransform()
     {
-        if (MagnetTargetPoint != null)
-        {
-            MagnetTargetPoint.position = GetAreaCenter();
-            return MagnetTargetPoint.position;
-        }
-
-        if (PlayerCamera == null)
-        {
-            return transform.position;
-        }
-
-        return PlayerCamera.transform.position + (PlayerCamera.transform.forward * AreaForwardDistance);
+        return MagnetTargetPoint != null ? MagnetTargetPoint : transform;
     }
 
     /// <summary>
-    /// Small internal helper for debug wire spheres without requiring gizmos-only rendering.
+    /// Writes a magnet-specific debug message when logging is enabled.
     /// </summary>
-    private static class DebugExtension
+    private void Log(string Message)
     {
-        public static void DrawWireSphere(Vector3 Center, float Radius, Color Color, float Duration)
+        if (!DebugLogs)
         {
-            const int SegmentCount = 20;
-            float AngleStep = 360f / SegmentCount;
-
-            Vector3 PreviousXY = Center + new Vector3(Radius, 0f, 0f);
-            Vector3 PreviousXZ = Center + new Vector3(Radius, 0f, 0f);
-            Vector3 PreviousYZ = Center + new Vector3(0f, Radius, 0f);
-
-            for (int Index = 1; Index <= SegmentCount; Index++)
-            {
-                float Angle = AngleStep * Index * Mathf.Deg2Rad;
-
-                Vector3 NextXY = Center + new Vector3(Mathf.Cos(Angle) * Radius, Mathf.Sin(Angle) * Radius, 0f);
-                Vector3 NextXZ = Center + new Vector3(Mathf.Cos(Angle) * Radius, 0f, Mathf.Sin(Angle) * Radius);
-                Vector3 NextYZ = Center + new Vector3(0f, Mathf.Cos(Angle) * Radius, Mathf.Sin(Angle) * Radius);
-
-                Debug.DrawLine(PreviousXY, NextXY, Color, Duration);
-                Debug.DrawLine(PreviousXZ, NextXZ, Color, Duration);
-                Debug.DrawLine(PreviousYZ, NextYZ, Color, Duration);
-
-                PreviousXY = NextXY;
-                PreviousXZ = NextXZ;
-                PreviousYZ = NextYZ;
-            }
+            return;
         }
+
+        Debug.Log("[MagnetItemBehaviour] " + Message, this);
     }
 }

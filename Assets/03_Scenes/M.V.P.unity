@@ -2588,6 +2588,38 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6dd4c7b7b88fd004ab9c4184c85c09b3, type: 3}
+--- !u!1 &1443238911 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 3375198301939659550, guid: c06e1715c66ad7042a0da421b692dea7, type: 3}
+  m_PrefabInstance: {fileID: 1038277240568741704}
+  m_PrefabAsset: {fileID: 0}
+--- !u!54 &1443238917
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1443238911}
+  serializedVersion: 5
+  m_Mass: 1
+  m_LinearDamping: 0
+  m_AngularDamping: 0.05
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 1
+  m_IsKinematic: 0
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0
 --- !u!1 &1490478832
 GameObject:
   m_ObjectHideFlags: 0
@@ -2740,59 +2772,6 @@ MonoBehaviour:
   m_ChildScaleWidth: 0
   m_ChildScaleHeight: 0
   m_ReverseArrangement: 0
---- !u!1 &1560659481
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1560659482}
-  - component: {fileID: 1560659483}
-  m_Layer: 0
-  m_Name: ColliderBlockingMagnet
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1560659482
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1560659481}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 7328102299383467978}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!65 &1560659483
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1560659481}
-  m_Material: {fileID: 13400000, guid: 08b2bc6a35895f249b77ee8c8a8a67ac, type: 2}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 0.8, y: 1, z: 0.8}
-  m_Center: {x: 0, y: 1.41, z: 0}
 --- !u!1 &1602045032
 GameObject:
   m_ObjectHideFlags: 0
@@ -3743,10 +3722,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerInteractionController
   PlayerCamera: {fileID: 872367705329081431}
-  PlayerColliders:
-  - {fileID: 9164750670804751442}
-  - {fileID: 3356792466703803492}
-  - {fileID: 1560659483}
+  PlayerColliders: []
   HoldAnchor: {fileID: 6200004559338517754}
   HotbarController: {fileID: 6396387036385932251}
   InteractionDistance: 8
@@ -3865,7 +3841,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 3375198301939659550, guid: c06e1715c66ad7042a0da421b692dea7, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1443238917}
   m_SourcePrefab: {fileID: 100100000, guid: c06e1715c66ad7042a0da421b692dea7, type: 3}
 --- !u!4 &1641735265239713162
 Transform:
@@ -3983,7 +3962,7 @@ Transform:
   m_GameObject: {fileID: 3660220464544705156}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.5, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -4112,29 +4091,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b232062c340ba0743b97382b96ef9142, type: 3}
---- !u!136 &3356792466703803492
-CapsuleCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8724351232215334725}
-  m_Material: {fileID: 13400000, guid: 08b2bc6a35895f249b77ee8c8a8a67ac, type: 2}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 0
-  serializedVersion: 2
-  m_Radius: 0.4
-  m_Height: 2
-  m_Direction: 1
-  m_Center: {x: 0, y: 1, z: 0}
 --- !u!4 &3447309022197387731
 Transform:
   m_ObjectHideFlags: 0
@@ -4260,35 +4216,48 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   ViewRoot: {fileID: 1653977833182969078}
   CameraPivot: {fileID: 2608408291594930866}
-  MoveSpeed: 6.5
-  CrouchSpeedMultiplier: 0.5
-  GroundAcceleration: 40
-  GroundDeceleration: 100
-  AirAcceleration: 10
-  MaxAirSpeed: 6
-  JumpHeight: 1.35
-  Gravity: 25
-  GroundStickyVelocity: 8
-  CoyoteTime: 0.1
-  JumpBufferTime: 0.12
-  MouseSensitivity: 0.1
-  GamepadSensitivity: 120
+  PlayerCameraComponent: {fileID: 872367705329081431}
+  ViewModelContainerTransform: {fileID: 1641735265239713162}
+  MoveActionName: Move
+  LookActionName: Look
+  JumpActionName: Jump
+  SprintActionName: Sprint
+  CrouchActionName: Crouch
+  LookSensitivity: 0.12
+  GamepadLookSpeed: 140
   MinPitch: -85
   MaxPitch: 85
-  GroundLayers:
-    serializedVersion: 2
-    m_Bits: 503
-  GroundCheckDistance: 0.2
-  GroundProbeShell: 0.02
-  MaxGroundAngle: 55
-  InheritSupportYaw: 1
-  SupportVelocityInfluence: 1
+  InvertY: 0
+  WalkSpeed: 5
+  SprintSpeed: 7.5
+  CrouchSpeed: 2.75
+  GroundAcceleration: 40
+  AirAcceleration: 10
+  GroundFriction: 18
+  SteepSlideGravity: 18
+  JumpHeight: 1.35
+  Gravity: 25
+  GroundSnapSpeed: 4
+  CoyoteTime: 0.1
+  JumpBufferTime: 0.12
+  JumpGroundIgnoreTime: 0.12
+  ToggleCrouch: 0
   StandingHeight: 2
   CrouchingHeight: 1.2
   CrouchTransitionSpeed: 12
-  StandingCameraLocalY: 1.5
-  CrouchingCameraLocalY: 0.45
-  CameraCrouchTransitionSpeed: 12
+  CrouchCameraOffset: -0.6
+  GroundLayers:
+    serializedVersion: 2
+    m_Bits: 2113
+  GroundProbeDistance: 0.2
+  GroundProbeRadiusPadding: 0.03
+  MaxStableGroundAngle: 55
+  InheritSupportTranslation: 1
+  InheritSupportYaw: 1
+  MinimumSupportUpDot: 0.2
+  DrawDebug: 0
+  StandingCameraPivotLocalY: 1.5
+  StandUpCheckPadding: 0.02
 --- !u!114 &5237418732526395323
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4606,12 +4575,11 @@ Transform:
   m_GameObject: {fileID: 8724351232215334725}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -23.14, y: 1.34, z: 0.06}
+  m_LocalPosition: {x: -20.77, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1653977833182969078}
-  - {fileID: 1560659482}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &7342179819429115913
@@ -4742,10 +4710,8 @@ GameObject:
   - component: {fileID: 5172499009374403598}
   - component: {fileID: 445825950244042795}
   - component: {fileID: 5305257728739790326}
-  - component: {fileID: 8955128129314043998}
-  - component: {fileID: 9164750670804751442}
-  - component: {fileID: 3356792466703803492}
   - component: {fileID: 6396387036385932251}
+  - component: {fileID: 9164750670804751443}
   m_Layer: 9
   m_Name: PLAYER
   m_TagString: Player
@@ -4753,33 +4719,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!54 &8955128129314043998
-Rigidbody:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8724351232215334725}
-  serializedVersion: 5
-  m_Mass: 5
-  m_LinearDamping: 0
-  m_AngularDamping: 0.05
-  m_CenterOfMass: {x: 0, y: 0, z: 0}
-  m_InertiaTensor: {x: 1, y: 1, z: 1}
-  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ImplicitCom: 1
-  m_ImplicitTensor: 1
-  m_UseGravity: 1
-  m_IsKinematic: 0
-  m_Interpolate: 1
-  m_Constraints: 80
-  m_CollisionDetection: 1
 --- !u!81 &9141239317670201968
 AudioListener:
   m_ObjectHideFlags: 0
@@ -4796,14 +4735,14 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8724351232215334725}
   m_Mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
---- !u!65 &9164750670804751442
-BoxCollider:
+--- !u!143 &9164750670804751443
+CharacterController:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8724351232215334725}
-  m_Material: {fileID: 13400000, guid: 08b2bc6a35895f249b77ee8c8a8a67ac, type: 2}
+  m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -4811,12 +4750,16 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.8, y: 2, z: 0.8}
-  m_Center: {x: 0, y: 1, z: 0}
+  m_Height: 2
+  m_Radius: 0.5
+  m_SlopeLimit: 45
+  m_StepOffset: 0.6
+  m_SkinWidth: 0.08
+  m_MinMoveDistance: 0.001
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

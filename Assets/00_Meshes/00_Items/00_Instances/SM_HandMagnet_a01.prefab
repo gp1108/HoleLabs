@@ -121,19 +121,11 @@ MonoBehaviour:
   AreaRadius: 2.2
   AttractionLayers:
     serializedVersion: 2
-    m_Bits: 64
-  AttractionAcceleration: 80
-  AttractionMaxSpeed: 6
-  AttractionVerticalBias: 0
-  TargetSlowdownRadius: 1.15
-  MagnetLockRadius: 0.35
-  NearTargetVelocityDamping: 7
-  TangentialDamping: 12
-  LockedVelocityDamping: 18
-  LockedMaxSpeed: 2.25
+    m_Bits: 192
   IgnoreHeldObjects: 1
   ContinuousPullWhileHeld: 1
   DrawDebug: 1
+  CachedPlayerColliders: []
 --- !u!95 &5887290701256158960
 Animator:
   serializedVersion: 7
