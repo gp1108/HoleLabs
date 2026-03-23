@@ -148,6 +148,7 @@ public sealed class PhysicsCarryable : MonoBehaviour
     [Tooltip("Temporary layer applied while this carryable must ignore collisions against the player.")]
     [SerializeField] private string IgnoredByPlayerLayerName = "PlayerIgnoredPhysicsObjects";
 
+
     [Header("Debug")]
     [Tooltip("Logs state changes and attachment events to the console.")]
     [SerializeField] private bool DebugLogs = false;
@@ -268,6 +269,24 @@ public sealed class PhysicsCarryable : MonoBehaviour
     public Rigidbody Rigidbody => RigidbodyComponent;
 
     /// <summary>
+    /// Whether the carryable is currently being transported by an external carrier system.
+    /// </summary>
+    private bool IsExternallyCarried;
+
+    /// <summary>
+    /// Parent that owned the carryable transform before external carrying started.
+    /// </summary>
+    private Transform PreviousParentBeforeExternalCarry;
+
+    /// <summary>
+    /// Returns true when the object can be transported by an external carrier system.
+    /// </summary>
+    public bool CanBeExternallyCarried()
+    {
+        return CurrentState == InteractionState.Free || CurrentState == InteractionState.Released;
+    }
+
+    /// <summary>
     /// Initializes cached references and stores default rigidbody values.
     /// </summary>
     private void Awake()
@@ -303,6 +322,54 @@ public sealed class PhysicsCarryable : MonoBehaviour
     private void OnDisable()
     {
         ClearAttachmentImmediate(true, false);
+    }
+
+    /// <summary>
+    /// Starts external carry mode used by transport systems such as elevators.
+    /// The rigidbody becomes kinematic and the object is parented to the carrier transform.
+    /// </summary>
+    /// <param name="CarrierTransform">Transform that will transport the carryable.</param>
+    public void BeginExternalCarry(Transform CarrierTransform)
+    {
+        if (CarrierTransform == null || !CanBeExternallyCarried() || IsExternallyCarried)
+        {
+            return;
+        }
+
+        PreviousParentBeforeExternalCarry = transform.parent;
+        IsExternallyCarried = true;
+
+        RigidbodyComponent.linearVelocity = Vector3.zero;
+        RigidbodyComponent.angularVelocity = Vector3.zero;
+        RigidbodyComponent.isKinematic = true;
+
+        transform.SetParent(CarrierTransform, true);
+    }
+
+    /// <summary>
+    /// Stops external carry mode and restores dynamic simulation.
+    /// </summary>
+    /// <param name="InheritedVelocity">Velocity inherited from the transport system when leaving it.</param>
+    public void EndExternalCarry(Vector3 InheritedVelocity)
+    {
+        if (!IsExternallyCarried)
+        {
+            return;
+        }
+
+        IsExternallyCarried = false;
+        transform.SetParent(PreviousParentBeforeExternalCarry, true);
+
+        RigidbodyComponent.isKinematic = false;
+        RigidbodyComponent.linearVelocity = InheritedVelocity;
+    }
+
+    /// <summary>
+    /// Returns true when the object is currently transported by an external carrier system.
+    /// </summary>
+    public bool GetIsExternallyCarried()
+    {
+        return IsExternallyCarried;
     }
 
     /// <summary>
@@ -433,6 +500,11 @@ public sealed class PhysicsCarryable : MonoBehaviour
             return;
         }
 
+        if (IsExternallyCarried)
+        {
+            EndExternalCarry(Vector3.zero);
+        }
+
         ClearAttachmentImmediate(false, false);
 
         ActiveAnchorTarget = NewAnchorTarget;
@@ -542,6 +614,11 @@ public sealed class PhysicsCarryable : MonoBehaviour
     /// </summary>
     private void ClearAttachmentImmediate(bool RestorePhysicsDefaults, bool UseInterpolationGrace)
     {
+        if (IsExternallyCarried)
+        {
+            EndExternalCarry(Vector3.zero);
+        }
+
         SetIgnorePlayerCollision(false);
         SetIgnoredByPlayerLayer(false);
 
