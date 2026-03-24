@@ -224,6 +224,11 @@ public sealed class PhysicsCarryable : MonoBehaviour
             MagnetReattachCooldownTimer -= Time.fixedDeltaTime;
         }
 
+        if (PhysicsMode == CarryablePhysicsMode.ExternalKinematic)
+        {
+            return;
+        }
+
         if (AttachmentDriver.IsActive)
         {
             bool ShouldBreak = AttachmentDriver.Tick();
@@ -260,19 +265,20 @@ public sealed class PhysicsCarryable : MonoBehaviour
 
     /// <summary>
     /// Returns true when the carryable can be picked up by the player.
+    /// External kinematic carry is allowed because the hold flow will release it first.
     /// </summary>
     public bool CanBeginHold()
     {
-        return PhysicsMode == CarryablePhysicsMode.Dynamic && ControlMode == CarryableControlMode.None;
+        return ControlMode == CarryableControlMode.None;
     }
 
     /// <summary>
     /// Returns true when the carryable can attach to a magnet.
+    /// External kinematic carry is allowed because the magnet flow will release it first.
     /// </summary>
     public bool CanAttachToMagnet()
     {
-        return PhysicsMode == CarryablePhysicsMode.Dynamic &&
-               ControlMode != CarryableControlMode.Hold &&
+        return ControlMode != CarryableControlMode.Hold &&
                MagnetReattachCooldownTimer <= 0f;
     }
 
@@ -371,7 +377,14 @@ public sealed class PhysicsCarryable : MonoBehaviour
 
         RigidbodyComponent.linearVelocity = Vector3.zero;
         RigidbodyComponent.angularVelocity = Vector3.zero;
+
+        RestoreDefaultDynamicPhysics();
+
+        RigidbodyComponent.useGravity = false;
         RigidbodyComponent.isKinematic = true;
+        RigidbodyComponent.interpolation = RigidbodyInterpolation.None;
+        RigidbodyComponent.collisionDetectionMode = CollisionDetectionMode.Discrete;
+        RigidbodyComponent.detectCollisions = true;
 
         transform.SetParent(CarrierTransform, true);
 
@@ -393,6 +406,7 @@ public sealed class PhysicsCarryable : MonoBehaviour
         transform.SetParent(PreviousParentBeforeExternalCarry, true);
 
         RigidbodyComponent.isKinematic = false;
+        RestoreDefaultDynamicPhysics();
         RigidbodyComponent.linearVelocity = InheritedVelocity;
         RigidbodyComponent.angularVelocity = Vector3.zero;
 

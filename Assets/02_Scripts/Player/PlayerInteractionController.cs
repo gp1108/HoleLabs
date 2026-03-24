@@ -348,7 +348,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
     }
 
     /// <summary>
-    /// Starts carrying the target object through the simplified spring-joint based carryable API.
+    /// Starts carrying the target object through the carryable API.
+    /// Stored carryables can be picked up because PhysicsCarryable releases external carry internally.
     /// </summary>
     private void PickUpCarryable(PhysicsCarryable TargetObject)
     {
@@ -357,8 +358,21 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
+        if (!TargetObject.CanBeginHold())
+        {
+            Log("Carryable cannot begin hold right now: " + TargetObject.name);
+            return;
+        }
+
+        TargetObject.BeginHold(HoldAnchor, PlayerColliders);
+
+        if (!TargetObject.GetIsHeld())
+        {
+            Log("Hold request did not succeed for carryable: " + TargetObject.name);
+            return;
+        }
+
         CurrentHeldCarryable = TargetObject;
-        CurrentHeldCarryable.BeginHold(HoldAnchor, PlayerColliders);
         Log("Picked up carryable object: " + CurrentHeldCarryable.name);
     }
 
@@ -410,6 +424,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// <summary>
     /// Writes an interaction-specific debug message when logging is enabled.
     /// </summary>
+    /// <param name="Message">Message to log.</param>
     private void Log(string Message)
     {
         if (!DebugLogs)

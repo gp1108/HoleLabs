@@ -44,7 +44,7 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     /// <summary>
     /// Player colliders ignored by every carryable attached to this magnet.
     /// </summary>
-    [SerializeField]private Collider[] CachedPlayerColliders;
+    [SerializeField] private Collider[] CachedPlayerColliders;
 
     /// <summary>
     /// List of carryables currently attached to the magnet target.
@@ -168,6 +168,7 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
 
     /// <summary>
     /// Attaches all valid carryables inside the attraction area to the magnet target.
+    /// Stored carryables can be attached because PhysicsCarryable releases external carry internally.
     /// </summary>
     private void ApplyMagnetPull()
     {
@@ -181,8 +182,6 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
 
         if (DrawDebug)
         {
-            //DebugExtension.DrawWireSphere(AreaCenter, AreaRadius, Color.cyan, Time.fixedDeltaTime);
-            //DebugExtension.DrawWireSphere(TargetTransform.position, 0.15f, Color.green, Time.fixedDeltaTime);
             Debug.DrawLine(AreaCenter, TargetTransform.position, Color.magenta, Time.fixedDeltaTime);
         }
 
@@ -276,6 +275,7 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     /// <summary>
     /// Writes a magnet-specific debug message when logging is enabled.
     /// </summary>
+    /// <param name="Message">Message to log.</param>
     private void Log(string Message)
     {
         if (!DebugLogs)
