@@ -236,7 +236,7 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
                 continue;
             }
 
-            Carryable.EndMagnet(CachedPlayerColliders);
+            Carryable.EndMagnet();
         }
 
         ActiveCarryables.Clear();

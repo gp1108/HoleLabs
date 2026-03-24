@@ -14,6 +14,9 @@ GameObject:
   - component: {fileID: 5558174047357944884}
   - component: {fileID: 2622054091482786510}
   - component: {fileID: 2779695673660540398}
+  - component: {fileID: 2599548894646248293}
+  - component: {fileID: 9153258829978257686}
+  - component: {fileID: 7434728391680194818}
   m_Layer: 6
   m_Name: SM_GoldOre_a01
   m_TagString: Untagged
@@ -154,15 +157,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7ac77d39939de7b40a77a96a2ef1c1cb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PhysicsCarryable
-  BreakHoldDistance: 2.25
-  ForceInterpolationWhileAttached: 1
-  HeldSettings:
+  SharedRuntimePhysics:
+    ForceInterpolationWhileAttached: 1
+    AttachmentCollisionDetectionMode: 2
+  HoldSettings:
     Spring: 115
     Damper: 22
     MaxDistance: 0.02
     LinearDamping: 3
     AngularDamping: 1.2
     DisableGravity: 0
+    BreakDistance: 2.6
   MagnetSettings:
     Spring: 100
     Damper: 25
@@ -170,17 +175,53 @@ MonoBehaviour:
     LinearDamping: 3
     AngularDamping: 1.5
     DisableGravity: 0
-  MagnetBreakConfig:
-    BreakDistance: 1.25
-    HardBreakDistance: 1.9
-    BreakGraceTime: 0.12
-    ReattachCooldown: 0.35
+    BreakDistance: 1.9
   ReleaseConfig:
     IgnoreMinimumTime: 0.15
     IgnoreMaximumTime: 1.25
     RestoreOnSleep: 1
     HeldReleaseVelocityInfluence: 0.35
     MagnetLaunchImpulseMultiplier: 1
-    InterpolationGraceTime: 0.2
-  IgnoredByPlayerLayerName: PlayerIgnoredPhysicsObjects
   DebugLogs: 0
+--- !u!114 &2599548894646248293
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7046480720709691670}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 219e7d9474a546e4c8f45aeedc35c12e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarryableAttachmentDriver
+--- !u!114 &9153258829978257686
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7046480720709691670}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0931b220fddf5c479089d43acbb0634, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarryablePlayerCollisionGate
+  IgnoredByPlayerLayerName: PlayerIgnoredPhysicsObjects
+--- !u!114 &7434728391680194818
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7046480720709691670}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dbb545cf3287ae747bfec5fe5d13169b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarryableSleepController
+  Settings:
+    RequiredStillTime: 0.15
+    MaxLinearSpeed: 0.05
+    MaxAngularSpeed: 0.075
+    MinimumSupportNormalY: 0.45

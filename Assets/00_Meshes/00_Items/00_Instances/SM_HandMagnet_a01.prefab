@@ -123,6 +123,8 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 192
   IgnoreHeldObjects: 1
+  MinimumForwardDot: -0.1
+  MinimumCaptureHeightOffset: -0.35
   ContinuousPullWhileHeld: 1
   DrawDebug: 1
   CachedPlayerColliders: []
@@ -173,7 +175,7 @@ Transform:
   m_GameObject: {fileID: 1209968597034038537}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0, y: 0.063, z: 0.854}
+  m_LocalPosition: {x: -0, y: 0.063, z: 1.237}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
