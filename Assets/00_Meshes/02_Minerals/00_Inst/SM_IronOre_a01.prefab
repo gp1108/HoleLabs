@@ -154,31 +154,33 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7ac77d39939de7b40a77a96a2ef1c1cb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PhysicsCarryable
-  HoldPositionStrength: 22
-  HoldVelocityDamping: 16
-  HoldAnchorVelocityInfluence: 1
-  HeldMaxSpeed: 8
-  MaxHoldAcceleration: 70
-  MaxHoldErrorDistance: 2
-  MinDistanceFromCamera: 1.2
-  ReleaseVelocityInfluence: 0.35
   BreakHoldDistance: 2.25
-  HeldLinearDamping: 4.5
-  HeldAngularDamping: 8
-  DisableGravityWhileHeld: 1
-  IgnorePlayerCollisionWhileHeld: 1
-  FreezeRotationWhileHeld: 0
-  MagnetInfluenceGraceTime: 0.08
-  UsePlayerIgnoredInteractionLayer: 1
-  FreeLayerName: PhysicsObjects
-  PlayerIgnoredInteractionLayerName: PlayerIgnoredPhysicsObjects
-  EnableAutoSleep: 1
-  SleepDelay: 0.05
-  SleepLinearVelocityThreshold: 0.05
-  SleepAngularVelocityThreshold: 0.05
-  WakeImpactImpulseThreshold: 0.2
-  WakeOnCollision: 0
-  WakeOnCollisionWithPhysicObject: 1
-  DrawDebug: 0
+  ForceInterpolationWhileAttached: 1
+  HeldSettings:
+    Spring: 115
+    Damper: 22
+    MaxDistance: 0.02
+    LinearDamping: 3
+    AngularDamping: 1.2
+    DisableGravity: 0
+  MagnetSettings:
+    Spring: 100
+    Damper: 25
+    MaxDistance: 0.01
+    LinearDamping: 3
+    AngularDamping: 1.5
+    DisableGravity: 0
+  MagnetBreakConfig:
+    BreakDistance: 1.25
+    HardBreakDistance: 1.9
+    BreakGraceTime: 0.12
+    ReattachCooldown: 0.35
+  ReleaseConfig:
+    IgnoreMinimumTime: 0.15
+    IgnoreMaximumTime: 1.25
+    RestoreOnSleep: 1
+    HeldReleaseVelocityInfluence: 0.35
+    MagnetLaunchImpulseMultiplier: 1
+    InterpolationGraceTime: 0.2
+  IgnoredByPlayerLayerName: PlayerIgnoredPhysicsObjects
   DebugLogs: 0
-  OverrideCamera: {fileID: 0}

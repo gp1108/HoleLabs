@@ -19,7 +19,7 @@ public sealed class ElevatorLever : MonoBehaviour
 
     [Header("References")]
     [Tooltip("Elevator controlled by this lever.")]
-    [SerializeField] private ElevatorController Elevator;
+    [SerializeField] private ElevatorPhysicalMotor Elevator;
 
     [Header("Action")]
     [Tooltip("Action performed when the lever is activated.")]
@@ -39,9 +39,9 @@ public sealed class ElevatorLever : MonoBehaviour
 
         switch (Action)
         {
-            case LeverAction.ToggleDirection:
-                Elevator.ToggleDirection();
-                break;
+            //case LeverAction.ToggleDirection:
+            //    Elevator.ToggleDirection();
+            //    break;
 
             case LeverAction.MoveUp:
                 Elevator.MoveUp();

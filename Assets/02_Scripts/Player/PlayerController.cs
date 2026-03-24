@@ -114,7 +114,10 @@ public sealed class PlayerController : MonoBehaviour
     private bool JumpRequested;
     private bool WantsToCrouch;
     private Vector3 CameraPivotStandingLocalPosition;
-    private ElevatorController CurrentPlatform;
+    /// <summary>
+    /// Current motion carrier used to inherit platform delta while grounded.
+    /// </summary>
+    private IMotionCarrier CurrentPlatform;
 
     /// <summary>
     /// Caches references and initializes the standing controller state.
@@ -223,14 +226,22 @@ public sealed class PlayerController : MonoBehaviour
     }
 
     /// <summary>
-    /// Captures the moving platform under the player when colliding with its top face.
+    /// Captures the motion carrier under the player when colliding with its top face.
     /// </summary>
     /// <param name="Hit">Collision information returned by CharacterController.</param>
     private void OnControllerColliderHit(ControllerColliderHit Hit)
     {
-        if (Hit.moveDirection.y > 0f) return;
-        if (Hit.normal.y < 0.5f) return;
-        CurrentPlatform = Hit.collider.GetComponentInParent<ElevatorController>();
+        if (Hit.moveDirection.y > 0f)
+        {
+            return;
+        }
+
+        if (Hit.normal.y < 0.5f)
+        {
+            return;
+        }
+
+        CurrentPlatform = Hit.collider.GetComponentInParent<IMotionCarrier>();
     }
 
     /// <summary>
