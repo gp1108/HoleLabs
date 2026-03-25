@@ -4906,6 +4906,9 @@ MonoBehaviour:
   JumpHeight: 1.35
   Gravity: 25
   GroundedForce: -2
+  JumpBufferTime: 0.12
+  GroundGraceTime: 0.12
+  PlatformGraceTime: 0.12
   ToggleCrouch: 0
   StandingHeight: 2
   CrouchingHeight: 1.2

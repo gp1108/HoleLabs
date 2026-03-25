@@ -82,6 +82,10 @@ public sealed class PlayerInputReader : MonoBehaviour
     /// Evento lanzado cuando se pulsa crouch.
     /// </summary>
     public event Action CrouchPerformed;
+    /// <summary>
+    /// Indicates whether the crouch input is currently being held.
+    /// </summary>
+    public bool IsCrouchHeld { get; private set; }
 
     /// <summary>
     /// Evento lanzado cuando se pulsa interactuar.
@@ -287,6 +291,7 @@ public sealed class PlayerInputReader : MonoBehaviour
         Look = LookAction != null ? LookAction.ReadValue<Vector2>() : Vector2.zero;
         HotbarScroll = HotbarScrollAction != null ? HotbarScrollAction.ReadValue<float>() : 0f;
         IsSprintHeld = SprintAction != null && SprintAction.IsPressed();
+        IsCrouchHeld = CrouchAction != null && CrouchAction.IsPressed();
     }
 
     /// <summary>
@@ -300,6 +305,7 @@ public sealed class PlayerInputReader : MonoBehaviour
         IsSprintHeld = false;
         IsUsePrimaryHeld = false;
         IsUseSecondaryHeld = false;
+        IsCrouchHeld = false;
     }
 
     private void OnJumpPerformed(InputAction.CallbackContext Context)

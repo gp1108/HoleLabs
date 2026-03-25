@@ -60,6 +60,15 @@ public sealed class PlayerController : MonoBehaviour
     [Tooltip("Small downward force used while grounded.")]
     [SerializeField] private float GroundedForce = -2f;
 
+    [Tooltip("Buffered time window that still accepts a recent jump press.")]
+    [SerializeField] private float JumpBufferTime = 0.12f;
+
+    [Tooltip("Grace time after losing grounded where jump is still allowed.")]
+    [SerializeField] private float GroundGraceTime = 0.12f;
+
+    [Tooltip("Grace time after losing platform support where jump is still allowed.")]
+    [SerializeField] private float PlatformGraceTime = 0.12f;
+
     [Header("Crouch")]
     [Tooltip("If true, crouch toggles on press.")]
     [SerializeField] private bool ToggleCrouch = true;
@@ -109,15 +118,55 @@ public sealed class PlayerController : MonoBehaviour
     /// </summary>
     public Transform ViewModelContainer => ViewModelContainerTransform;
 
+    /// <summary>
+    /// Current vertical velocity applied by the motor.
+    /// </summary>
     private float VerticalVelocity;
+
+    /// <summary>
+    /// Current pitch rotation in degrees.
+    /// </summary>
     private float PitchDegrees;
+
+    /// <summary>
+    /// Whether a jump was requested and is waiting to be consumed.
+    /// </summary>
     private bool JumpRequested;
+
+    /// <summary>
+    /// Whether the player currently wants to crouch.
+    /// </summary>
     private bool WantsToCrouch;
+
+    /// <summary>
+    /// Cached standing local position of the camera pivot.
+    /// </summary>
     private Vector3 CameraPivotStandingLocalPosition;
+
     /// <summary>
     /// Current motion carrier used to inherit platform delta while grounded.
     /// </summary>
     private IMotionCarrier CurrentPlatform;
+
+    /// <summary>
+    /// Remaining time where a jump input is still valid.
+    /// </summary>
+    private float JumpBufferTimer;
+
+    /// <summary>
+    /// Remaining time where recent grounded support still allows a jump.
+    /// </summary>
+    private float GroundGraceTimer;
+
+    /// <summary>
+    /// Remaining time where recent platform support still allows a jump.
+    /// </summary>
+    private float PlatformGraceTimer;
+
+    /// <summary>
+    /// Cached upward platform speed used to preserve jump feel on ascending elevators.
+    /// </summary>
+    private float LastPlatformUpwardSpeed;
 
     /// <summary>
     /// Caches references and initializes the standing controller state.
@@ -177,10 +226,25 @@ public sealed class PlayerController : MonoBehaviour
     private void Update()
     {
         UpdateLook();
-        if (CurrentPlatform != null) CharacterController.Move(CurrentPlatform.DeltaPosition);
+
+        if (CurrentPlatform != null)
+        {
+            CharacterController.Move(CurrentPlatform.DeltaPosition);
+            LastPlatformUpwardSpeed = Mathf.Max(0f, CurrentPlatform.DeltaPosition.y / Mathf.Max(Time.deltaTime, 0.0001f));
+        }
+        else
+        {
+            LastPlatformUpwardSpeed = 0f;
+        }
+
+        UpdateJumpSupport();
         UpdateCrouch();
         UpdateMovement();
-        if (!CharacterController.isGrounded && VerticalVelocity <= 0f) CurrentPlatform = null;
+
+        if (!CharacterController.isGrounded && VerticalVelocity <= 0f && PlatformGraceTimer <= 0f)
+        {
+            CurrentPlatform = null;
+        }
     }
 
     /// <summary>
@@ -199,7 +263,8 @@ public sealed class PlayerController : MonoBehaviour
     /// </summary>
     private void UpdateCrouch()
     {
-        IsCrouching = WantsToCrouch;
+        IsCrouching = ToggleCrouch ? WantsToCrouch : PlayerInputReader.IsCrouchHeld;
+
         float TargetHeight = IsCrouching ? CrouchingHeight : StandingHeight;
         float NewHeight = Mathf.MoveTowards(CharacterController.height, TargetHeight, CrouchTransitionSpeed * Time.deltaTime);
         ApplyControllerHeight(NewHeight);
@@ -209,13 +274,64 @@ public sealed class PlayerController : MonoBehaviour
     }
 
     /// <summary>
+    /// Updates jump buffering and support grace windows for ground and moving platforms.
+    /// </summary>
+    private void UpdateJumpSupport()
+    {
+        if (JumpRequested)
+        {
+            JumpBufferTimer -= Time.deltaTime;
+
+            if (JumpBufferTimer <= 0f)
+            {
+                JumpRequested = false;
+                JumpBufferTimer = 0f;
+            }
+        }
+
+        if (CharacterController.isGrounded)
+        {
+            GroundGraceTimer = GroundGraceTime;
+        }
+        else if (GroundGraceTimer > 0f)
+        {
+            GroundGraceTimer -= Time.deltaTime;
+        }
+
+        if (CurrentPlatform != null)
+        {
+            PlatformGraceTimer = PlatformGraceTime;
+        }
+        else if (PlatformGraceTimer > 0f)
+        {
+            PlatformGraceTimer -= Time.deltaTime;
+        }
+    }
+
+    /// <summary>
     /// Moves the controller using cached input plus minimal jump and gravity logic.
     /// </summary>
     private void UpdateMovement()
     {
-        if (JumpRequested && CharacterController.isGrounded) { VerticalVelocity = Mathf.Sqrt(JumpHeight * 2f * Gravity); JumpRequested = false; CurrentPlatform = null; }
-        else if (CharacterController.isGrounded) VerticalVelocity = GroundedForce;
-        else VerticalVelocity -= Gravity * Time.deltaTime;
+        bool HasJumpSupport = CharacterController.isGrounded || GroundGraceTimer > 0f || PlatformGraceTimer > 0f;
+
+        if (JumpRequested && HasJumpSupport)
+        {
+            VerticalVelocity = Mathf.Sqrt(JumpHeight * 2f * Gravity) + LastPlatformUpwardSpeed;
+            JumpRequested = false;
+            JumpBufferTimer = 0f;
+            GroundGraceTimer = 0f;
+            PlatformGraceTimer = 0f;
+            CurrentPlatform = null;
+        }
+        else if (CharacterController.isGrounded && VerticalVelocity <= 0f)
+        {
+            VerticalVelocity = GroundedForce;
+        }
+        else
+        {
+            VerticalVelocity -= Gravity * Time.deltaTime;
+        }
 
         MoveInput = PlayerInputReader.Move;
         Vector3 MoveDirection = ViewRoot.forward * MoveInput.y + ViewRoot.right * MoveInput.x;
@@ -250,14 +366,19 @@ public sealed class PlayerController : MonoBehaviour
     private void OnJumpPerformed()
     {
         JumpRequested = true;
+        JumpBufferTimer = JumpBufferTime;
     }
 
     /// <summary>
-    /// Toggles crouch.
+    /// Toggles crouch when toggle mode is enabled.
     /// </summary>
     private void OnCrouchPerformed()
     {
-        if (!ToggleCrouch) return;
+        if (!ToggleCrouch)
+        {
+            return;
+        }
+
         WantsToCrouch = !WantsToCrouch;
     }
 
