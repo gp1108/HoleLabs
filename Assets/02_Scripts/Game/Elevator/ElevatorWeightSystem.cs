@@ -1,39 +1,301 @@
-using System.Runtime.InteropServices.WindowsRuntime;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 
+/// <summary>
+/// Authoritative elevator weight evaluator.
+/// Free carryables count while physically inside the trigger.
+/// Held or magnetized carryables count as player-transferred weight
+/// while the player remains inside the elevator.
+/// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Collider))]
-public class ElevatorWeightSystem : MonoBehaviour
+public sealed class ElevatorWeightSystem : MonoBehaviour
 {
-    //@TODO: Añadir tooltips
-    //@TODO: Buscar del upgrade manager cuanto peso permitido
-    //@TODO: Desacoplar UI de este codigo
-    //@TODO: tener en cuenta que si el jugador coge con el iman los items y los saca floatando desde fuera estaria haciendo trampas, hay que hacer que se tengan en cuenta
-    //Ademas el jugador debe tener un peso por default probablemente ( la solucion que se me ocurre es que automaticamente todo lo que tenga
-    //Imantado el jugador automaticamente pasa a ser peso del jugador, de esta manera si se sube aun qeu intetne hacer trampas lo sabremos
-    [SerializeField] private float MaxAllowedWeight = 200;
+    [Header("Limits")]
+    [Tooltip("Maximum total weight allowed before the elevator becomes overweighted.")]
+    [SerializeField] private float MaxAllowedWeight = 200f;
+
+    [Header("Runtime")]
+    [Tooltip("Current authoritative evaluated weight.")]
     [SerializeField] private float CurrentWeight;
-    private bool IsOverweighted = false;
 
-    public TMP_Text WeightTMP;
+    [Tooltip("Whether the elevator is currently overweighted.")]
+    [SerializeField] private bool IsOverweighted;
 
+    [Header("UI")]
+    [Tooltip("Optional text used to display current and maximum weight.")]
+    [SerializeField] private TMP_Text WeightTMP;
 
+    [Header("Debug")]
+    [Tooltip("Logs evaluated weight composition.")]
+    [SerializeField] private bool DebugLogs = false;
 
-    public float GetCurrentWeight() { return CurrentWeight; }
+    /// <summary>
+    /// Carryables currently overlapping the elevator trigger.
+    /// </summary>
+    private readonly HashSet<PhysicsCarryable> OverlappingCarryables = new HashSet<PhysicsCarryable>();
 
-    public bool IsElevatorOverweighted () { return IsOverweighted; }
+    /// <summary>
+    /// Player weight actors currently overlapping the elevator trigger.
+    /// </summary>
+    private readonly HashSet<ElevatorWeightActor> OverlappingActors = new HashSet<ElevatorWeightActor>();
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    /// <summary>
+    /// Cached trigger collider.
+    /// </summary>
+    private Collider TriggerCollider;
+
+    /// <summary>
+    /// Gets the current elevator weight.
+    /// </summary>
+    public float GetCurrentWeight()
     {
-        if(WeightTMP == null)
+        return CurrentWeight;
+    }
+
+    /// <summary>
+    /// Returns whether the elevator is overweighted.
+    /// </summary>
+    public bool IsElevatorOverweighted()
+    {
+        return IsOverweighted;
+    }
+
+    /// <summary>
+    /// Validates trigger setup.
+    /// </summary>
+    private void Awake()
+    {
+        TriggerCollider = GetComponent<Collider>();
+
+        if (TriggerCollider != null)
         {
-            Debug.LogWarning("Falta asignar el tmp del peso");
+            TriggerCollider.isTrigger = true;
         }
+    }
+
+    /// <summary>
+    /// Initializes the UI.
+    /// </summary>
+    private void Start()
+    {
+        RefreshWeight();
+    }
+
+    /// <summary>
+    /// Recomputes elevator weight in the physics loop.
+    /// </summary>
+    private void FixedUpdate()
+    {
+        RefreshWeight();
+    }
+
+    /// <summary>
+    /// Registers overlapping actors and carryables.
+    /// </summary>
+    /// <param name="Other">Collider entering the trigger.</param>
+    private void OnTriggerEnter(Collider Other)
+    {
+        RegisterOverlap(Other);
+    }
+
+    /// <summary>
+    /// Keeps overlap registration stable on moving platform edge cases.
+    /// </summary>
+    /// <param name="Other">Collider staying inside the trigger.</param>
+    private void OnTriggerStay(Collider Other)
+    {
+        RegisterOverlap(Other);
+    }
+
+    /// <summary>
+    /// Removes overlapping actors and carryables when they leave the trigger.
+    /// </summary>
+    /// <param name="Other">Collider exiting the trigger.</param>
+    private void OnTriggerExit(Collider Other)
+    {
+        PhysicsCarryable Carryable = ResolveCarryable(Other);
+        if (Carryable != null)
+        {
+            OverlappingCarryables.Remove(Carryable);
+        }
+
+        ElevatorWeightActor Actor = ResolveWeightActor(Other);
+        if (Actor != null)
+        {
+            OverlappingActors.Remove(Actor);
+        }
+    }
+
+    /// <summary>
+    /// Registers a carryable or actor found in the provided collider hierarchy.
+    /// </summary>
+    /// <param name="Other">Collider to inspect.</param>
+    private void RegisterOverlap(Collider Other)
+    {
+        PhysicsCarryable Carryable = ResolveCarryable(Other);
+        if (Carryable != null)
+        {
+            OverlappingCarryables.Add(Carryable);
+        }
+
+        ElevatorWeightActor Actor = ResolveWeightActor(Other);
+        if (Actor != null)
+        {
+            OverlappingActors.Add(Actor);
+        }
+    }
+
+    /// <summary>
+    /// Recomputes the full authoritative weight.
+    /// </summary>
+    private void RefreshWeight()
+    {
+        CleanupNullReferences();
+
+        float FreeCarryableWeight = EvaluateFreeCarryablesInsideWeight();
+        float ActorWeight = EvaluateActorsInsideWeight();
+
+        CurrentWeight = Mathf.Max(0f, FreeCarryableWeight + ActorWeight);
+        IsOverweighted = CurrentWeight > MaxAllowedWeight;
+
+        if (DebugLogs)
+        {
+            Debug.Log(
+                "[ElevatorWeightSystem] CurrentWeight=" + CurrentWeight.ToString("F2") +
+                " | FreeCarryables=" + FreeCarryableWeight.ToString("F2") +
+                " | ActorWeight=" + ActorWeight.ToString("F2"),
+                this);
+        }
+
         ShowWeightOnUI();
     }
 
+    /// <summary>
+    /// Sums all carryables physically inside the elevator that are not currently held or magnetized.
+    /// </summary>
+    private float EvaluateFreeCarryablesInsideWeight()
+    {
+        float TotalWeight = 0f;
+
+        foreach (PhysicsCarryable Carryable in OverlappingCarryables)
+        {
+            if (Carryable == null)
+            {
+                continue;
+            }
+
+            if (Carryable.GetIsHeld() || Carryable.GetIsMagnetized())
+            {
+                continue;
+            }
+
+            TotalWeight += GetCarryableWeight(Carryable);
+        }
+
+        return TotalWeight;
+    }
+
+    /// <summary>
+    /// Sums base player weight plus every held or magnetized carryable while the player is inside the elevator.
+    /// </summary>
+    private float EvaluateActorsInsideWeight()
+    {
+        if (OverlappingActors.Count == 0)
+        {
+            return 0f;
+        }
+
+        float TotalWeight = 0f;
+
+        foreach (ElevatorWeightActor Actor in OverlappingActors)
+        {
+            if (Actor == null)
+            {
+                continue;
+            }
+
+            TotalWeight += Actor.GetBaseWeight();
+            TotalWeight += EvaluateTransferredCarryableWeight();
+        }
+
+        return TotalWeight;
+    }
+
+    /// <summary>
+    /// Sums every carryable currently controlled by the player through hold or magnet.
+    /// Because only one player can own these states, explicit ownership tracking is not required.
+    /// </summary>
+    private float EvaluateTransferredCarryableWeight()
+    {
+        float TotalWeight = 0f;
+        PhysicsCarryable[] AllCarryables = FindObjectsByType<PhysicsCarryable>(FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < AllCarryables.Length; Index++)
+        {
+            PhysicsCarryable Carryable = AllCarryables[Index];
+            if (Carryable == null)
+            {
+                continue;
+            }
+
+            if (!Carryable.GetIsHeld() && !Carryable.GetIsMagnetized())
+            {
+                continue;
+            }
+
+            TotalWeight += GetCarryableWeight(Carryable);
+        }
+
+        return TotalWeight;
+    }
+
+    /// <summary>
+    /// Resolves the gameplay weight of a carryable from its ore item data.
+    /// </summary>
+    /// <param name="Carryable">Carryable to inspect.</param>
+    /// <returns>Configured weight or zero when unavailable.</returns>
+    private float GetCarryableWeight(PhysicsCarryable Carryable)
+    {
+        if (Carryable == null)
+        {
+            return 0f;
+        }
+
+        OrePickup OrePickupComponent = Carryable.GetComponent<OrePickup>();
+        if (OrePickupComponent == null)
+        {
+            OrePickupComponent = Carryable.GetComponentInChildren<OrePickup>();
+        }
+
+        if (OrePickupComponent == null)
+        {
+            return 0f;
+        }
+
+        OreItemData OreData = OrePickupComponent.GetOreItemData();
+        if (OreData == null)
+        {
+            Debug.LogWarning("Carryable has no OreItemData assigned.", Carryable);
+            return 0f;
+        }
+
+        return Mathf.Max(0f, OreData.GetWeightValue());
+    }
+
+    /// <summary>
+    /// Removes null references from tracked sets.
+    /// </summary>
+    private void CleanupNullReferences()
+    {
+        OverlappingCarryables.RemoveWhere(Item => Item == null);
+        OverlappingActors.RemoveWhere(Item => Item == null);
+    }
+
+    /// <summary>
+    /// Updates the optional UI text.
+    /// </summary>
     public void ShowWeightOnUI()
     {
         if (WeightTMP == null)
@@ -41,106 +303,14 @@ public class ElevatorWeightSystem : MonoBehaviour
             return;
         }
 
-        WeightTMP.text = CurrentWeight.ToString() + " / " + MaxAllowedWeight.ToString() + " KG";
-
-    }
-
-    /// <summary>
-    /// Registers a carryable candidate when it enters the storage trigger.
-    /// </summary>
-    /// <param name="Other">Collider entering the trigger.</param>
-    private void OnTriggerEnter(Collider Other)
-    {
-        PhysicsCarryable Carryable = ResolveCarryable(Other);
-
-        if (Carryable == null)
-        {
-            return;
-        }
-
-        OrePickup OrePickup = Other.GetComponent<OrePickup>();
-
-        if (OrePickup == null)
-        {
-            OrePickup = Other.GetComponentInParent<OrePickup>();
-        }
-
-        OreItemData oreItemData = OrePickup.GetOreItemData();
-        if (oreItemData == null)
-        {
-            Debug.LogWarning("Ha entrado un carryable pero su oreItemData es null");
-            return;
-        }
-
-        AddWeight(oreItemData.GetWeightValue());
-    }
-
-    /// <summary>
-    /// Releases a carryable automatically if it leaves the storage zone while still externally carried by this zone.
-    /// </summary>
-    /// <param name="Other">Collider exiting the trigger.</param>
-    private void OnTriggerExit(Collider Other)
-    {
-        PhysicsCarryable Carryable = ResolveCarryable(Other);
-
-        if (Carryable == null)
-        {
-            return;
-        }
-
-        OrePickup OrePickup = Other.GetComponent<OrePickup>();
-
-        if (OrePickup == null)
-        {
-            OrePickup = Other.GetComponentInParent<OrePickup>();
-        }
-
-        OreItemData oreItemData = OrePickup.GetOreItemData();
-        if (oreItemData == null)
-        {
-            Debug.LogWarning("Ha entrado un carryable pero su oreItemData es null");
-            return;
-        }
-
-        SubstractWeight(oreItemData.GetWeightValue());
-    }
-
-    /// <summary>
-    /// Function to add weight to current weight
-    /// </summary>
-    private void AddWeight(float weightToAdd)
-    {
-        CurrentWeight += weightToAdd;
-        CheckIfElevatorIsOverweighted();
-    }
-
-    /// <summary>
-    /// Function to substract weight to current weight
-    /// </summary>
-    private void SubstractWeight(float weightToAdd)
-    {
-        CurrentWeight -= weightToAdd;
-        CheckIfElevatorIsOverweighted();
-    }
-
-    private void CheckIfElevatorIsOverweighted()
-    {
-        if(CurrentWeight > MaxAllowedWeight)
-        {
-            IsOverweighted = true;
-        }
-        else
-        {
-            IsOverweighted = false;
-        }
-        ShowWeightOnUI();
+        WeightTMP.text = CurrentWeight.ToString("F0") + " / " + MaxAllowedWeight.ToString("F0") + " KG";
     }
 
     /// <summary>
     /// Resolves the root PhysicsCarryable from an overlapping collider.
     /// </summary>
-    /// <param name="Other">Overlapping collider.</param>
-    /// <returns>Resolved PhysicsCarryable or null when not found.</returns>
+    /// <param name="Other">Collider to inspect.</param>
+    /// <returns>Resolved carryable or null.</returns>
     private PhysicsCarryable ResolveCarryable(Collider Other)
     {
         if (Other == null)
@@ -149,5 +319,20 @@ public class ElevatorWeightSystem : MonoBehaviour
         }
 
         return Other.GetComponentInParent<PhysicsCarryable>();
+    }
+
+    /// <summary>
+    /// Resolves the player weight actor from an overlapping collider.
+    /// </summary>
+    /// <param name="Other">Collider to inspect.</param>
+    /// <returns>Resolved actor or null.</returns>
+    private ElevatorWeightActor ResolveWeightActor(Collider Other)
+    {
+        if (Other == null)
+        {
+            return null;
+        }
+
+        return Other.GetComponentInParent<ElevatorWeightActor>();
     }
 }

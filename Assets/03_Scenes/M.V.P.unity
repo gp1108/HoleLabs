@@ -3225,7 +3225,7 @@ GameObject:
   - component: {fileID: 1530515851}
   - component: {fileID: 1530515853}
   - component: {fileID: 1530515852}
-  m_Layer: 7
+  m_Layer: 6
   m_Name: ElevatorWeightZone
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3261,7 +3261,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ElevatorWeightSystem
   MaxAllowedWeight: 200
   CurrentWeight: 0
+  IsOverweighted: 0
   WeightTMP: {fileID: 1345045559}
+  DebugLogs: 0
 --- !u!65 &1530515853
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -5424,6 +5426,7 @@ GameObject:
   - component: {fileID: 6396387036385932251}
   - component: {fileID: 9164750670804751443}
   - component: {fileID: 9164750670804751445}
+  - component: {fileID: 9164750670804751446}
   m_Layer: 9
   m_Name: PLAYER
   m_TagString: Player
@@ -5593,6 +5596,19 @@ MonoBehaviour:
   TriggerInteraction: 2
   DebugLogs: 1
   DrawDebugRay: 0
+--- !u!114 &9164750670804751446
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8724351232215334725}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a0f3e5eb8e5805046bf6b83fac02bbe3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ElevatorWeightActor
+  BaseWeight: 10
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
