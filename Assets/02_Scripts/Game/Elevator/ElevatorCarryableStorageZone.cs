@@ -196,12 +196,6 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
     {
         PhysicsCarryable Carryable = ResolveCarryable(Other);
 
-        Debug.Log(
-            "[ElevatorCarryableStorageZone] Enter :: Collider=" + Other.name +
-            " | Root=" + Other.transform.root.name +
-            " | Carryable=" + (Carryable != null ? Carryable.name : "NULL"),
-            this);
-
         if (Carryable == null)
         {
             return;
