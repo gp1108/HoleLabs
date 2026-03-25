@@ -6,6 +6,8 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// Handles runtime hotbar storage, selection, equipping, dropping and swapping.
 /// This version exposes UI notifications so the hotbar can update without polling heavy logic.
+/// It also safely interrupts equipped items before they are destroyed so animations,
+/// VFX and tool states do not get stuck when switching slots quickly.
 /// </summary>
 [RequireComponent(typeof(PlayerInput))]
 public sealed class HotbarController : MonoBehaviour
@@ -40,6 +42,10 @@ public sealed class HotbarController : MonoBehaviour
     [Tooltip("Prefix used for direct slot selection input actions such as Slot1, Slot2 and so on.")]
     [SerializeField] private string SlotActionPrefix = "Slot";
 
+    [Header("Scroll")]
+    [Tooltip("Minimum time between scroll inputs to avoid overly fast slot switching.")]
+    [SerializeField] private float ScrollCooldown = 0.1f;
+
     [Header("Drop")]
     [Tooltip("Forward distance used when spawning a dropped world item.")]
     [SerializeField] private float DropForwardDistance = 1.5f;
@@ -73,41 +79,22 @@ public sealed class HotbarController : MonoBehaviour
 
     private GameObject CurrentEquippedObject;
     private EquippedItemBehaviour CurrentEquippedBehaviour;
+    private float LastScrollTime;
 
-    /// <summary>
-    /// Fired when any slot content changes. The integer argument is the changed slot index.
-    /// </summary>
     public event Action<int> OnSlotChanged;
-
-    /// <summary>
-    /// Fired when the selected slot changes. The integer argument is the new selected slot index.
-    /// </summary>
     public event Action<int> OnSelectedSlotChanged;
-
-    /// <summary>
-    /// Fired when the hotbar slot count changes. Useful when rebuilding UI.
-    /// </summary>
     public event Action OnHotbarStructureChanged;
 
-    /// <summary>
-    /// Gets the current selected hotbar slot index.
-    /// </summary>
     public int GetSelectedIndex()
     {
         return SelectedIndex;
     }
 
-    /// <summary>
-    /// Gets the total amount of slots currently available in the hotbar.
-    /// </summary>
     public int GetSlotCount()
     {
         return SlotCount;
     }
 
-    /// <summary>
-    /// Gets the runtime item stored in the provided slot index.
-    /// </summary>
     public ItemInstance GetItemAtSlot(int slotIndex)
     {
         if (!IsValidSlotIndex(slotIndex))
@@ -118,9 +105,6 @@ public sealed class HotbarController : MonoBehaviour
         return Slots[slotIndex];
     }
 
-    /// <summary>
-    /// Initializes references and validates hotbar data.
-    /// </summary>
     private void Awake()
     {
         PlayerInput = GetComponent<PlayerInput>();
@@ -139,9 +123,6 @@ public sealed class HotbarController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Processes hotbar input and forwards item use events.
-    /// </summary>
     private void Update()
     {
         HandleSelectionInput();
@@ -149,9 +130,6 @@ public sealed class HotbarController : MonoBehaviour
         HandleDropInput();
     }
 
-    /// <summary>
-    /// Resizes the hotbar while preserving existing slot content when possible.
-    /// </summary>
     public void ResizeHotbar(int newSlotCount)
     {
         SlotCount = Mathf.Max(1, newSlotCount);
@@ -168,17 +146,11 @@ public sealed class HotbarController : MonoBehaviour
         OnHotbarStructureChanged?.Invoke();
     }
 
-    /// <summary>
-    /// Checks whether the currently selected slot contains an item.
-    /// </summary>
     public bool HasSelectedItem()
     {
         return GetSelectedItem() != null;
     }
 
-    /// <summary>
-    /// Gets the runtime item stored in the currently selected slot.
-    /// </summary>
     public ItemInstance GetSelectedItem()
     {
         if (SelectedIndex < 0 || SelectedIndex >= Slots.Count)
@@ -189,10 +161,6 @@ public sealed class HotbarController : MonoBehaviour
         return Slots[SelectedIndex];
     }
 
-    /// <summary>
-    /// Attempts to add an item into the hotbar.
-    /// Preferred slot is tried first, then compatible stacks, then empty slots.
-    /// </summary>
     public bool TryAddItem(ItemInstance itemInstance, int preferredSlotIndex, out int insertedSlotIndex)
     {
         insertedSlotIndex = -1;
@@ -254,9 +222,6 @@ public sealed class HotbarController : MonoBehaviour
         return false;
     }
 
-    /// <summary>
-    /// Replaces the item in the selected slot and returns the previous one.
-    /// </summary>
     public ItemInstance ReplaceSelectedItem(ItemInstance newItemInstance)
     {
         if (newItemInstance == null)
@@ -275,9 +240,6 @@ public sealed class HotbarController : MonoBehaviour
         return previousItem;
     }
 
-    /// <summary>
-    /// Removes and returns the item currently stored in the selected slot.
-    /// </summary>
     public ItemInstance RemoveSelectedItem()
     {
         EnsureSlotListSize(SlotCount);
@@ -291,9 +253,6 @@ public sealed class HotbarController : MonoBehaviour
         return removedItem;
     }
 
-    /// <summary>
-    /// Drops the currently selected item into the world and clears the slot.
-    /// </summary>
     public bool DropSelectedItemToWorld()
     {
         ItemInstance itemToDrop = RemoveSelectedItem();
@@ -306,18 +265,12 @@ public sealed class HotbarController : MonoBehaviour
         return SpawnWorldItem(itemToDrop, GetDropSpawnPosition(), Quaternion.LookRotation(GetDropDirection(), Vector3.up), Vector3.zero, Vector3.zero, true);
     }
 
-    /// <summary>
-    /// Spawns a physical world item from a runtime instance using a forward impulse.
-    /// </summary>
     public bool SpawnWorldItem(ItemInstance itemInstance, Vector3 position, Vector3 direction)
     {
         Quaternion rotation = Quaternion.LookRotation(direction.sqrMagnitude > 0.0001f ? direction : transform.forward, Vector3.up);
         return SpawnWorldItem(itemInstance, position, rotation, Vector3.zero, Vector3.zero, true);
     }
 
-    /// <summary>
-    /// Spawns a physical world item from a runtime instance using explicit transform and physics values.
-    /// </summary>
     public bool SpawnWorldItem(ItemInstance itemInstance, Vector3 position, Quaternion rotation, Vector3 linearVelocity, Vector3 angularVelocity, bool applyDropImpulse)
     {
         if (itemInstance == null || itemInstance.GetDefinition() == null)
@@ -363,9 +316,6 @@ public sealed class HotbarController : MonoBehaviour
         return true;
     }
 
-    /// <summary>
-    /// Selects a hotbar slot by index.
-    /// </summary>
     public void SelectSlot(int slotIndex)
     {
         EnsureSlotListSize(SlotCount);
@@ -387,9 +337,6 @@ public sealed class HotbarController : MonoBehaviour
         Log("Selected slot index: " + SelectedIndex);
     }
 
-    /// <summary>
-    /// Refreshes the equipped object so it matches the currently selected slot.
-    /// </summary>
     public void RefreshEquippedItem()
     {
         UnequipCurrentItem();
@@ -454,6 +401,13 @@ public sealed class HotbarController : MonoBehaviour
 
             if (Mathf.Abs(scrollValue) > 0.01f)
             {
+                if (Time.time - LastScrollTime < ScrollCooldown)
+                {
+                    return;
+                }
+
+                LastScrollTime = Time.time;
+
                 int direction = scrollValue > 0f ? 1 : -1;
                 int nextIndex = SelectedIndex + direction;
 
@@ -609,6 +563,7 @@ public sealed class HotbarController : MonoBehaviour
     {
         if (CurrentEquippedBehaviour != null)
         {
+            CurrentEquippedBehaviour.ForceStopItemUsage();
             CurrentEquippedBehaviour.OnUnequipped();
         }
 

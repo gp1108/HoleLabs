@@ -15,9 +15,9 @@ MonoBehaviour:
   ItemId: Pickaxe
   DisplayName: Pickaxe
   Icon: {fileID: 10901, guid: 0000000000000000f000000000000000, type: 0}
-  WorldPrefab: {fileID: 8021322218510661206, guid: ccb72ea7f987f6e4a8ed38f5130b5287, type: 3}
-  EquippedPrefab: {fileID: 8021322218510661206, guid: 71a3d29ce81d7ce49a29ea3403f8f58c, type: 3}
+  WorldPrefab: {fileID: 779518073925439557, guid: 3ecb441607d46374e8b1c4c611a7ec66, type: 3}
+  EquippedPrefab: {fileID: 9064466084255291524, guid: 88f5a378824b6f24f877396574650700, type: 3}
   IsStackable: 0
   MaxStackSize: 1
-  DefaultDurability: 100000000
+  DefaultDurability: -1
   AutoEquipWhenSelected: 1

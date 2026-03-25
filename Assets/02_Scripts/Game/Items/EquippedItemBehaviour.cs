@@ -3,6 +3,8 @@ using UnityEngine;
 /// <summary>
 /// Base behaviour for any equipped item. Inherit from this for tools such as pickaxes,
 /// scanners or weapons. If an item has no equipped prefab, the hotbar can still store it.
+/// This version includes interruption hooks so item switching stays safe even if
+/// the current equipped item is playing animations, VFX or timed actions.
 /// </summary>
 public abstract class EquippedItemBehaviour : MonoBehaviour
 {
@@ -11,6 +13,12 @@ public abstract class EquippedItemBehaviour : MonoBehaviour
 
     [Tooltip("Hotbar controller that owns this equipped item.")]
     protected HotbarController OwnerHotbar;
+
+    [Tooltip("Whether the item is currently using its primary action.")]
+    protected bool IsPrimaryUseActive;
+
+    [Tooltip("Whether the item is currently using its secondary action.")]
+    protected bool IsSecondaryUseActive;
 
     /// <summary>
     /// Initializes the equipped item with its runtime data and owner.
@@ -29,6 +37,16 @@ public abstract class EquippedItemBehaviour : MonoBehaviour
     }
 
     /// <summary>
+    /// Called by the hotbar before the item is unequipped or replaced.
+    /// Use this to stop animations, sounds, coroutines, charge states or VFX safely.
+    /// </summary>
+    public virtual void ForceStopItemUsage()
+    {
+        IsPrimaryUseActive = false;
+        IsSecondaryUseActive = false;
+    }
+
+    /// <summary>
     /// Called once before the item is removed as the selected hotbar entry.
     /// </summary>
     public virtual void OnUnequipped()
@@ -40,6 +58,7 @@ public abstract class EquippedItemBehaviour : MonoBehaviour
     /// </summary>
     public virtual void OnPrimaryUseStarted()
     {
+        IsPrimaryUseActive = true;
     }
 
     /// <summary>
@@ -54,6 +73,7 @@ public abstract class EquippedItemBehaviour : MonoBehaviour
     /// </summary>
     public virtual void OnPrimaryUseEnded()
     {
+        IsPrimaryUseActive = false;
     }
 
     /// <summary>
@@ -61,6 +81,7 @@ public abstract class EquippedItemBehaviour : MonoBehaviour
     /// </summary>
     public virtual void OnSecondaryUseStarted()
     {
+        IsSecondaryUseActive = true;
     }
 
     /// <summary>
@@ -75,5 +96,6 @@ public abstract class EquippedItemBehaviour : MonoBehaviour
     /// </summary>
     public virtual void OnSecondaryUseEnded()
     {
+        IsSecondaryUseActive = false;
     }
 }
