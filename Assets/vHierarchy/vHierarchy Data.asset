@@ -35,6 +35,7 @@ MonoBehaviour:
         - globalObjectIdString: GlobalObjectId_V1-2-cb5c0b2fbedc2334d8eb2f6630f0bdf7-1849208073-0
         - globalObjectIdString: GlobalObjectId_V1-2-cb5c0b2fbedc2334d8eb2f6630f0bdf7-8724351232215334725-0
         - globalObjectIdString: GlobalObjectId_V1-2-cb5c0b2fbedc2334d8eb2f6630f0bdf7-1228786346-0
+        - globalObjectIdString: GlobalObjectId_V1-2-cb5c0b2fbedc2334d8eb2f6630f0bdf7-1990032883-0
         values:
         - colorIndex: 5
           iconNameOrGuid: cs Script Icon
@@ -46,6 +47,10 @@ MonoBehaviour:
           isColorRecursive: 0
         - colorIndex: 3
           iconNameOrGuid: 
+          isIconRecursive: 0
+          isColorRecursive: 0
+        - colorIndex: 1
+          iconNameOrGuid: Favorite
           isIconRecursive: 0
           isColorRecursive: 0
   bookmarks:

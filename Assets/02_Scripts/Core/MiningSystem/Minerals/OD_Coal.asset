@@ -26,9 +26,9 @@ MonoBehaviour:
   PropertyRanges:
   - PropertyType: 1
     MinValue: 0
-    MaxValue: 1
+    MaxValue: 10
     AffectedByUpgrades: 1
   - PropertyType: 2
     MinValue: 0
-    MaxValue: 1
+    MaxValue: 10
     AffectedByUpgrades: 1

@@ -1,15 +1,17 @@
 using UnityEngine;
 
 /// <summary>
-/// Stores runtime ore data on a dropped physical ore object.
-/// This component is separate from the player's generic item system so ore-specific
-/// properties can remain flexible without polluting every item type.
+/// Physical collectible currency emitted by the ore selling machine.
+/// The wallet is credited only when a collector explicitly picks this object up through interaction.
 /// </summary>
-public sealed class OrePickup : MonoBehaviour
+public sealed class MoneyPickup : MonoBehaviour
 {
     [Header("Runtime Data")]
-    [Tooltip("Runtime ore data carried by this dropped pickup.")]
-    [SerializeField] private OreItemData OreItemData;
+    [Tooltip("Currency type granted when this pickup is collected.")]
+    [SerializeField] private CurrencyWallet.CurrencyType CurrencyType = CurrencyWallet.CurrencyType.Gold;
+
+    [Tooltip("Amount granted when this pickup is collected.")]
+    [SerializeField] private int Amount = 1;
 
     [Header("Structure")]
     [Tooltip("Root transform moved, activated and deactivated by the pool. If empty, this transform is used.")]
@@ -22,26 +24,23 @@ public sealed class OrePickup : MonoBehaviour
     [Tooltip("Optional collider array enabled again when the pickup is reused by the pool.")]
     [SerializeField] private Collider[] CachedColliders;
 
-    private OrePickupPool OwnerPool;
+    private MoneyPickupPool OwnerPool;
     private GameObject SourcePrefab;
 
     /// <summary>
-    /// Initializes this pickup with runtime ore data.
+    /// Initializes the runtime currency payload stored by this pickup.
     /// </summary>
-    public void Initialize(OreItemData oreItemData)
+    public void Initialize(int amount, CurrencyWallet.CurrencyType currencyType)
     {
-        OreItemData = oreItemData;
-
-        if (OreItemData != null && OreItemData.GetOreDefinition() != null)
-        {
-            GetRuntimeRoot().name = "OrePickup_" + OreItemData.GetOreDefinition().GetDisplayName();
-        }
+        Amount = Mathf.Max(1, amount);
+        CurrencyType = currencyType;
+        GetRuntimeRoot().name = "MoneyPickup_" + CurrencyType + "_" + Amount;
     }
 
     /// <summary>
-    /// Binds pool ownership data used when the pickup is returned.
+    /// Binds pool ownership data used when the pickup is later returned.
     /// </summary>
-    public void BindPool(OrePickupPool ownerPool, GameObject sourcePrefab)
+    public void BindPool(MoneyPickupPool ownerPool, GameObject sourcePrefab)
     {
         OwnerPool = ownerPool;
         SourcePrefab = sourcePrefab;
@@ -72,8 +71,8 @@ public sealed class OrePickup : MonoBehaviour
         EnsureCachedReferences();
         ResetPhysicsState();
         SetCollidersEnabled(false);
-        OreItemData = null;
-        runtimeRoot.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "OrePickup_Pooled";
+        Amount = 0;
+        runtimeRoot.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "MoneyPickup_Pooled";
         runtimeRoot.SetParent(poolRoot, false);
         runtimeRoot.gameObject.SetActive(false);
     }
@@ -93,11 +92,28 @@ public sealed class OrePickup : MonoBehaviour
     }
 
     /// <summary>
-    /// Gets the runtime ore payload currently stored by this pickup.
+    /// Gets the configured currency type granted on collection.
     /// </summary>
-    public OreItemData GetOreItemData()
+    public CurrencyWallet.CurrencyType GetCurrencyType()
     {
-        return OreItemData;
+        return CurrencyType;
+    }
+
+    /// <summary>
+    /// Gets the amount granted on collection.
+    /// </summary>
+    public int GetAmount()
+    {
+        return Mathf.Max(0, Amount);
+    }
+
+    /// <summary>
+    /// Gets the cached rigidbody used for emission impulses.
+    /// </summary>
+    public Rigidbody GetCachedRigidbody()
+    {
+        EnsureCachedReferences();
+        return CachedRigidbody;
     }
 
     /// <summary>

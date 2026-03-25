@@ -11,6 +11,9 @@ public sealed class OreRuntimeService : MonoBehaviour
     [Tooltip("Upgrade manager used to resolve upgrade-modified mining values.")]
     [SerializeField] private UpgradeManager UpgradeManager;
 
+    [Tooltip("Optional pickup pool used to reuse dropped ore objects instead of instantiating and destroying them.")]
+    [SerializeField] private OrePickupPool OrePickupPool;
+
     [Header("Debug")]
     [Tooltip("Logs generation and value resolution details.")]
     [SerializeField] private bool DebugLogs = false;
@@ -157,6 +160,11 @@ public sealed class OreRuntimeService : MonoBehaviour
             goldMultiplier
         );
 
+        int finalWeightValue = Mathf.RoundToInt(
+            oreDefinition.GetBaseWeightValue() *
+            sizeMultiplier * purityMultiplier
+        );
+
         int finalResearchValue = Mathf.RoundToInt(
             oreDefinition.GetBaseResearchValue() *
             purityMultiplier *
@@ -166,8 +174,13 @@ public sealed class OreRuntimeService : MonoBehaviour
 
         oreItemData.SetGoldValue(Mathf.Max(0, finalGoldValue));
         oreItemData.SetResearchValue(Mathf.Max(0, finalResearchValue));
+        oreItemData.SetWeightValue(Mathf.Max(0, finalWeightValue));
     }
 
+    /// <summary>
+    /// Spawns one dropped ore pickup using the configured pool when available.
+    /// Falls back to regular instantiation if no pool has been assigned.
+    /// </summary>
     public GameObject SpawnOrePickup(OreItemData oreItemData, Vector3 position, Quaternion rotation)
     {
         if (oreItemData == null || oreItemData.GetOreDefinition() == null)
@@ -182,20 +195,31 @@ public sealed class OreRuntimeService : MonoBehaviour
             return null;
         }
 
-        GameObject droppedObject = Instantiate(droppedOrePrefab, position, rotation);
-        OrePickup orePickup = droppedObject.GetComponent<OrePickup>();
+        OrePickup orePickup = null;
+
+        if (OrePickupPool != null)
+        {
+            orePickup = OrePickupPool.GetPickup(droppedOrePrefab, position, rotation);
+        }
 
         if (orePickup == null)
         {
-            orePickup = droppedObject.GetComponentInChildren<OrePickup>();
+            GameObject droppedObject = Instantiate(droppedOrePrefab, position, rotation);
+            orePickup = droppedObject.GetComponent<OrePickup>();
+
+            if (orePickup == null)
+            {
+                orePickup = droppedObject.GetComponentInChildren<OrePickup>();
+            }
         }
 
-        if (orePickup != null)
+        if (orePickup == null)
         {
-            orePickup.Initialize(oreItemData);
+            return null;
         }
 
-        return droppedObject;
+        orePickup.Initialize(oreItemData);
+        return orePickup.GetRuntimeRoot().gameObject;
     }
 
     private float ApplyPropertyUpgradeMultiplier(OrePropertyType propertyType, float value)

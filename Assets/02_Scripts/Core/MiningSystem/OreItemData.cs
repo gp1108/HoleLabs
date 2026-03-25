@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor.Search;
 using UnityEngine;
 
 /// <summary>
@@ -41,6 +42,9 @@ public sealed class OreItemData
     [Tooltip("Resolved research value of this ore payload.")]
     [SerializeField] private int ResearchValue;
 
+    [Tooltip("Resolved weight value of this ore payload.")]
+    [SerializeField] private int WeightValue;
+
     public OreItemData(OreDefinition oreDefinition)
     {
         OreDefinition = oreDefinition;
@@ -51,6 +55,8 @@ public sealed class OreItemData
     public void SetGoldValue(int goldValue) { GoldValue = Mathf.Max(0, goldValue); }
     public int GetResearchValue() { return ResearchValue; }
     public void SetResearchValue(int researchValue) { ResearchValue = Mathf.Max(0, researchValue); }
+    public void SetWeightValue(int weightvalue) { WeightValue = Mathf.Max(0, weightvalue); }
+    public float GetWeightValue() { return WeightValue; }
     public IReadOnlyList<OrePropertyValue> GetProperties() { return Properties; }
 
     public void SetProperty(OrePropertyType propertyType, float value)

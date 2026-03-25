@@ -83,6 +83,10 @@ public sealed class OreDefinition : ScriptableObject
     [Tooltip("Base maximum amount of ore pieces dropped when the vein breaks.")]
     [SerializeField] private int BaseDropCountMax = 2;
 
+    [Header("Weight")]
+    [Tooltip("Base weight value in KG before property and upgrade modifiers are applied.")]
+    [SerializeField] private int BaseWeightValue = 10;
+
     [Header("Economy")]
     [Tooltip("Base gold value before property and upgrade modifiers are applied.")]
     [SerializeField] private int BaseGoldValue = 10;
@@ -104,6 +108,8 @@ public sealed class OreDefinition : ScriptableObject
     public int GetBaseDropCountMin() { return Mathf.Max(0, BaseDropCountMin); }
     public int GetBaseDropCountMax() { return Mathf.Max(GetBaseDropCountMin(), BaseDropCountMax); }
     public int GetBaseGoldValue() { return Mathf.Max(0, BaseGoldValue); }
+
+    public int GetBaseWeightValue() { return Mathf.Max(0, BaseWeightValue); }
     public int GetBaseResearchValue() { return Mathf.Max(0, BaseResearchValue); }
     public IReadOnlyList<OrePropertyRange> GetPropertyRanges() { return PropertyRanges; }
 }

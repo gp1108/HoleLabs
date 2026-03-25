@@ -21,6 +21,8 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     [Header("References")]
     [Tooltip("Top anchor used as the origin of the elevator travel path.")]
     [SerializeField] private Transform TopAnchor;
+    [Tooltip("System that determines how much weight is carrying the elevator")]
+    [SerializeField] private ElevatorWeightSystem ElevatorWeightSystem;
 
     [Header("Travel")]
     [Tooltip("Local travel direction evaluated from the top anchor. Usually Vector3.down.")]
@@ -112,6 +114,11 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     /// </summary>
     private void FixedUpdate()
     {
+        if(ElevatorWeightSystem.IsElevatorOverweighted())
+        {
+            return;
+        }
+
         if (CurrentMoveState == MoveState.MovingUp)
         {
             CurrentDistance -= MoveSpeed * Time.fixedDeltaTime;

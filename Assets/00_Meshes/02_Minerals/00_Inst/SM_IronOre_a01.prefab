@@ -17,6 +17,7 @@ GameObject:
   - component: {fileID: 7238889226101606900}
   - component: {fileID: 8581329347757293757}
   - component: {fileID: 4228956600995661720}
+  - component: {fileID: 4961262262409237924}
   m_Layer: 6
   m_Name: SM_IronOre_a01
   m_TagString: Untagged
@@ -225,3 +226,23 @@ MonoBehaviour:
     MaxLinearSpeed: 0.05
     MaxAngularSpeed: 0.075
     MinimumSupportNormalY: 0.45
+--- !u!114 &4961262262409237924
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8732322352325557543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5142a4f22aa089d4fa5e8fd8ec06b189, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OrePickup
+  OreItemData:
+    OreDefinition: {fileID: 0}
+    Properties: []
+    GoldValue: 0
+    ResearchValue: 0
+  RuntimeRoot: {fileID: 0}
+  CachedRigidbody: {fileID: 0}
+  CachedColliders: []
