@@ -1377,6 +1377,33 @@ Transform:
   - {fileID: 645478623}
   m_Father: {fileID: 962685208}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &704478301 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 779518073925439557, guid: 3ecb441607d46374e8b1c4c611a7ec66, type: 3}
+  m_PrefabInstance: {fileID: 2210735016817569804}
+  m_PrefabAsset: {fileID: 0}
+--- !u!64 &704478309
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 704478301}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 1
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 3012011895477995069, guid: 45b795526c1e4e44ab7ef9a79ec0fbbe, type: 3}
 --- !u!1 &786510448
 GameObject:
   m_ObjectHideFlags: 0
@@ -4749,10 +4776,21 @@ PrefabInstance:
       propertyPath: m_Name
       value: SM_PickAxe_b01
       objectReference: {fileID: 0}
+    - target: {fileID: 2237905902394475784, guid: 3ecb441607d46374e8b1c4c611a7ec66, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8687911766278174016, guid: 3ecb441607d46374e8b1c4c611a7ec66, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 779518073925439557, guid: 3ecb441607d46374e8b1c4c611a7ec66, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 704478309}
   m_SourcePrefab: {fileID: 100100000, guid: 3ecb441607d46374e8b1c4c611a7ec66, type: 3}
 --- !u!1 &2337987036816326745
 GameObject:
