@@ -89,6 +89,11 @@ public sealed class PlayerController : MonoBehaviour
     [SerializeField] private float StandingCameraPivotLocalY = 1.8f;
 
     /// <summary>
+    /// Whether camera look is temporarily blocked by an external interaction such as lever dragging.
+    /// </summary>
+    private bool IsExternalLookBlocked;
+
+    /// <summary>
     /// Current raw movement input.
     /// </summary>
     public Vector2 MoveInput { get; private set; }
@@ -171,6 +176,15 @@ public sealed class PlayerController : MonoBehaviour
     /// <summary>
     /// Caches references and initializes the standing controller state.
     /// </summary>
+
+    /// <summary>
+    /// Allows external systems to temporarily block or restore camera look processing.
+    /// </summary>
+    /// <param name="IsBlocked">True to block camera look, false to restore it.</param>
+    public void SetExternalLookBlocked(bool IsBlocked)
+    {
+        IsExternalLookBlocked = IsBlocked;
+    }
     private void Awake()
     {
         if (CharacterController == null) CharacterController = GetComponent<CharacterController>();
@@ -252,6 +266,11 @@ public sealed class PlayerController : MonoBehaviour
     /// </summary>
     private void UpdateLook()
     {
+        if (IsExternalLookBlocked)
+        {
+            return;
+        }
+
         Vector2 LookInput = PlayerInputReader.Look;
         ViewRoot.Rotate(0f, LookInput.x * LookSensitivityX * Time.deltaTime, 0f, Space.World);
         PitchDegrees = Mathf.Clamp(PitchDegrees - LookInput.y * LookSensitivityY * Time.deltaTime, MinPitch, MaxPitch);

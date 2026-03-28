@@ -3,6 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Authoritative kinematic elevator motor used as the single source of truth for both
 /// physical support and visual representation.
+/// The motor only moves when it receives explicit commands.
 /// </summary>
 [DefaultExecutionOrder(-100)]
 [RequireComponent(typeof(Rigidbody))]
@@ -21,7 +22,8 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     [Header("References")]
     [Tooltip("Top anchor used as the origin of the elevator travel path.")]
     [SerializeField] private Transform TopAnchor;
-    [Tooltip("System that determines how much weight is carrying the elevator")]
+
+    [Tooltip("System that determines how much weight is carrying the elevator.")]
     [SerializeField] private ElevatorWeightSystem ElevatorWeightSystem;
 
     [Header("Travel")]
@@ -39,9 +41,6 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
 
     [Tooltip("Movement speed in meters per second.")]
     [SerializeField] private float MoveSpeed = 2f;
-
-    [Tooltip("If true, the elevator automatically swaps direction at the travel limits.")]
-    [SerializeField] private bool Loop = true;
 
     /// <summary>
     /// Current world velocity of the elevator in meters per second.
@@ -71,7 +70,7 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     /// <summary>
     /// Current runtime move state.
     /// </summary>
-    private MoveState CurrentMoveState = MoveState.MovingDown;
+    private MoveState CurrentMoveState = MoveState.Idle;
 
     /// <summary>
     /// Last simulated world position.
@@ -114,10 +113,13 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     /// </summary>
     private void FixedUpdate()
     {
-        if(ElevatorWeightSystem.IsElevatorOverweighted())
+        if (ElevatorWeightSystem != null && ElevatorWeightSystem.IsElevatorOverweighted())
         {
+            StopAndRefreshVelocity();
             return;
         }
+
+        float PreviousDistance = CurrentDistance;
 
         if (CurrentMoveState == MoveState.MovingUp)
         {
@@ -128,25 +130,29 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
             CurrentDistance += MoveSpeed * Time.fixedDeltaTime;
         }
 
-        if (CurrentDistance <= MinDistance)
-        {
-            CurrentDistance = MinDistance;
-            CurrentMoveState = Loop ? MoveState.MovingDown : MoveState.Idle;
-        }
+        CurrentDistance = Mathf.Clamp(CurrentDistance, MinDistance, MaxDistance);
 
-        if (CurrentDistance >= MaxDistance)
+        if (Mathf.Approximately(CurrentDistance, MinDistance) && CurrentMoveState == MoveState.MovingUp)
         {
-            CurrentDistance = MaxDistance;
-            CurrentMoveState = Loop ? MoveState.MovingUp : MoveState.Idle;
+            CurrentMoveState = MoveState.Idle;
+        }
+        else if (Mathf.Approximately(CurrentDistance, MaxDistance) && CurrentMoveState == MoveState.MovingDown)
+        {
+            CurrentMoveState = MoveState.Idle;
         }
 
         Vector3 TargetPosition = GetTargetPosition();
-
         RigidbodyComponent.MovePosition(TargetPosition);
 
         DeltaPosition = TargetPosition - LastSimulatedPosition;
         Velocity = DeltaPosition / Mathf.Max(Time.fixedDeltaTime, 0.0001f);
         LastSimulatedPosition = TargetPosition;
+
+        if (Mathf.Approximately(PreviousDistance, CurrentDistance) && CurrentMoveState == MoveState.Idle)
+        {
+            Velocity = Vector3.zero;
+            DeltaPosition = Vector3.zero;
+        }
     }
 
     /// <summary>
@@ -174,6 +180,17 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     public void Stop()
     {
         CurrentMoveState = MoveState.Idle;
+    }
+
+    /// <summary>
+    /// Stops the elevator and clears cached motion output.
+    /// </summary>
+    private void StopAndRefreshVelocity()
+    {
+        CurrentMoveState = MoveState.Idle;
+        Velocity = Vector3.zero;
+        DeltaPosition = Vector3.zero;
+        LastSimulatedPosition = transform.position;
     }
 
     /// <summary>

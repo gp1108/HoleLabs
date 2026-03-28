@@ -47,6 +47,15 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     private Collider TriggerCollider;
 
     /// <summary>
+    /// Returns whether at least one weight actor is currently inside the elevator trigger.
+    /// </summary>
+    public bool HasAnyWeightActorInside()
+    {
+        CleanupNullReferences();
+        return OverlappingActors.Count > 0;
+    }
+
+    /// <summary>
     /// Gets the current elevator weight.
     /// </summary>
     public float GetCurrentWeight()
