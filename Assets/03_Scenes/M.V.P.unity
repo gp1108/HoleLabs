@@ -2536,7 +2536,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 0.00043634413}
+  m_AnchoredPosition: {x: 0, y: 0.00003435854}
   m_SizeDelta: {x: 0, y: 300}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &888163750
@@ -3523,7 +3523,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 877725186}
   m_Direction: 2
   m_Value: 0
-  m_Size: 0.99779963
+  m_Size: 0.99425334
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
@@ -5315,11 +5315,13 @@ MonoBehaviour:
   PlayerColliders: []
   HoldAnchor: {fileID: 6200004559338517754}
   HotbarController: {fileID: 6396387036385932251}
+  PlayerInputReader: {fileID: 0}
+  UpgradeShopInteractor: {fileID: 0}
+  MoneyCollector: {fileID: 0}
   InteractionDistance: 8
   InteractionLayers:
     serializedVersion: 2
     m_Bits: 64
-  InteractActionName: Interact
   AutoCreateHoldAnchor: 0
   HoldDistance: 1
   HoldHeightOffset: -0.15
@@ -6454,13 +6456,9 @@ MonoBehaviour:
   PlayerCamera: {fileID: 872367705329081431}
   EquippedItemSocket: {fileID: 1641735265239713162}
   LeverInteractor: {fileID: 0}
+  PlayerInputReader: {fileID: 0}
   SlotCount: 3
   EquipSelectedSlotOnStart: 1
-  HotbarScrollActionName: HotbarScroll
-  UsePrimaryActionName: UsePrimary
-  UseSecondaryActionName: UseSecondary
-  DropItemActionName: DropItem
-  SlotActionPrefix: Slot
   ScrollCooldown: 0.1
   DropForwardDistance: 0.5
   DropVerticalOffset: 0.15
@@ -6936,7 +6934,7 @@ MonoBehaviour:
   Slot7ActionName: Slot7
   Slot8ActionName: Slot8
   Slot9ActionName: Slot9
-  DebugLogs: 0
+  DebugLogs: 1
   PlayerInput: {fileID: 5305257728739790326}
   MoveAction:
     m_Name: Move
@@ -7141,13 +7139,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::MoneyCollector
   PlayerCamera: {fileID: 872367705329081431}
   CurrencyWallet: {fileID: 113581520}
-  InteractActionName: Interact
   CollectDistance: 4
   CollectionLayers:
     serializedVersion: 2
     m_Bits: 4294967295
   TriggerInteraction: 2
-  DebugLogs: 1
+  DebugLogs: 0
   DrawDebugRay: 0
 --- !u!114 &9164750670804751446
 MonoBehaviour:
@@ -7196,10 +7193,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d378649500102924c885f27a091d3e6c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UpgradeShopInteractor
-  PlayerInputReader: {fileID: 9164750670804751444}
   PlayerModalStateController: {fileID: 9164750670804751449}
   CloseOnEscape: 1
-  DebugLogs: 1
+  DebugLogs: 0
 --- !u!114 &9164750670804751449
 MonoBehaviour:
   m_ObjectHideFlags: 0
