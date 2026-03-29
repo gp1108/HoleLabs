@@ -241,15 +241,7 @@ public sealed class PlayerController : MonoBehaviour
     {
         UpdateLook();
 
-        if (CurrentPlatform != null)
-        {
-            CharacterController.Move(CurrentPlatform.DeltaPosition);
-            LastPlatformUpwardSpeed = Mathf.Max(0f, CurrentPlatform.DeltaPosition.y / Mathf.Max(Time.deltaTime, 0.0001f));
-        }
-        else
-        {
-            LastPlatformUpwardSpeed = 0f;
-        }
+        ApplyPlatformCarry();
 
         UpdateJumpSupport();
         UpdateCrouch();
@@ -409,6 +401,55 @@ public sealed class PlayerController : MonoBehaviour
     {
         CharacterController.height = NewHeight;
         CharacterController.center = new Vector3(0f, NewHeight * 0.5f, 0f);
+    }
+
+
+    /// <summary>
+    /// Applies full platform carry to the character controller, including the displacement of the
+    /// player support point caused by platform rotation and the visual yaw rotation of the player.
+    /// </summary>
+    private void ApplyPlatformCarry()
+    {
+        if (CurrentPlatform == null)
+        {
+            LastPlatformUpwardSpeed = 0f;
+            return;
+        }
+
+        Vector3 SupportPoint = transform.position;
+        Vector3 PlatformPointDelta = CurrentPlatform.GetWorldPointDelta(SupportPoint);
+
+        if (PlatformPointDelta.sqrMagnitude > 0f)
+        {
+            CharacterController.Move(PlatformPointDelta);
+        }
+
+        ApplyPlatformRotation(CurrentPlatform.DeltaRotation);
+        LastPlatformUpwardSpeed = Mathf.Max(0f, PlatformPointDelta.y / Mathf.Max(Time.deltaTime, 0.0001f));
+    }
+
+
+    /// <summary>
+    /// Applies the carrier yaw rotation to the player view root so the player orientation rotates
+    /// with the platform while preserving the independent camera pitch controlled by the camera pivot.
+    /// </summary>
+    /// <param name="CarrierRotationDelta">Frame rotation delta received from the current platform.</param>
+    private void ApplyPlatformRotation(Quaternion CarrierRotationDelta)
+    {
+        if (ViewRoot == null)
+        {
+            return;
+        }
+
+        Vector3 DeltaEulerAngles = CarrierRotationDelta.eulerAngles;
+        float DeltaYaw = NormalizeAngle(DeltaEulerAngles.y);
+
+        if (Mathf.Abs(DeltaYaw) <= 0.0001f)
+        {
+            return;
+        }
+
+        ViewRoot.Rotate(0f, DeltaYaw, 0f, Space.World);
     }
 
     /// <summary>

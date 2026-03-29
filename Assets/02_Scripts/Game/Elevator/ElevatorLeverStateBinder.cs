@@ -1,12 +1,23 @@
 using UnityEngine;
 
 /// <summary>
-/// Converts generic lever snap indices into elevator motor commands and forces neutral
-/// when the elevator is overweighted or when no weight actor remains inside the elevator trigger.
+/// Converts generic lever snap indices into elevator motor commands.
+/// The same binder can control either vertical travel or self rotation.
+/// It also forces neutral when the elevator is overweighted or when no weight actor
+/// remains inside the elevator trigger.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class ElevatorLeverStateBinder : MonoBehaviour
 {
+    /// <summary>
+    /// Defines which elevator subsystem is controlled by this lever.
+    /// </summary>
+    private enum LeverControlMode
+    {
+        Vertical,
+        Rotation
+    }
+
     [Header("References")]
     [Tooltip("Target snap lever controlled by this binder.")]
     [SerializeField] private SnapLever SnapLever;
@@ -17,15 +28,19 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
     [Tooltip("Weight system used to validate whether the elevator can currently operate.")]
     [SerializeField] private ElevatorWeightSystem ElevatorWeightSystem;
 
+    [Header("Mode")]
+    [Tooltip("Determines whether this lever controls vertical travel or self rotation.")]
+    [SerializeField] private LeverControlMode ControlMode = LeverControlMode.Vertical;
+
     [Header("Indices")]
-    [Tooltip("Snap index mapped to downward movement.")]
-    [SerializeField] private int DownIndex = 0;
+    [Tooltip("Snap index mapped to the negative direction. Vertical: down. Rotation: left.")]
+    [SerializeField] private int NegativeIndex = 0;
 
     [Tooltip("Snap index mapped to neutral stop.")]
     [SerializeField] private int NeutralIndex = 1;
 
-    [Tooltip("Snap index mapped to upward movement.")]
-    [SerializeField] private int UpIndex = 2;
+    [Tooltip("Snap index mapped to the positive direction. Vertical: up. Rotation: right.")]
+    [SerializeField] private int PositiveIndex = 2;
 
     [Header("Debug")]
     [Tooltip("Logs received snap indices and forced neutral states.")]
@@ -53,7 +68,7 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
         if (MustForceNeutral)
         {
             SnapLever.SetExternalLock(true, NeutralIndex);
-            ElevatorPhysicalMotor.Stop();
+            ApplyNeutralStateToMotor();
 
             if (!WasForcedNeutralLastFrame)
             {
@@ -64,7 +79,8 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
                 {
                     Debug.Log(
                         "[ElevatorLeverStateBinder] Lever forced to neutral. " +
-                        "Overweighted=" + ElevatorWeightSystem.IsElevatorOverweighted() +
+                        "Mode=" + ControlMode +
+                        " | Overweighted=" + ElevatorWeightSystem.IsElevatorOverweighted() +
                         " | HasActorInside=" + ElevatorWeightSystem.HasAnyWeightActorInside(),
                         this);
                 }
@@ -78,10 +94,10 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
     }
 
     /// <summary>
-    /// Applies the vertical elevator command associated with the given snap index.
+    /// Applies the lever command associated with the given snap index.
     /// </summary>
     /// <param name="SnapIndex">Received snap index from the lever.</param>
-    public void ApplyVerticalState(int SnapIndex)
+    public void ApplyLeverState(int SnapIndex)
     {
         if (SnapLever == null || ElevatorPhysicalMotor == null || ElevatorWeightSystem == null)
         {
@@ -95,22 +111,67 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
         if (MustForceNeutral)
         {
             SnapLever.SetSnapIndexWithoutNotify(NeutralIndex);
-            ElevatorPhysicalMotor.Stop();
+            ApplyNeutralStateToMotor();
             return;
         }
 
-        if (SnapIndex == UpIndex)
+        if (SnapIndex == PositiveIndex)
+        {
+            ApplyPositiveStateToMotor();
+            return;
+        }
+
+        if (SnapIndex == NegativeIndex)
+        {
+            ApplyNegativeStateToMotor();
+            return;
+        }
+
+        ApplyNeutralStateToMotor();
+    }
+
+    /// <summary>
+    /// Applies the positive-direction command to the selected motor subsystem.
+    /// </summary>
+    private void ApplyPositiveStateToMotor()
+    {
+        if (ControlMode == LeverControlMode.Vertical)
         {
             ElevatorPhysicalMotor.MoveUp();
-            return;
         }
+        else
+        {
+            ElevatorPhysicalMotor.RotateRight();
+        }
+    }
 
-        if (SnapIndex == DownIndex)
+    /// <summary>
+    /// Applies the negative-direction command to the selected motor subsystem.
+    /// </summary>
+    private void ApplyNegativeStateToMotor()
+    {
+        if (ControlMode == LeverControlMode.Vertical)
         {
             ElevatorPhysicalMotor.MoveDown();
-            return;
         }
+        else
+        {
+            ElevatorPhysicalMotor.RotateLeft();
+        }
+    }
 
-        ElevatorPhysicalMotor.Stop();
+    /// <summary>
+    /// Applies the neutral command to the selected motor subsystem.
+    /// </summary>
+    private void ApplyNeutralStateToMotor()
+    {
+        if (ControlMode == LeverControlMode.Vertical)
+        {
+            ElevatorPhysicalMotor.Stop();
+        }
+        else
+        {
+            ElevatorPhysicalMotor.StopRotation();
+        }
     }
 }

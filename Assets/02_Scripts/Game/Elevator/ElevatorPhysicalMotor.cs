@@ -3,20 +3,30 @@ using UnityEngine;
 /// <summary>
 /// Authoritative kinematic elevator motor used as the single source of truth for both
 /// physical support and visual representation.
-/// The motor only moves when it receives explicit commands.
+/// The motor supports independent vertical movement and self rotation at the same time.
 /// </summary>
 [DefaultExecutionOrder(-100)]
 [RequireComponent(typeof(Rigidbody))]
 public sealed class ElevatorPhysicalMotor : MonoBehaviour
 {
     /// <summary>
-    /// Current elevator runtime movement state.
+    /// Current runtime vertical movement state.
     /// </summary>
-    private enum MoveState
+    private enum VerticalMoveState
     {
         Idle,
         MovingUp,
         MovingDown
+    }
+
+    /// <summary>
+    /// Current runtime rotation state.
+    /// </summary>
+    private enum RotationMoveState
+    {
+        Idle,
+        RotatingLeft,
+        RotatingRight
     }
 
     [Header("References")]
@@ -26,7 +36,7 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     [Tooltip("System that determines how much weight is carrying the elevator.")]
     [SerializeField] private ElevatorWeightSystem ElevatorWeightSystem;
 
-    [Header("Travel")]
+    [Header("Vertical Travel")]
     [Tooltip("Local travel direction evaluated from the top anchor. Usually Vector3.down.")]
     [SerializeField] private Vector3 LocalTravelDirection = Vector3.down;
 
@@ -41,6 +51,13 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
 
     [Tooltip("Movement speed in meters per second.")]
     [SerializeField] private float MoveSpeed = 2f;
+
+    [Header("Rotation")]
+    [Tooltip("Local axis used to rotate the elevator around itself.")]
+    [SerializeField] private Vector3 LocalRotationAxis = Vector3.up;
+
+    [Tooltip("Rotation speed in degrees per second.")]
+    [SerializeField] private float RotationSpeed = 60f;
 
     /// <summary>
     /// Current world velocity of the elevator in meters per second.
@@ -68,9 +85,14 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     private Rigidbody RigidbodyComponent;
 
     /// <summary>
-    /// Current runtime move state.
+    /// Current vertical move state.
     /// </summary>
-    private MoveState CurrentMoveState = MoveState.Idle;
+    private VerticalMoveState CurrentVerticalMoveState = VerticalMoveState.Idle;
+
+    /// <summary>
+    /// Current rotation state.
+    /// </summary>
+    private RotationMoveState CurrentRotationMoveState = RotationMoveState.Idle;
 
     /// <summary>
     /// Last simulated world position.
@@ -98,6 +120,7 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
 
         MaxDistance = Mathf.Max(MinDistance, MaxDistance);
         CurrentDistance = Mathf.Clamp(CurrentDistance, MinDistance, MaxDistance);
+        RotationSpeed = Mathf.Max(0f, RotationSpeed);
 
         Vector3 InitialPosition = GetTargetPosition();
         RigidbodyComponent.position = InitialPosition;
@@ -115,40 +138,44 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     {
         if (ElevatorWeightSystem != null && ElevatorWeightSystem.IsElevatorOverweighted())
         {
-            StopAndRefreshVelocity();
+            StopAllAndRefreshMotionState();
             return;
         }
 
         float PreviousDistance = CurrentDistance;
 
-        if (CurrentMoveState == MoveState.MovingUp)
+        if (CurrentVerticalMoveState == VerticalMoveState.MovingUp)
         {
             CurrentDistance -= MoveSpeed * Time.fixedDeltaTime;
         }
-        else if (CurrentMoveState == MoveState.MovingDown)
+        else if (CurrentVerticalMoveState == VerticalMoveState.MovingDown)
         {
             CurrentDistance += MoveSpeed * Time.fixedDeltaTime;
         }
 
         CurrentDistance = Mathf.Clamp(CurrentDistance, MinDistance, MaxDistance);
 
-        if (Mathf.Approximately(CurrentDistance, MinDistance) && CurrentMoveState == MoveState.MovingUp)
+        if (Mathf.Approximately(CurrentDistance, MinDistance) && CurrentVerticalMoveState == VerticalMoveState.MovingUp)
         {
-            CurrentMoveState = MoveState.Idle;
+            CurrentVerticalMoveState = VerticalMoveState.Idle;
         }
-        else if (Mathf.Approximately(CurrentDistance, MaxDistance) && CurrentMoveState == MoveState.MovingDown)
+        else if (Mathf.Approximately(CurrentDistance, MaxDistance) && CurrentVerticalMoveState == VerticalMoveState.MovingDown)
         {
-            CurrentMoveState = MoveState.Idle;
+            CurrentVerticalMoveState = VerticalMoveState.Idle;
         }
 
         Vector3 TargetPosition = GetTargetPosition();
+        Quaternion TargetRotation = GetNextRotation();
+
         RigidbodyComponent.MovePosition(TargetPosition);
+        RigidbodyComponent.MoveRotation(TargetRotation);
 
         DeltaPosition = TargetPosition - LastSimulatedPosition;
         Velocity = DeltaPosition / Mathf.Max(Time.fixedDeltaTime, 0.0001f);
         LastSimulatedPosition = TargetPosition;
 
-        if (Mathf.Approximately(PreviousDistance, CurrentDistance) && CurrentMoveState == MoveState.Idle)
+        if (Mathf.Approximately(PreviousDistance, CurrentDistance) &&
+            CurrentVerticalMoveState == VerticalMoveState.Idle)
         {
             Velocity = Vector3.zero;
             DeltaPosition = Vector3.zero;
@@ -161,7 +188,7 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     [ContextMenu("Move Up")]
     public void MoveUp()
     {
-        CurrentMoveState = MoveState.MovingUp;
+        CurrentVerticalMoveState = VerticalMoveState.MovingUp;
     }
 
     /// <summary>
@@ -170,24 +197,61 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     [ContextMenu("Move Down")]
     public void MoveDown()
     {
-        CurrentMoveState = MoveState.MovingDown;
+        CurrentVerticalMoveState = VerticalMoveState.MovingDown;
     }
 
     /// <summary>
-    /// Stops elevator motion.
+    /// Stops vertical elevator motion.
     /// </summary>
-    [ContextMenu("Stop")]
+    [ContextMenu("Stop Vertical")]
     public void Stop()
     {
-        CurrentMoveState = MoveState.Idle;
+        CurrentVerticalMoveState = VerticalMoveState.Idle;
     }
 
     /// <summary>
-    /// Stops the elevator and clears cached motion output.
+    /// Starts rotating the elevator to the left.
     /// </summary>
-    private void StopAndRefreshVelocity()
+    [ContextMenu("Rotate Left")]
+    public void RotateLeft()
     {
-        CurrentMoveState = MoveState.Idle;
+        CurrentRotationMoveState = RotationMoveState.RotatingLeft;
+    }
+
+    /// <summary>
+    /// Starts rotating the elevator to the right.
+    /// </summary>
+    [ContextMenu("Rotate Right")]
+    public void RotateRight()
+    {
+        CurrentRotationMoveState = RotationMoveState.RotatingRight;
+    }
+
+    /// <summary>
+    /// Stops elevator rotation.
+    /// </summary>
+    [ContextMenu("Stop Rotation")]
+    public void StopRotation()
+    {
+        CurrentRotationMoveState = RotationMoveState.Idle;
+    }
+
+    /// <summary>
+    /// Stops both vertical motion and rotation.
+    /// </summary>
+    [ContextMenu("Stop All")]
+    public void StopAll()
+    {
+        CurrentVerticalMoveState = VerticalMoveState.Idle;
+        CurrentRotationMoveState = RotationMoveState.Idle;
+    }
+
+    /// <summary>
+    /// Stops the elevator and clears cached linear motion output.
+    /// </summary>
+    private void StopAllAndRefreshMotionState()
+    {
+        StopAll();
         Velocity = Vector3.zero;
         DeltaPosition = Vector3.zero;
         LastSimulatedPosition = transform.position;
@@ -199,14 +263,42 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     /// <returns>Target world position.</returns>
     private Vector3 GetTargetPosition()
     {
-        return TopAnchor.position + GetWorldDirection() * CurrentDistance;
+        return TopAnchor.position + GetWorldTravelDirection() * CurrentDistance;
+    }
+
+    /// <summary>
+    /// Computes the next target rotation using the current rotation state.
+    /// </summary>
+    /// <returns>Next world rotation.</returns>
+    private Quaternion GetNextRotation()
+    {
+        if (CurrentRotationMoveState == RotationMoveState.Idle || RotationSpeed <= 0f)
+        {
+            return RigidbodyComponent.rotation;
+        }
+
+        Vector3 WorldRotationAxis = transform.TransformDirection(LocalRotationAxis);
+        if (WorldRotationAxis.sqrMagnitude <= 0.0001f)
+        {
+            return RigidbodyComponent.rotation;
+        }
+
+        float SignedDegrees = RotationSpeed * Time.fixedDeltaTime;
+
+        if (CurrentRotationMoveState == RotationMoveState.RotatingLeft)
+        {
+            SignedDegrees *= -1f;
+        }
+
+        Quaternion DeltaRotation = Quaternion.AngleAxis(SignedDegrees, WorldRotationAxis.normalized);
+        return DeltaRotation * RigidbodyComponent.rotation;
     }
 
     /// <summary>
     /// Returns the normalized world travel direction.
     /// </summary>
     /// <returns>Normalized world direction.</returns>
-    private Vector3 GetWorldDirection()
+    private Vector3 GetWorldTravelDirection()
     {
         Vector3 WorldDirection = TopAnchor.TransformDirection(LocalTravelDirection);
         return WorldDirection.sqrMagnitude > 0.0001f ? WorldDirection.normalized : Vector3.down;
