@@ -1,13 +1,12 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 /// <summary>
-/// Handles player interaction with physical carryable objects and world inventory items.
-/// The controller owns the interaction ray, the player collider cache used for collision ignores,
-/// and the hold anchor used by spring-joint driven carryable objects.
+/// Central contextual interaction controller for the player.
+/// This component owns the interact input consumption and resolves world interaction priority:
+/// shop station, world item, held carryable release, carryable pickup and money collection.
 /// </summary>
-[RequireComponent(typeof(PlayerInput))]
 [RequireComponent(typeof(HotbarController))]
+[RequireComponent(typeof(PlayerInputReader))]
 public sealed class PlayerInteractionController : MonoBehaviour
 {
     [Header("References")]
@@ -23,15 +22,21 @@ public sealed class PlayerInteractionController : MonoBehaviour
     [Tooltip("Hotbar controller used to store and swap inventory items.")]
     [SerializeField] private HotbarController HotbarController;
 
+    [Tooltip("Centralized player input reader used as the only source of interaction input.")]
+    [SerializeField] private PlayerInputReader PlayerInputReader;
+
+    [Tooltip("Optional upgrade shop interactor used as the highest-priority contextual interaction.")]
+    [SerializeField] private UpgradeShopInteractor UpgradeShopInteractor;
+
+    [Tooltip("Optional money collector used as the final contextual interaction fallback.")]
+    [SerializeField] private MoneyCollector MoneyCollector;
+
     [Header("Interaction")]
     [Tooltip("Maximum distance used to detect interactable objects.")]
     [SerializeField] private float InteractionDistance = 4f;
 
     [Tooltip("Layers considered valid for interaction raycasts.")]
     [SerializeField] private LayerMask InteractionLayers = ~0;
-
-    [Tooltip("Name of the interact action in the Input Actions asset.")]
-    [SerializeField] private string InteractActionName = "Interact";
 
     [Header("Hold Anchor")]
     [Tooltip("If true, a hold anchor will be created automatically as a child of the camera when none is assigned.")]
@@ -49,16 +54,6 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
     [Tooltip("Logs interaction events to the console.")]
     [SerializeField] private bool DebugLogs = false;
-
-    /// <summary>
-    /// Cached PlayerInput used to resolve the interact action.
-    /// </summary>
-    private PlayerInput PlayerInput;
-
-    /// <summary>
-    /// Action used to pick up, drop or interact with looked-at targets.
-    /// </summary>
-    private InputAction InteractAction;
 
     /// <summary>
     /// Carryable object currently held by the player.
@@ -94,8 +89,6 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// </summary>
     private void Awake()
     {
-        PlayerInput = GetComponent<PlayerInput>();
-
         if (PlayerCamera == null)
         {
             PlayerCamera = Camera.main;
@@ -106,58 +99,57 @@ public sealed class PlayerInteractionController : MonoBehaviour
             HotbarController = GetComponent<HotbarController>();
         }
 
+        if (PlayerInputReader == null)
+        {
+            PlayerInputReader = GetComponent<PlayerInputReader>();
+        }
+
+        if (UpgradeShopInteractor == null)
+        {
+            UpgradeShopInteractor = GetComponent<UpgradeShopInteractor>();
+        }
+
+        if (MoneyCollector == null)
+        {
+            MoneyCollector = GetComponent<MoneyCollector>();
+        }
+
         RefreshPlayerColliderCache();
         EnsureHoldAnchor();
 
-        if (PlayerInput == null || PlayerInput.actions == null)
+        if (PlayerCamera == null || HoldAnchor == null || HotbarController == null || PlayerInputReader == null)
         {
-            Debug.LogError("PlayerInput or Input Actions asset is missing.");
-            enabled = false;
-            return;
-        }
-
-        InteractAction = PlayerInput.actions[InteractActionName];
-
-        if (InteractAction == null)
-        {
-            Debug.LogError("The interact action named '" + InteractActionName + "' was not found.");
-            enabled = false;
-            return;
-        }
-
-        if (PlayerCamera == null || HoldAnchor == null || HotbarController == null)
-        {
-            Debug.LogError("One or more required references are missing on PlayerInteractionController.");
+            Debug.LogError("One or more required references are missing on PlayerInteractionController.", this);
             enabled = false;
             return;
         }
 
         if (PlayerColliders == null || PlayerColliders.Length == 0)
         {
-            Debug.LogError("No player colliders were found for PlayerInteractionController.");
+            Debug.LogError("No player colliders were found for PlayerInteractionController.", this);
             enabled = false;
         }
     }
 
     /// <summary>
-    /// Enables the interact action when the component becomes active.
+    /// Subscribes interact callbacks from the centralized input reader.
     /// </summary>
     private void OnEnable()
     {
-        if (InteractAction != null)
+        if (PlayerInputReader != null)
         {
-            InteractAction.Enable();
+            PlayerInputReader.InteractPerformed += HandleInteractPerformed;
         }
     }
 
     /// <summary>
-    /// Disables the interact action and safely drops the held carryable when the component turns off.
+    /// Unsubscribes interact callbacks and safely drops the held carryable when the component turns off.
     /// </summary>
     private void OnDisable()
     {
-        if (InteractAction != null)
+        if (PlayerInputReader != null)
         {
-            InteractAction.Disable();
+            PlayerInputReader.InteractPerformed -= HandleInteractPerformed;
         }
 
         if (CurrentHeldCarryable != null)
@@ -168,11 +160,10 @@ public sealed class PlayerInteractionController : MonoBehaviour
     }
 
     /// <summary>
-    /// Updates the hold anchor position, the current look target and the interact input.
+    /// Updates the hold anchor position and the current look targets.
     /// </summary>
     private void Update()
     {
-
         if (IsExternalInteractionBlocked)
         {
             return;
@@ -180,7 +171,6 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         UpdateHoldAnchor();
         UpdateLookTargets();
-        HandleInteractInput();
     }
 
     /// <summary>
@@ -234,11 +224,16 @@ public sealed class PlayerInteractionController : MonoBehaviour
     }
 
     /// <summary>
-    /// Processes the interact input to pick up, drop or exchange the current target.
+    /// Resolves the contextual interaction priority when the interact input is pressed.
     /// </summary>
-    private void HandleInteractInput()
+    private void HandleInteractPerformed()
     {
-        if (InteractAction == null || !InteractAction.WasPressedThisFrame())
+        if (IsExternalInteractionBlocked)
+        {
+            return;
+        }
+
+        if (TryOpenNearbyShop())
         {
             return;
         }
@@ -261,7 +256,43 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
-        Log("Interact pressed but no valid target was found.");
+        if (TryCollectMoney())
+        {
+            return;
+        }
+
+        Log("Interact pressed but no valid contextual target was found.");
+    }
+
+    /// <summary>
+    /// Tries to open the nearby shop station if one is currently available.
+    /// </summary>
+    private bool TryOpenNearbyShop()
+    {
+        if (UpgradeShopInteractor == null)
+        {
+            return false;
+        }
+
+        if (!UpgradeShopInteractor.HasNearbyStation())
+        {
+            return false;
+        }
+
+        return UpgradeShopInteractor.TryOpenNearbyStation();
+    }
+
+    /// <summary>
+    /// Tries to collect a looked money pickup through the optional money collector helper.
+    /// </summary>
+    private bool TryCollectMoney()
+    {
+        if (MoneyCollector == null)
+        {
+            return false;
+        }
+
+        return MoneyCollector.TryCollectCurrentLookedMoney();
     }
 
     /// <summary>
@@ -444,7 +475,6 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// <summary>
     /// Writes an interaction-specific debug message when logging is enabled.
     /// </summary>
-    /// <param name="Message">Message to log.</param>
     private void Log(string Message)
     {
         if (!DebugLogs)

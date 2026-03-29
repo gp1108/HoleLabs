@@ -2,23 +2,25 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Player-side controller that opens and closes an upgrade shop station while in range.
-/// It delegates modal ownership to PlayerModalStateController so the solution stays reusable
-/// for future terminals, chests, crafting benches or dialogue screens.
+/// Player-side upgrade shop state holder.
+/// This component no longer reads interact input directly.
+/// It only tracks nearby stations, opens or closes the current shop on request,
+/// and handles Escape while a shop is open.
 /// </summary>
 [DefaultExecutionOrder(-200)]
 public sealed class UpgradeShopInteractor : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("Input reader used to listen for interact input.")]
-    [SerializeField] private PlayerInputReader PlayerInputReader;
-
     [Tooltip("Central modal state controller used to block gameplay and release the cursor.")]
     [SerializeField] private PlayerModalStateController PlayerModalStateController;
 
     [Header("Close Input")]
     [Tooltip("If true, Escape closes the currently open shop modal.")]
     [SerializeField] private bool CloseOnEscape = true;
+
+    [Header("Debug")]
+    [Tooltip("Logs shop interaction flow for debugging.")]
+    [SerializeField] private bool DebugLogs = false;
 
     /// <summary>
     /// Shop station currently in range.
@@ -35,11 +37,6 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// </summary>
     private void Awake()
     {
-        if (PlayerInputReader == null)
-        {
-            PlayerInputReader = GetComponent<PlayerInputReader>();
-        }
-
         if (PlayerModalStateController == null)
         {
             PlayerModalStateController = GetComponent<PlayerModalStateController>();
@@ -47,29 +44,7 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     }
 
     /// <summary>
-    /// Subscribes input callbacks.
-    /// </summary>
-    private void OnEnable()
-    {
-        if (PlayerInputReader != null)
-        {
-            PlayerInputReader.InteractPerformed += HandleInteractPerformed;
-        }
-    }
-
-    /// <summary>
-    /// Unsubscribes input callbacks.
-    /// </summary>
-    private void OnDisable()
-    {
-        if (PlayerInputReader != null)
-        {
-            PlayerInputReader.InteractPerformed -= HandleInteractPerformed;
-        }
-    }
-
-    /// <summary>
-    /// Processes close input for the open station.
+    /// Processes close input for the currently opened station.
     /// </summary>
     private void Update()
     {
@@ -80,8 +55,25 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
 
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
+            Log("Escape pressed. Closing current station.");
             CloseCurrentStation();
         }
+    }
+
+    /// <summary>
+    /// Returns whether the player is currently inside a shop trigger.
+    /// </summary>
+    public bool HasNearbyStation()
+    {
+        return NearbyStation != null;
+    }
+
+    /// <summary>
+    /// Returns whether a shop is currently opened.
+    /// </summary>
+    public bool HasOpenedStation()
+    {
+        return OpenedStation != null;
     }
 
     /// <summary>
@@ -90,6 +82,7 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     public void SetNearbyStation(UpgradeShopStation Station)
     {
         NearbyStation = Station;
+        Log("Nearby station assigned: " + (Station != null ? Station.name : "null"));
     }
 
     /// <summary>
@@ -101,49 +94,64 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
         if (NearbyStation == Station)
         {
             NearbyStation = null;
+            Log("Nearby station cleared: " + (Station != null ? Station.name : "null"));
         }
 
         if (OpenedStation == Station)
         {
+            Log("Left opened station trigger. Closing station.");
             CloseCurrentStation();
         }
     }
 
     /// <summary>
-    /// Opens the nearby station if possible.
+    /// Tries to open the currently nearby station.
     /// </summary>
-    private void HandleInteractPerformed()
+    /// <returns>True when the shop was opened successfully.</returns>
+    public bool TryOpenNearbyStation()
     {
         if (OpenedStation != null)
         {
-            return;
+            Log("Ignored open request because a station is already opened.");
+            return false;
         }
 
         if (NearbyStation == null)
         {
-            return;
+            Log("Cannot open shop because NearbyStation is null.");
+            return false;
         }
 
         UpgradePanelUI Panel = NearbyStation.GetUpgradePanelUI();
 
-        if (Panel == null || PlayerModalStateController == null)
+        if (Panel == null)
         {
-            return;
+            Log("Cannot open shop because UpgradePanelUI on the station is null.");
+            return false;
+        }
+
+        if (PlayerModalStateController == null)
+        {
+            Log("Cannot open shop because PlayerModalStateController is null.");
+            return false;
         }
 
         if (!PlayerModalStateController.TryOpenModal(this))
         {
-            return;
+            Log("Cannot open shop because TryOpenModal returned false.");
+            return false;
         }
 
         Panel.ShowPanel();
         OpenedStation = NearbyStation;
+        Log("Shop opened successfully.");
+        return true;
     }
 
     /// <summary>
-    /// Closes the currently open station and returns control to gameplay.
+    /// Closes the currently opened station.
     /// </summary>
-    private void CloseCurrentStation()
+    public void CloseCurrentStation()
     {
         if (OpenedStation == null)
         {
@@ -162,6 +170,20 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
             PlayerModalStateController.CloseModal(this);
         }
 
+        Log("Shop closed successfully.");
         OpenedStation = null;
+    }
+
+    /// <summary>
+    /// Writes a shop-interactor-specific debug message.
+    /// </summary>
+    private void Log(string Message)
+    {
+        if (!DebugLogs)
+        {
+            return;
+        }
+
+        Debug.Log("[UpgradeShopInteractor] " + Message, this);
     }
 }

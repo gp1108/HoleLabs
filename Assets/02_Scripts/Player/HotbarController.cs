@@ -1,19 +1,16 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 /// <summary>
 /// Handles runtime hotbar storage, selection, equipping, dropping and swapping.
-/// This version exposes UI notifications so the hotbar can update without polling heavy logic.
-/// It also safely interrupts equipped items before they are destroyed so animations,
-/// VFX and tool states do not get stuck when switching slots quickly.
+/// This version routes every player input through PlayerInputReader instead of reading
+/// PlayerInput actions directly, which keeps input ownership centralized.
 /// 
 /// Input ownership rule:
 /// - Equipped items only receive use input while no higher-priority world interaction is capturing it.
 /// - Lever dragging is considered a higher-priority interaction and blocks item use routing.
 /// </summary>
-[RequireComponent(typeof(PlayerInput))]
 public sealed class HotbarController : MonoBehaviour
 {
     [Header("References")]
@@ -26,28 +23,15 @@ public sealed class HotbarController : MonoBehaviour
     [Tooltip("Optional lever interactor that can temporarily capture primary and secondary use input.")]
     [SerializeField] private LeverInteractor LeverInteractor;
 
+    [Tooltip("Centralized player input reader used as the only input source for the hotbar.")]
+    [SerializeField] private PlayerInputReader PlayerInputReader;
+
     [Header("Hotbar")]
     [Tooltip("Current number of slots available in the hotbar.")]
     [SerializeField] private int SlotCount = 8;
 
     [Tooltip("If true, the controller equips the currently selected slot on start.")]
     [SerializeField] private bool EquipSelectedSlotOnStart = true;
-
-    [Header("Input Actions")]
-    [Tooltip("Input action used to change hotbar selection with the mouse wheel or equivalent.")]
-    [SerializeField] private string HotbarScrollActionName = "HotbarScroll";
-
-    [Tooltip("Input action used for the primary item action.")]
-    [SerializeField] private string UsePrimaryActionName = "UsePrimary";
-
-    [Tooltip("Input action used for the secondary item action.")]
-    [SerializeField] private string UseSecondaryActionName = "UseSecondary";
-
-    [Tooltip("Input action used to drop the selected hotbar item into the world.")]
-    [SerializeField] private string DropItemActionName = "DropItem";
-
-    [Tooltip("Prefix used for direct slot selection input actions such as Slot1, Slot2 and so on.")]
-    [SerializeField] private string SlotActionPrefix = "Slot";
 
     [Header("Scroll")]
     [Tooltip("Minimum time between scroll inputs to avoid overly fast slot switching.")]
@@ -77,36 +61,6 @@ public sealed class HotbarController : MonoBehaviour
     [SerializeField] private int SelectedIndex = 0;
 
     /// <summary>
-    /// Cached PlayerInput component used to resolve input actions.
-    /// </summary>
-    private PlayerInput PlayerInput;
-
-    /// <summary>
-    /// Input action used to scroll through hotbar slots.
-    /// </summary>
-    private InputAction HotbarScrollAction;
-
-    /// <summary>
-    /// Input action used for the equipped item's primary use.
-    /// </summary>
-    private InputAction UsePrimaryAction;
-
-    /// <summary>
-    /// Input action used for the equipped item's secondary use.
-    /// </summary>
-    private InputAction UseSecondaryAction;
-
-    /// <summary>
-    /// Input action used to drop the selected item.
-    /// </summary>
-    private InputAction DropItemAction;
-
-    /// <summary>
-    /// Cached direct slot actions such as Slot1, Slot2 and so on.
-    /// </summary>
-    private readonly List<InputAction> SlotActions = new List<InputAction>();
-
-    /// <summary>
     /// Currently spawned equipped object instance.
     /// </summary>
     private GameObject CurrentEquippedObject;
@@ -128,6 +82,21 @@ public sealed class HotbarController : MonoBehaviour
     private bool WasItemUseBlockedLastFrame;
 
     /// <summary>
+    /// Whether hotbar selection, use and drop input is currently blocked by an external modal state.
+    /// </summary>
+    private bool IsExternalHotbarInputBlocked;
+
+    /// <summary>
+    /// Previous-frame held state for primary use.
+    /// </summary>
+    private bool WasPrimaryHeldLastFrame;
+
+    /// <summary>
+    /// Previous-frame held state for secondary use.
+    /// </summary>
+    private bool WasSecondaryHeldLastFrame;
+
+    /// <summary>
     /// Invoked when a slot content changes.
     /// </summary>
     public event Action<int> OnSlotChanged;
@@ -141,27 +110,6 @@ public sealed class HotbarController : MonoBehaviour
     /// Invoked when the hotbar structure changes, for example after resizing.
     /// </summary>
     public event Action OnHotbarStructureChanged;
-
-
-    /// <summary>
-    /// Whether hotbar selection, use and drop input is currently blocked by an external modal state.
-    /// </summary>
-    private bool IsExternalHotbarInputBlocked;
-
-    /// <summary>
-    /// Allows external systems to block or restore hotbar runtime input.
-    /// </summary>
-    /// <param name="IsBlocked">True to block hotbar input, false to restore it.</param>
-    public void SetExternalHotbarInputBlocked(bool IsBlocked)
-    {
-        IsExternalHotbarInputBlocked = IsBlocked;
-
-        if (IsBlocked && CurrentEquippedBehaviour != null)
-        {
-            CurrentEquippedBehaviour.ForceStopItemUsage();
-        }
-    }
-
 
     /// <summary>
     /// Gets the currently selected slot index.
@@ -204,12 +152,25 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
+    /// Allows external systems to block or restore hotbar runtime input.
+    /// </summary>
+    /// <param name="IsBlocked">True to block hotbar input, false to restore it.</param>
+    public void SetExternalHotbarInputBlocked(bool IsBlocked)
+    {
+        IsExternalHotbarInputBlocked = IsBlocked;
+
+        if (IsBlocked)
+        {
+            ForceStopCurrentItemUsage();
+            ResetUseTracking();
+        }
+    }
+
+    /// <summary>
     /// Initializes references, allocates slots and optionally equips the selected slot.
     /// </summary>
     private void Awake()
     {
-        PlayerInput = GetComponent<PlayerInput>();
-
         if (PlayerCamera == null)
         {
             PlayerCamera = Camera.main;
@@ -220,8 +181,12 @@ public sealed class HotbarController : MonoBehaviour
             LeverInteractor = GetComponentInChildren<LeverInteractor>(true);
         }
 
+        if (PlayerInputReader == null)
+        {
+            PlayerInputReader = GetComponent<PlayerInputReader>();
+        }
+
         EnsureSlotListSize(SlotCount);
-        BindActions();
 
         if (EquipSelectedSlotOnStart)
         {
@@ -230,7 +195,39 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
-    /// Processes selection, use and drop input every frame.
+    /// Subscribes discrete input events from the centralized input reader.
+    /// </summary>
+    private void OnEnable()
+    {
+        if (PlayerInputReader == null)
+        {
+            return;
+        }
+
+        PlayerInputReader.DropItemPerformed += HandleDropItemPerformed;
+        PlayerInputReader.SlotPerformed += HandleSlotPerformed;
+        PlayerInputReader.PreviousPerformed += HandlePreviousPerformed;
+        PlayerInputReader.NextPerformed += HandleNextPerformed;
+    }
+
+    /// <summary>
+    /// Unsubscribes discrete input events from the centralized input reader.
+    /// </summary>
+    private void OnDisable()
+    {
+        if (PlayerInputReader != null)
+        {
+            PlayerInputReader.DropItemPerformed -= HandleDropItemPerformed;
+            PlayerInputReader.SlotPerformed -= HandleSlotPerformed;
+            PlayerInputReader.PreviousPerformed -= HandlePreviousPerformed;
+            PlayerInputReader.NextPerformed -= HandleNextPerformed;
+        }
+
+        ResetUseTracking();
+    }
+
+    /// <summary>
+    /// Processes selection and use input every frame through PlayerInputReader.
     /// </summary>
     private void Update()
     {
@@ -239,20 +236,18 @@ public sealed class HotbarController : MonoBehaviour
             return;
         }
 
-        HandleSelectionInput();
+        HandleScrollSelectionInput();
         HandleUseInput();
-        HandleDropInput();
     }
 
     /// <summary>
-    /// Resizes the hotbar and rebuilds direct slot input bindings.
+    /// Resizes the hotbar and keeps the selected index valid.
     /// </summary>
     /// <param name="NewSlotCount">Requested new slot count.</param>
     public void ResizeHotbar(int NewSlotCount)
     {
         SlotCount = Mathf.Max(1, NewSlotCount);
         EnsureSlotListSize(SlotCount);
-        RebuildSlotActions();
 
         if (SelectedIndex >= SlotCount)
         {
@@ -288,10 +283,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Tries to add an item instance to the hotbar, preferring stacking and then empty slots.
     /// </summary>
-    /// <param name="ItemInstance">Incoming runtime item instance.</param>
-    /// <param name="PreferredSlotIndex">Preferred slot to receive the item.</param>
-    /// <param name="InsertedSlotIndex">Resolved slot that received the item.</param>
-    /// <returns>True if the full item instance was inserted.</returns>
     public bool TryAddItem(ItemInstance ItemInstance, int PreferredSlotIndex, out int InsertedSlotIndex)
     {
         InsertedSlotIndex = -1;
@@ -356,8 +347,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Replaces the currently selected item and returns the previous one.
     /// </summary>
-    /// <param name="NewItemInstance">New runtime item instance.</param>
-    /// <returns>Previous runtime item instance or null.</returns>
     public ItemInstance ReplaceSelectedItem(ItemInstance NewItemInstance)
     {
         if (NewItemInstance == null)
@@ -379,7 +368,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Removes and returns the item currently stored in the selected slot.
     /// </summary>
-    /// <returns>Removed runtime item instance or null.</returns>
     public ItemInstance RemoveSelectedItem()
     {
         EnsureSlotListSize(SlotCount);
@@ -396,7 +384,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Drops the selected item into the world using the configured drop helpers.
     /// </summary>
-    /// <returns>True when the selected item was successfully dropped.</returns>
     public bool DropSelectedItemToWorld()
     {
         ItemInstance ItemToDrop = RemoveSelectedItem();
@@ -406,32 +393,30 @@ public sealed class HotbarController : MonoBehaviour
             return false;
         }
 
-        return SpawnWorldItem(ItemToDrop, GetDropSpawnPosition(), Quaternion.LookRotation(GetDropDirection(), Vector3.up), Vector3.zero, Vector3.zero, true);
+        return SpawnWorldItem(
+            ItemToDrop,
+            GetDropSpawnPosition(),
+            Quaternion.LookRotation(GetDropDirection(), Vector3.up),
+            Vector3.zero,
+            Vector3.zero,
+            true);
     }
 
     /// <summary>
     /// Spawns a world item using a forward direction.
     /// </summary>
-    /// <param name="ItemInstance">Runtime item to spawn.</param>
-    /// <param name="Position">Spawn position.</param>
-    /// <param name="Direction">Facing direction.</param>
-    /// <returns>True when the item was spawned successfully.</returns>
     public bool SpawnWorldItem(ItemInstance ItemInstance, Vector3 Position, Vector3 Direction)
     {
-        Quaternion Rotation = Quaternion.LookRotation(Direction.sqrMagnitude > 0.0001f ? Direction : transform.forward, Vector3.up);
+        Quaternion Rotation = Quaternion.LookRotation(
+            Direction.sqrMagnitude > 0.0001f ? Direction : transform.forward,
+            Vector3.up);
+
         return SpawnWorldItem(ItemInstance, Position, Rotation, Vector3.zero, Vector3.zero, true);
     }
 
     /// <summary>
     /// Spawns a world item with explicit transform and rigidbody settings.
     /// </summary>
-    /// <param name="ItemInstance">Runtime item to spawn.</param>
-    /// <param name="Position">Spawn position.</param>
-    /// <param name="Rotation">Spawn rotation.</param>
-    /// <param name="LinearVelocity">Initial rigidbody linear velocity.</param>
-    /// <param name="AngularVelocity">Initial rigidbody angular velocity.</param>
-    /// <param name="ApplyDropImpulse">Whether to add the configured forward impulse.</param>
-    /// <returns>True when the item was spawned successfully.</returns>
     public bool SpawnWorldItem(ItemInstance ItemInstance, Vector3 Position, Quaternion Rotation, Vector3 LinearVelocity, Vector3 AngularVelocity, bool ApplyDropImpulse)
     {
         if (ItemInstance == null || ItemInstance.GetDefinition() == null)
@@ -480,7 +465,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Selects a hotbar slot and refreshes the equipped object if needed.
     /// </summary>
-    /// <param name="SlotIndex">Target slot index.</param>
     public void SelectSlot(int SlotIndex)
     {
         EnsureSlotListSize(SlotCount);
@@ -494,6 +478,9 @@ public sealed class HotbarController : MonoBehaviour
         {
             return;
         }
+
+        ForceStopCurrentItemUsage();
+        ResetUseTracking();
 
         SelectedIndex = SlotIndex;
         RefreshEquippedItem();
@@ -514,7 +501,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Ensures the internal slot list exactly matches the desired size.
     /// </summary>
-    /// <param name="DesiredSize">Target slot count.</param>
     private void EnsureSlotListSize(int DesiredSize)
     {
         DesiredSize = Mathf.Max(1, DesiredSize);
@@ -534,100 +520,58 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
-    /// Resolves input actions from the PlayerInput asset.
+    /// Processes scroll-based slot selection from PlayerInputReader.
     /// </summary>
-    private void BindActions()
+    private void HandleScrollSelectionInput()
     {
-        if (PlayerInput == null || PlayerInput.actions == null)
+        if (PlayerInputReader == null)
         {
             return;
         }
 
-        HotbarScrollAction = PlayerInput.actions[HotbarScrollActionName];
-        UsePrimaryAction = PlayerInput.actions[UsePrimaryActionName];
-        UseSecondaryAction = PlayerInput.actions[UseSecondaryActionName];
-        DropItemAction = PlayerInput.actions[DropItemActionName];
+        float ScrollValue = PlayerInputReader.HotbarScroll;
 
-        RebuildSlotActions();
-    }
-
-    /// <summary>
-    /// Rebuilds direct slot action bindings after the slot count changes.
-    /// </summary>
-    private void RebuildSlotActions()
-    {
-        SlotActions.Clear();
-
-        if (PlayerInput == null || PlayerInput.actions == null)
+        if (Mathf.Abs(ScrollValue) <= 0.01f)
         {
             return;
         }
 
-        for (int Index = 0; Index < SlotCount && Index < 9; Index++)
+        if (Time.time - LastScrollTime < ScrollCooldown)
         {
-            string ActionName = SlotActionPrefix + (Index + 1);
-            InputAction SlotAction = PlayerInput.actions[ActionName];
-            SlotActions.Add(SlotAction);
+            return;
         }
+
+        LastScrollTime = Time.time;
+
+        int Direction = ScrollValue > 0f ? 1 : -1;
+        int NextIndex = SelectedIndex + Direction;
+
+        if (NextIndex < 0)
+        {
+            NextIndex = SlotCount - 1;
+        }
+        else if (NextIndex >= SlotCount)
+        {
+            NextIndex = 0;
+        }
+
+        SelectSlot(NextIndex);
     }
 
     /// <summary>
-    /// Processes scroll and direct slot selection input.
-    /// </summary>
-    private void HandleSelectionInput()
-    {
-        if (HotbarScrollAction != null)
-        {
-            float ScrollValue = HotbarScrollAction.ReadValue<float>();
-
-            if (Mathf.Abs(ScrollValue) > 0.01f)
-            {
-                if (Time.time - LastScrollTime < ScrollCooldown)
-                {
-                    return;
-                }
-
-                LastScrollTime = Time.time;
-
-                int Direction = ScrollValue > 0f ? 1 : -1;
-                int NextIndex = SelectedIndex + Direction;
-
-                if (NextIndex < 0)
-                {
-                    NextIndex = SlotCount - 1;
-                }
-                else if (NextIndex >= SlotCount)
-                {
-                    NextIndex = 0;
-                }
-
-                SelectSlot(NextIndex);
-            }
-        }
-
-        for (int Index = 0; Index < SlotActions.Count; Index++)
-        {
-            InputAction SlotAction = SlotActions[Index];
-
-            if (SlotAction != null && SlotAction.WasPressedThisFrame())
-            {
-                SelectSlot(Index);
-                return;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Routes primary and secondary use input to the equipped item only while no higher-priority
-    /// interaction is currently capturing the use buttons.
+    /// Routes primary and secondary use input to the equipped item using the centralized input reader.
     /// </summary>
     private void HandleUseInput()
     {
-        if (CurrentEquippedBehaviour == null)
+        if (CurrentEquippedBehaviour == null || PlayerInputReader == null)
         {
+            ResetUseTracking();
             WasItemUseBlockedLastFrame = false;
             return;
         }
+
+        bool IsPrimaryHeldNow = PlayerInputReader.IsUsePrimaryHeld;
+        bool IsSecondaryHeldNow = PlayerInputReader.IsUseSecondaryHeld;
 
         if (IsUseInputCapturedByExternalInteraction())
         {
@@ -638,52 +582,50 @@ public sealed class HotbarController : MonoBehaviour
                 Log("Blocked equipped item use because a higher-priority interaction captured input.");
             }
 
+            WasPrimaryHeldLastFrame = IsPrimaryHeldNow;
+            WasSecondaryHeldLastFrame = IsSecondaryHeldNow;
             return;
         }
 
         WasItemUseBlockedLastFrame = false;
 
-        if (UsePrimaryAction != null)
+        if (IsPrimaryHeldNow && !WasPrimaryHeldLastFrame)
         {
-            if (UsePrimaryAction.WasPressedThisFrame())
-            {
-                CurrentEquippedBehaviour.OnPrimaryUseStarted();
-            }
-
-            if (UsePrimaryAction.IsPressed())
-            {
-                CurrentEquippedBehaviour.OnPrimaryUseHeld();
-            }
-
-            if (UsePrimaryAction.WasReleasedThisFrame())
-            {
-                CurrentEquippedBehaviour.OnPrimaryUseEnded();
-            }
+            CurrentEquippedBehaviour.OnPrimaryUseStarted();
         }
 
-        if (UseSecondaryAction != null)
+        if (IsPrimaryHeldNow)
         {
-            if (UseSecondaryAction.WasPressedThisFrame())
-            {
-                CurrentEquippedBehaviour.OnSecondaryUseStarted();
-            }
-
-            if (UseSecondaryAction.IsPressed())
-            {
-                CurrentEquippedBehaviour.OnSecondaryUseHeld();
-            }
-
-            if (UseSecondaryAction.WasReleasedThisFrame())
-            {
-                CurrentEquippedBehaviour.OnSecondaryUseEnded();
-            }
+            CurrentEquippedBehaviour.OnPrimaryUseHeld();
         }
+
+        if (!IsPrimaryHeldNow && WasPrimaryHeldLastFrame)
+        {
+            CurrentEquippedBehaviour.OnPrimaryUseEnded();
+        }
+
+        if (IsSecondaryHeldNow && !WasSecondaryHeldLastFrame)
+        {
+            CurrentEquippedBehaviour.OnSecondaryUseStarted();
+        }
+
+        if (IsSecondaryHeldNow)
+        {
+            CurrentEquippedBehaviour.OnSecondaryUseHeld();
+        }
+
+        if (!IsSecondaryHeldNow && WasSecondaryHeldLastFrame)
+        {
+            CurrentEquippedBehaviour.OnSecondaryUseEnded();
+        }
+
+        WasPrimaryHeldLastFrame = IsPrimaryHeldNow;
+        WasSecondaryHeldLastFrame = IsSecondaryHeldNow;
     }
 
     /// <summary>
     /// Returns whether an external world interaction currently owns the use input.
     /// </summary>
-    /// <returns>True when the equipped item must not receive use input this frame.</returns>
     private bool IsUseInputCapturedByExternalInteraction()
     {
         if (LeverInteractor == null)
@@ -695,16 +637,11 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
-    /// Processes the drop action input.
+    /// Handles the drop item discrete input coming from PlayerInputReader.
     /// </summary>
-    private void HandleDropInput()
+    private void HandleDropItemPerformed()
     {
-        if (DropItemAction == null)
-        {
-            return;
-        }
-
-        if (!DropItemAction.WasPressedThisFrame())
+        if (IsExternalHotbarInputBlocked)
         {
             return;
         }
@@ -713,11 +650,63 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
+    /// Handles direct slot selection from PlayerInputReader.
+    /// </summary>
+    /// <param name="SlotNumber">One-based slot number.</param>
+    private void HandleSlotPerformed(int SlotNumber)
+    {
+        if (IsExternalHotbarInputBlocked)
+        {
+            return;
+        }
+
+        int SlotIndex = SlotNumber - 1;
+        SelectSlot(SlotIndex);
+    }
+
+    /// <summary>
+    /// Handles previous input as one slot step to the left.
+    /// </summary>
+    private void HandlePreviousPerformed()
+    {
+        if (IsExternalHotbarInputBlocked)
+        {
+            return;
+        }
+
+        int PreviousIndex = SelectedIndex - 1;
+
+        if (PreviousIndex < 0)
+        {
+            PreviousIndex = SlotCount - 1;
+        }
+
+        SelectSlot(PreviousIndex);
+    }
+
+    /// <summary>
+    /// Handles next input as one slot step to the right.
+    /// </summary>
+    private void HandleNextPerformed()
+    {
+        if (IsExternalHotbarInputBlocked)
+        {
+            return;
+        }
+
+        int NextIndex = SelectedIndex + 1;
+
+        if (NextIndex >= SlotCount)
+        {
+            NextIndex = 0;
+        }
+
+        SelectSlot(NextIndex);
+    }
+
+    /// <summary>
     /// Tries to stack the incoming item into the specified slot.
     /// </summary>
-    /// <param name="IncomingItem">Incoming runtime item instance.</param>
-    /// <param name="SlotIndex">Target slot index.</param>
-    /// <returns>True when the full incoming amount was stacked.</returns>
     private bool TryStackIntoSlot(ItemInstance IncomingItem, int SlotIndex)
     {
         if (!IsValidSlotIndex(SlotIndex))
@@ -809,7 +798,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Auto-equips the given slot item if it matches the current selection and supports auto-equip.
     /// </summary>
-    /// <param name="SlotIndex">Slot index to evaluate.</param>
     private void AutoEquipIfNeeded(int SlotIndex)
     {
         if (!IsValidSlotIndex(SlotIndex))
@@ -839,8 +827,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Returns whether the provided slot index is valid.
     /// </summary>
-    /// <param name="SlotIndex">Slot index to validate.</param>
-    /// <returns>True when the index is inside the valid slot range.</returns>
     private bool IsValidSlotIndex(int SlotIndex)
     {
         return SlotIndex >= 0 && SlotIndex < Slots.Count;
@@ -849,7 +835,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Computes the world spawn position for dropped items.
     /// </summary>
-    /// <returns>Drop spawn position in world space.</returns>
     private Vector3 GetDropSpawnPosition()
     {
         Vector3 Origin = PlayerCamera != null ? PlayerCamera.transform.position : transform.position;
@@ -867,7 +852,6 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Returns the forward direction used to drop items into the world.
     /// </summary>
-    /// <returns>Normalized drop direction.</returns>
     private Vector3 GetDropDirection()
     {
         if (PlayerCamera != null)
@@ -883,16 +867,34 @@ public sealed class HotbarController : MonoBehaviour
     /// <summary>
     /// Notifies listeners that a specific slot changed.
     /// </summary>
-    /// <param name="SlotIndex">Changed slot index.</param>
     private void NotifySlotChanged(int SlotIndex)
     {
         OnSlotChanged?.Invoke(SlotIndex);
     }
 
     /// <summary>
+    /// Force-stops the currently equipped item usage if any item is equipped.
+    /// </summary>
+    private void ForceStopCurrentItemUsage()
+    {
+        if (CurrentEquippedBehaviour != null)
+        {
+            CurrentEquippedBehaviour.ForceStopItemUsage();
+        }
+    }
+
+    /// <summary>
+    /// Resets local use-state tracking used to derive start and end edges from held booleans.
+    /// </summary>
+    private void ResetUseTracking()
+    {
+        WasPrimaryHeldLastFrame = false;
+        WasSecondaryHeldLastFrame = false;
+    }
+
+    /// <summary>
     /// Writes a hotbar-specific debug log if enabled.
     /// </summary>
-    /// <param name="Message">Message to log.</param>
     private void Log(string Message)
     {
         if (!DebugLogs)

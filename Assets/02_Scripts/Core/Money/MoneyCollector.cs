@@ -1,13 +1,10 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 /// <summary>
-/// Collects a single money pickup when the player presses the interact action
-/// while looking directly at it.
-/// This version uses the same input access pattern as PlayerInteractionController
-/// so it stays aligned with the interaction flow already working in the project.
+/// Helper component that resolves and collects looked money pickups.
+/// This component no longer owns interact input directly.
+/// Instead, a higher-level interaction controller decides when collection should happen.
 /// </summary>
-[RequireComponent(typeof(PlayerInput))]
 public sealed class MoneyCollector : MonoBehaviour
 {
     [Header("References")]
@@ -16,10 +13,6 @@ public sealed class MoneyCollector : MonoBehaviour
 
     [Tooltip("Wallet that receives the collected money.")]
     [SerializeField] private CurrencyWallet CurrencyWallet;
-
-    [Header("Input")]
-    [Tooltip("Name of the interact action in the Input Actions asset.")]
-    [SerializeField] private string InteractActionName = "Interact";
 
     [Header("Collection")]
     [Tooltip("Maximum distance used to detect money pickups.")]
@@ -39,21 +32,10 @@ public sealed class MoneyCollector : MonoBehaviour
     [SerializeField] private bool DrawDebugRay = false;
 
     /// <summary>
-    /// Cached PlayerInput used to resolve the interact action.
-    /// </summary>
-    private PlayerInput PlayerInput;
-
-    /// <summary>
-    /// Cached interact action used to collect money pickups.
-    /// </summary>
-    private InputAction InteractAction;
-
-    /// <summary>
     /// Money pickup currently under the center-screen ray.
     /// </summary>
     private MoneyPickup CurrentLookedMoneyPickup;
 
-    /// 
     /// <summary>
     /// Whether money collection input is currently blocked by an external modal state.
     /// </summary>
@@ -67,10 +49,12 @@ public sealed class MoneyCollector : MonoBehaviour
     {
         IsExternalCollectionBlocked = IsBlocked;
     }
+
+    /// <summary>
+    /// Caches required references.
+    /// </summary>
     private void Awake()
     {
-        PlayerInput = GetComponent<PlayerInput>();
-
         if (PlayerCamera == null)
         {
             PlayerController PlayerController = GetComponent<PlayerController>();
@@ -90,22 +74,6 @@ public sealed class MoneyCollector : MonoBehaviour
             CurrencyWallet = FindFirstObjectByType<CurrencyWallet>();
         }
 
-        if (PlayerInput == null || PlayerInput.actions == null)
-        {
-            Debug.LogError("[MoneyCollector] PlayerInput or Input Actions asset is missing.", this);
-            enabled = false;
-            return;
-        }
-
-        InteractAction = PlayerInput.actions[InteractActionName];
-
-        if (InteractAction == null)
-        {
-            Debug.LogError("[MoneyCollector] The interact action named '" + InteractActionName + "' was not found.", this);
-            enabled = false;
-            return;
-        }
-
         if (PlayerCamera == null)
         {
             Debug.LogError("[MoneyCollector] PlayerCamera is missing.", this);
@@ -119,45 +87,49 @@ public sealed class MoneyCollector : MonoBehaviour
             enabled = false;
             return;
         }
-
-        Log("Awake completed. PlayerInput=True | InteractAction=True | CurrencyWallet=True | PlayerCamera=True");
     }
 
     /// <summary>
-    /// Enables the interact action when the component becomes active.
-    /// </summary>
-    private void OnEnable()
-    {
-        if (InteractAction != null)
-        {
-            InteractAction.Enable();
-        }
-    }
-
-    /// <summary>
-    /// Disables the interact action when the component becomes inactive.
-    /// </summary>
-    private void OnDisable()
-    {
-        if (InteractAction != null)
-        {
-            InteractAction.Disable();
-        }
-    }
-
-    /// <summary>
-    /// Updates the current looked money pickup and handles collection input.
+    /// Updates the current looked money pickup.
     /// </summary>
     private void Update()
     {
-
         if (IsExternalCollectionBlocked)
         {
+            CurrentLookedMoneyPickup = null;
             return;
         }
 
         UpdateLookTarget();
-        HandleCollectInput();
+    }
+
+    /// <summary>
+    /// Returns whether the player is currently looking at a valid money pickup.
+    /// </summary>
+    public bool HasCurrentLookedMoneyPickup()
+    {
+        return CurrentLookedMoneyPickup != null;
+    }
+
+    /// <summary>
+    /// Attempts to collect the money pickup currently looked at by the player.
+    /// </summary>
+    /// <returns>True when a pickup was successfully collected.</returns>
+    public bool TryCollectCurrentLookedMoney()
+    {
+        if (IsExternalCollectionBlocked)
+        {
+            return false;
+        }
+
+        if (CurrentLookedMoneyPickup == null)
+        {
+            return false;
+        }
+
+        CollectMoneyPickup(CurrentLookedMoneyPickup);
+        CurrentLookedMoneyPickup = null;
+        return true;
     }
 
     /// <summary>
@@ -185,30 +157,6 @@ public sealed class MoneyCollector : MonoBehaviour
         }
 
         CurrentLookedMoneyPickup = ResolveMoneyPickup(HitInfo);
-    }
-
-    /// <summary>
-    /// Processes the interact input to collect the looked money pickup.
-    /// </summary>
-    private void HandleCollectInput()
-    {
-        if (InteractAction == null || !InteractAction.WasPressedThisFrame())
-        {
-            return;
-        }
-
-        if (CurrentLookedMoneyPickup == null)
-        {
-            if(DebugLogs)
-            {
-                Log("Interact pressed but no valid money pickup was found.");
-            }
-            
-            return;
-        }
-
-        CollectMoneyPickup(CurrentLookedMoneyPickup);
-        CurrentLookedMoneyPickup = null;
     }
 
     /// <summary>
@@ -264,7 +212,6 @@ public sealed class MoneyCollector : MonoBehaviour
     /// <summary>
     /// Writes a collector-specific debug message when logging is enabled.
     /// </summary>
-    /// <param name="Message">Message to log.</param>
     private void Log(string Message)
     {
         if (!DebugLogs)

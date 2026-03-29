@@ -138,9 +138,19 @@ public sealed class PlayerInputReader : MonoBehaviour
     public event Action UsePrimaryPerformed;
 
     /// <summary>
+    /// Fired when primary use is released this frame.
+    /// </summary>
+    public event Action UsePrimaryReleased;
+
+    /// <summary>
     /// Fired when secondary use is pressed this frame.
     /// </summary>
     public event Action UseSecondaryPerformed;
+
+    /// <summary>
+    /// Fired when secondary use is released this frame.
+    /// </summary>
+    public event Action UseSecondaryReleased;
 
     /// <summary>
     /// Fired when a direct hotbar slot is selected.
@@ -364,10 +374,22 @@ public sealed class PlayerInputReader : MonoBehaviour
             Log("UsePrimary pressed.");
         }
 
+        if (UsePrimaryAction != null && UsePrimaryAction.WasReleasedThisFrame())
+        {
+            UsePrimaryReleased?.Invoke();
+            Log("UsePrimary released.");
+        }
+
         if (UseSecondaryAction != null && UseSecondaryAction.WasPressedThisFrame())
         {
             UseSecondaryPerformed?.Invoke();
             Log("UseSecondary pressed.");
+        }
+
+        if (UseSecondaryAction != null && UseSecondaryAction.WasReleasedThisFrame())
+        {
+            UseSecondaryReleased?.Invoke();
+            Log("UseSecondary released.");
         }
 
         if (PreviousAction != null && PreviousAction.WasPressedThisFrame())
