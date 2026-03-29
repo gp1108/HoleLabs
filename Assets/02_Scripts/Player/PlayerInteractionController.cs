@@ -76,6 +76,20 @@ public sealed class PlayerInteractionController : MonoBehaviour
     private WorldItem CurrentLookedWorldItem;
 
     /// <summary>
+    /// Whether interaction input is currently blocked by an external modal state.
+    /// </summary>
+    private bool IsExternalInteractionBlocked;
+
+    /// <summary>
+    /// Allows external systems to block or restore interaction processing.
+    /// </summary>
+    /// <param name="IsBlocked">True to block interactions, false to restore them.</param>
+    public void SetExternalInteractionBlocked(bool IsBlocked)
+    {
+        IsExternalInteractionBlocked = IsBlocked;
+    }
+
+    /// <summary>
     /// Initializes references and gathers player colliders from the full hierarchy when not assigned explicitly.
     /// </summary>
     private void Awake()
@@ -158,6 +172,12 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// </summary>
     private void Update()
     {
+
+        if (IsExternalInteractionBlocked)
+        {
+            return;
+        }
+
         UpdateHoldAnchor();
         UpdateLookTargets();
         HandleInteractInput();

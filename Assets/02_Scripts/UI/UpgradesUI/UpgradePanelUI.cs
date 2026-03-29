@@ -16,6 +16,9 @@ public sealed class UpgradePanelUI : MonoBehaviour
     [Tooltip("Currency wallet used to show current balances and react to currency changes.")]
     [SerializeField] private CurrencyWallet CurrencyWallet;
 
+    [Tooltip("Root GameObject of the visible upgrade panel. This is enabled and disabled without affecting the full canvas.")]
+    [SerializeField] private GameObject PanelRoot;
+
     [Tooltip("Container where upgrade entry instances will be spawned.")]
     [SerializeField] private Transform EntryContainer;
 
@@ -32,6 +35,7 @@ public sealed class UpgradePanelUI : MonoBehaviour
     [Header("Behaviour")]
     [Tooltip("If true, the panel is fully rebuilt during Awake.")]
     [SerializeField] private bool RebuildOnAwake = true;
+
     [Tooltip("If true, the panel is fully rebuilt during Start.")]
     [SerializeField] private bool RebuildOnStart = true;
 
@@ -52,6 +56,11 @@ public sealed class UpgradePanelUI : MonoBehaviour
             CurrencyWallet = FindFirstObjectByType<CurrencyWallet>();
         }
 
+        if (PanelRoot == null)
+        {
+            PanelRoot = gameObject;
+        }
+
         SubscribeToEvents();
 
         if (RebuildOnAwake)
@@ -59,8 +68,13 @@ public sealed class UpgradePanelUI : MonoBehaviour
             RebuildEntries();
             RefreshAll();
         }
+
+        PanelRoot.SetActive(false);
     }
 
+    /// <summary>
+    /// Rebuilds and refreshes the panel on Start when configured.
+    /// </summary>
     private void Start()
     {
         if (RebuildOnStart)
@@ -142,6 +156,42 @@ public sealed class UpgradePanelUI : MonoBehaviour
         {
             ResearchAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research).ToString();
         }
+    }
+
+    /// <summary>
+    /// Shows or hides the configured panel root without disabling the whole canvas object.
+    /// </summary>
+    /// <param name="IsVisible">True to show the panel, false to hide it.</param>
+    public void SetVisible(bool IsVisible)
+    {
+        if (PanelRoot == null)
+        {
+            return;
+        }
+
+        PanelRoot.SetActive(IsVisible);
+
+        if (IsVisible)
+        {
+            RebuildEntries();
+            RefreshAll();
+        }
+    }
+
+    /// <summary>
+    /// Shows the upgrade panel and refreshes its content.
+    /// </summary>
+    public void ShowPanel()
+    {
+        SetVisible(true);
+    }
+
+    /// <summary>
+    /// Hides the upgrade panel.
+    /// </summary>
+    public void HidePanel()
+    {
+        SetVisible(false);
     }
 
     /// <summary>

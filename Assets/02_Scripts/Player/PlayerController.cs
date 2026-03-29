@@ -181,9 +181,24 @@ public sealed class PlayerController : MonoBehaviour
     /// Allows external systems to temporarily block or restore camera look processing.
     /// </summary>
     /// <param name="IsBlocked">True to block camera look, false to restore it.</param>
+
+    /// <summary>
+    /// Whether movement input is temporarily blocked by an external modal state.
+    /// </summary>
+    private bool IsExternalMovementBlocked;
     public void SetExternalLookBlocked(bool IsBlocked)
     {
         IsExternalLookBlocked = IsBlocked;
+    }
+
+
+    /// <summary>
+    /// Allows external systems to temporarily block or restore movement processing.
+    /// </summary>
+    /// <param name="IsBlocked">True to block movement, false to restore it.</param>
+    public void SetExternalMovementBlocked(bool IsBlocked)
+    {
+        IsExternalMovementBlocked = IsBlocked;
     }
     private void Awake()
     {
@@ -321,12 +336,14 @@ public sealed class PlayerController : MonoBehaviour
 
     /// <summary>
     /// Moves the controller using cached input plus minimal jump and gravity logic.
+    /// When movement is externally blocked, horizontal locomotion and jump requests are ignored,
+    /// but gravity and platform carry still remain stable.
     /// </summary>
     private void UpdateMovement()
     {
         bool HasJumpSupport = CharacterController.isGrounded || GroundGraceTimer > 0f || PlatformGraceTimer > 0f;
 
-        if (JumpRequested && HasJumpSupport)
+        if (!IsExternalMovementBlocked && JumpRequested && HasJumpSupport)
         {
             VerticalVelocity = Mathf.Sqrt(JumpHeight * 2f * Gravity) + LastPlatformUpwardSpeed;
             JumpRequested = false;
@@ -344,10 +361,13 @@ public sealed class PlayerController : MonoBehaviour
             VerticalVelocity -= Gravity * Time.deltaTime;
         }
 
-        MoveInput = PlayerInputReader.Move;
+        MoveInput = IsExternalMovementBlocked ? Vector2.zero : PlayerInputReader.Move;
+
         Vector3 MoveDirection = ViewRoot.forward * MoveInput.y + ViewRoot.right * MoveInput.x;
         float SelectedMoveSpeed = IsCrouching ? CrouchSpeed : (PlayerInputReader.IsSprintHeld ? SprintSpeed : WalkSpeed);
-        Vector3 Motion = MoveDirection.normalized * SelectedMoveSpeed + Vector3.up * VerticalVelocity;
+        Vector3 HorizontalMotion = MoveDirection.normalized * SelectedMoveSpeed;
+        Vector3 Motion = HorizontalMotion + Vector3.up * VerticalVelocity;
+
         CharacterController.Move(Motion * Time.deltaTime);
         Velocity = Motion;
     }

@@ -142,6 +142,27 @@ public sealed class HotbarController : MonoBehaviour
     /// </summary>
     public event Action OnHotbarStructureChanged;
 
+
+    /// <summary>
+    /// Whether hotbar selection, use and drop input is currently blocked by an external modal state.
+    /// </summary>
+    private bool IsExternalHotbarInputBlocked;
+
+    /// <summary>
+    /// Allows external systems to block or restore hotbar runtime input.
+    /// </summary>
+    /// <param name="IsBlocked">True to block hotbar input, false to restore it.</param>
+    public void SetExternalHotbarInputBlocked(bool IsBlocked)
+    {
+        IsExternalHotbarInputBlocked = IsBlocked;
+
+        if (IsBlocked && CurrentEquippedBehaviour != null)
+        {
+            CurrentEquippedBehaviour.ForceStopItemUsage();
+        }
+    }
+
+
     /// <summary>
     /// Gets the currently selected slot index.
     /// </summary>
@@ -213,6 +234,11 @@ public sealed class HotbarController : MonoBehaviour
     /// </summary>
     private void Update()
     {
+        if (IsExternalHotbarInputBlocked)
+        {
+            return;
+        }
+
         HandleSelectionInput();
         HandleUseInput();
         HandleDropInput();

@@ -53,9 +53,20 @@ public sealed class MoneyCollector : MonoBehaviour
     /// </summary>
     private MoneyPickup CurrentLookedMoneyPickup;
 
+    /// 
     /// <summary>
-    /// Caches required references and resolves the interact action.
+    /// Whether money collection input is currently blocked by an external modal state.
     /// </summary>
+    private bool IsExternalCollectionBlocked;
+
+    /// <summary>
+    /// Allows external systems to block or restore money collection processing.
+    /// </summary>
+    /// <param name="IsBlocked">True to block collection, false to restore it.</param>
+    public void SetExternalCollectionBlocked(bool IsBlocked)
+    {
+        IsExternalCollectionBlocked = IsBlocked;
+    }
     private void Awake()
     {
         PlayerInput = GetComponent<PlayerInput>();
@@ -139,6 +150,12 @@ public sealed class MoneyCollector : MonoBehaviour
     /// </summary>
     private void Update()
     {
+
+        if (IsExternalCollectionBlocked)
+        {
+            return;
+        }
+
         UpdateLookTarget();
         HandleCollectInput();
     }
@@ -182,7 +199,11 @@ public sealed class MoneyCollector : MonoBehaviour
 
         if (CurrentLookedMoneyPickup == null)
         {
-            Log("Interact pressed but no valid money pickup was found.");
+            if(DebugLogs)
+            {
+                Log("Interact pressed but no valid money pickup was found.");
+            }
+            
             return;
         }
 
