@@ -436,13 +436,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ElevatorPhysicalMotor
   TopAnchor: {fileID: 1148626320}
   ElevatorWeightSystem: {fileID: 1530515852}
+  UpgradeManager: {fileID: 0}
   LocalTravelDirection: {x: 0, y: -1, z: 0}
   MinDistance: 0
-  MaxDistance: 10
+  BaseMaxDistance: 10
   CurrentDistance: 0
-  MoveSpeed: 2
+  BaseMoveSpeed: 2
   LocalRotationAxis: {x: 0, y: 1, z: 0}
   RotationSpeed: 60
+  RuntimeMaxDistance: 0
+  RuntimeMoveSpeed: 0
 --- !u!54 &181549095
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -2536,7 +2539,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 0.00054672477}
+  m_AnchoredPosition: {x: 0, y: 0.00011449914}
   m_SizeDelta: {x: 0, y: 300}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &888163750
@@ -3523,7 +3526,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 877725186}
   m_Direction: 2
   m_Value: 0
-  m_Size: 0.9999982
+  m_Size: 1
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
@@ -4000,7 +4003,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ccabc76e31fffb04d82b85c79feb06f4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ElevatorWeightSystem
-  MaxAllowedWeight: 200
+  UpgradeManager: {fileID: 0}
+  BaseMaxAllowedWeight: 200
+  RuntimeMaxAllowedWeight: 0
   CurrentWeight: 0
   IsOverweighted: 0
   WeightTMP: {fileID: 1345045559}

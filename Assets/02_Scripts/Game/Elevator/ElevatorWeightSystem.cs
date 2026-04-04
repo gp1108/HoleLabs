@@ -7,16 +7,25 @@ using UnityEngine;
 /// Free carryables count while physically inside the trigger.
 /// Held or magnetized carryables count as player-transferred weight
 /// while the player remains inside the elevator.
+/// Upgrade integration is resolved through UpgradeManager without coupling
+/// purchasing logic to this system.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Collider))]
 public sealed class ElevatorWeightSystem : MonoBehaviour
 {
+    [Header("References")]
+    [Tooltip("Upgrade manager used to resolve final upgraded elevator values.")]
+    [SerializeField] private UpgradeManager UpgradeManager;
+
     [Header("Limits")]
-    [Tooltip("Maximum total weight allowed before the elevator becomes overweighted.")]
-    [SerializeField] private float MaxAllowedWeight = 200f;
+    [Tooltip("Base maximum total weight allowed before the elevator becomes overweighted.")]
+    [SerializeField] private float BaseMaxAllowedWeight = 200f;
 
     [Header("Runtime")]
+    [Tooltip("Runtime resolved maximum allowed weight after upgrades.")]
+    [SerializeField] private float RuntimeMaxAllowedWeight;
+
     [Tooltip("Current authoritative evaluated weight.")]
     [SerializeField] private float CurrentWeight;
 
@@ -64,6 +73,14 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
+    /// Gets the current runtime maximum allowed weight after upgrades.
+    /// </summary>
+    public float GetCurrentMaxAllowedWeight()
+    {
+        return RuntimeMaxAllowedWeight;
+    }
+
+    /// <summary>
     /// Returns whether the elevator is overweighted.
     /// </summary>
     public bool IsElevatorOverweighted()
@@ -81,6 +98,11 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
         if (TriggerCollider != null)
         {
             TriggerCollider.isTrigger = true;
+        }
+
+        if (UpgradeManager == null)
+        {
+            UpgradeManager = FindFirstObjectByType<UpgradeManager>();
         }
     }
 
@@ -103,7 +125,6 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// <summary>
     /// Registers overlapping actors and carryables.
     /// </summary>
-    /// <param name="Other">Collider entering the trigger.</param>
     private void OnTriggerEnter(Collider Other)
     {
         RegisterOverlap(Other);
@@ -112,7 +133,6 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// <summary>
     /// Keeps overlap registration stable on moving platform edge cases.
     /// </summary>
-    /// <param name="Other">Collider staying inside the trigger.</param>
     private void OnTriggerStay(Collider Other)
     {
         RegisterOverlap(Other);
@@ -121,7 +141,6 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// <summary>
     /// Removes overlapping actors and carryables when they leave the trigger.
     /// </summary>
-    /// <param name="Other">Collider exiting the trigger.</param>
     private void OnTriggerExit(Collider Other)
     {
         PhysicsCarryable Carryable = ResolveCarryable(Other);
@@ -140,7 +159,6 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// <summary>
     /// Registers a carryable or actor found in the provided collider hierarchy.
     /// </summary>
-    /// <param name="Other">Collider to inspect.</param>
     private void RegisterOverlap(Collider Other)
     {
         PhysicsCarryable Carryable = ResolveCarryable(Other);
@@ -163,18 +181,21 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     {
         CleanupNullReferences();
 
+        RuntimeMaxAllowedWeight = ResolveMaxAllowedWeight();
+
         float FreeCarryableWeight = EvaluateFreeCarryablesInsideWeight();
         float ActorWeight = EvaluateActorsInsideWeight();
 
         CurrentWeight = Mathf.Max(0f, FreeCarryableWeight + ActorWeight);
-        IsOverweighted = CurrentWeight > MaxAllowedWeight;
+        IsOverweighted = CurrentWeight > RuntimeMaxAllowedWeight;
 
         if (DebugLogs)
         {
             Debug.Log(
                 "[ElevatorWeightSystem] CurrentWeight=" + CurrentWeight.ToString("F2") +
                 " | FreeCarryables=" + FreeCarryableWeight.ToString("F2") +
-                " | ActorWeight=" + ActorWeight.ToString("F2"),
+                " | ActorWeight=" + ActorWeight.ToString("F2") +
+                " | MaxAllowed=" + RuntimeMaxAllowedWeight.ToString("F2"),
                 this);
         }
 
@@ -263,8 +284,6 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// <summary>
     /// Resolves the gameplay weight of a carryable from its ore item data.
     /// </summary>
-    /// <param name="Carryable">Carryable to inspect.</param>
-    /// <returns>Configured weight or zero when unavailable.</returns>
     private float GetCarryableWeight(PhysicsCarryable Carryable)
     {
         if (Carryable == null)
@@ -294,6 +313,24 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
+    /// Resolves the final maximum allowed weight after upgrades.
+    /// </summary>
+    private float ResolveMaxAllowedWeight()
+    {
+        float BaseValue = Mathf.Max(0f, BaseMaxAllowedWeight);
+
+        if (UpgradeManager == null)
+        {
+            return BaseValue;
+        }
+
+        return Mathf.Max(
+            0f,
+            UpgradeManager.GetModifiedFloatStat(UpgradeStatType.ElevatorMaxAllowedWeight, BaseValue)
+        );
+    }
+
+    /// <summary>
     /// Removes null references from tracked sets.
     /// </summary>
     private void CleanupNullReferences()
@@ -312,14 +349,12 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
             return;
         }
 
-        WeightTMP.text = CurrentWeight.ToString("F0") + " / " + MaxAllowedWeight.ToString("F0") + " KG";
+        WeightTMP.text = CurrentWeight.ToString("F0") + " / " + RuntimeMaxAllowedWeight.ToString("F0") + " KG";
     }
 
     /// <summary>
     /// Resolves the root PhysicsCarryable from an overlapping collider.
     /// </summary>
-    /// <param name="Other">Collider to inspect.</param>
-    /// <returns>Resolved carryable or null.</returns>
     private PhysicsCarryable ResolveCarryable(Collider Other)
     {
         if (Other == null)
@@ -333,8 +368,6 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// <summary>
     /// Resolves the player weight actor from an overlapping collider.
     /// </summary>
-    /// <param name="Other">Collider to inspect.</param>
-    /// <returns>Resolved actor or null.</returns>
     private ElevatorWeightActor ResolveWeightActor(Collider Other)
     {
         if (Other == null)

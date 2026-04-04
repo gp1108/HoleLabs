@@ -5,6 +5,10 @@ using Unity.VisualScripting;
 /// Identifies all gameplay stats that can be modified by upgrades.
 /// Keep this enum focused on numeric values that gameplay systems can query directly.
 /// </summary>
+/// <summary>
+/// Identifies all gameplay stats that can be modified by upgrades.
+/// Keep this enum focused on numeric values that gameplay systems can query directly.
+/// </summary>
 public enum UpgradeStatType
 {
     None = 0,
@@ -20,7 +24,11 @@ public enum UpgradeStatType
     OreRespawnTimeMultiplier = 10,
     OrePurityMultiplier = 11,
     OreSizeMultiplier = 12,
-    ResearchSellValueMultiplier = 13
+    ResearchSellValueMultiplier = 13,
+
+    ElevatorMoveSpeed = 14,
+    ElevatorMaxTravelDistance = 15,
+    ElevatorMaxAllowedWeight = 16
 }
 
 /// <summary>
