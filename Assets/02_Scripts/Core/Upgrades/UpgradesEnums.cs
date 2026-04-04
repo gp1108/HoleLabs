@@ -16,8 +16,7 @@ public enum UpgradeStatType
     MiningSwingSpeed = 2,
     ElevatorDownSpeed = 3,
     ElevatorUpSpeed = 4,
-    OreYieldAmount = 5,
-    OreSellValueMultiplier = 6,
+    
     ScannerRange = 7,
     ScannerDuration = 8,
     CarryCapacity = 9,
@@ -25,10 +24,20 @@ public enum UpgradeStatType
     OrePurityMultiplier = 11,
     OreSizeMultiplier = 12,
     ResearchSellValueMultiplier = 13,
-
+    
+    
+    //Elevator
     ElevatorMoveSpeed = 14,
     ElevatorMaxTravelDistance = 15,
-    ElevatorMaxAllowedWeight = 16
+    ElevatorMaxAllowedWeight = 16,
+
+    //Ores
+    OreYieldAmount = 5,
+    OreSellValueMultiplier = 6,
+    OreYieldAmountMin = 17,
+    OreYieldAmountMax = 18,
+    OreSellValueMultiplierPerOre = 19,
+    OreSellValueFlatBonusPerOre = 20
 }
 
 /// <summary>

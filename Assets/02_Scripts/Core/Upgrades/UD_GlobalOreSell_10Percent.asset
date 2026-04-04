@@ -10,25 +10,25 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b14e2cff467300941bec1438b983a8f4, type: 3}
-  m_Name: UD_ElevatorMaxWeight
+  m_Name: UD_GlobalOreSell_10Percent
   m_EditorClassIdentifier: Assembly-CSharp::UpgradeDefinition
-  UpgradeId: ElevatorMaxWeight
-  DisplayName: Elevator max weight
-  Description: Increases the max weight capacity the elevator can carry
+  UpgradeId: GlobalOreSell_10Percent
+  DisplayName: Market Negotiation
+  Description: All ores sell for 10% more per level.
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
-  MaxLevel: 2
+  MaxLevel: 3
   LevelCosts:
-  - CurrencyType: 0
-    Cost: 10
   - CurrencyType: 0
     Cost: 50
   - CurrencyType: 0
-    Cost: 100
+    Cost: 125
+  - CurrencyType: 0
+    Cost: 250
   StatModifiers:
-  - StatType: 16
-    ModifierType: 0
-    BaseValue: 50
-    ValuePerLevel: 100
+  - StatType: 6
+    ModifierType: 2
+    BaseValue: 1.1
+    ValuePerLevel: 0.1
     StartApplyingAtLevelOne: 1
     TargetOreId: 
   UnlockRewards: []

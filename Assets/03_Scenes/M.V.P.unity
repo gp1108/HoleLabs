@@ -1502,6 +1502,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OreRuntimeService
   UpgradeManager: {fileID: 1860831231}
   OrePickupPool: {fileID: 616329599}
+  PurityGoldInfluence: 0.35
+  SizeGoldInfluence: 0.25
+  PurityResearchInfluence: 0.2
+  SizeResearchInfluence: 0.1
+  SizeWeightInfluence: 0.75
+  PurityWeightInfluence: 0.1
   DebugLogs: 0
 --- !u!114 &616329599
 MonoBehaviour:
@@ -2539,8 +2545,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 0.00011449914}
-  m_SizeDelta: {x: 0, y: 300}
+  m_AnchoredPosition: {x: 0, y: 0.000040012914}
+  m_SizeDelta: {x: 0, y: 3289.2168}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &888163750
 MonoBehaviour:
@@ -3525,8 +3531,8 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 877725187}
   m_HandleRect: {fileID: 877725186}
   m_Direction: 2
-  m_Value: 0
-  m_Size: 1
+  m_Value: 1
+  m_Size: 0.2380506
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
@@ -4785,7 +4791,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::UpgradeManager
   CurrencyWallet: {fileID: 113581520}
   UpgradeDefinitions:
+  - {fileID: 11400000, guid: 89f8db3be6ce2da4893852584163e19a, type: 2}
+  - {fileID: 11400000, guid: d33d47676044b6040ad73dde441aebc9, type: 2}
   - {fileID: 11400000, guid: fb2f45faba45f8f4ba987686f35e86c2, type: 2}
+  - {fileID: 11400000, guid: 0c7ad8f3d94515c44a680ea379db7937, type: 2}
+  - {fileID: 11400000, guid: 52b78e632e6f01e4e8a4a3dfe32643fe, type: 2}
+  - {fileID: 11400000, guid: 1150a1a0ef76f044d8b531438711790d, type: 2}
+  - {fileID: 11400000, guid: be985c50bb21c50439808cc10d8ac256, type: 2}
+  - {fileID: 11400000, guid: 3fe72a52525ff5f45b6344b41c9eac66, type: 2}
+  - {fileID: 11400000, guid: 657c1176ee5aa5542b40297088b749d3, type: 2}
   DebugRuntimeLevels: []
   DebugLogs: 0
 --- !u!1 &1865181343

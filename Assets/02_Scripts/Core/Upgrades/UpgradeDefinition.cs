@@ -14,6 +14,8 @@ public sealed class UpgradeDefinition : ScriptableObject
         [Tooltip("Amount required to purchase this level.")]
         [SerializeField] private int Cost = 100;
 
+
+
         /// <summary>
         /// Gets the currency type used by this level cost.
         /// </summary>
@@ -48,6 +50,24 @@ public sealed class UpgradeDefinition : ScriptableObject
 
         [Tooltip("If true, level zero contributes nothing and level one starts at BaseValue.")]
         [SerializeField] private bool StartApplyingAtLevelOne = true;
+
+        [Tooltip("Optional ore id filter. Leave empty to apply this modifier globally.")]
+        [SerializeField] private string TargetOreId;
+
+        public string GetTargetOreId()
+        {
+            return TargetOreId;
+        }
+
+        public bool AppliesToOre(string OreId)
+        {
+            if (string.IsNullOrWhiteSpace(TargetOreId))
+            {
+                return true;
+            }
+
+            return string.Equals(TargetOreId, OreId, StringComparison.Ordinal);
+        }
 
         /// <summary>
         /// Gets the target stat affected by this modifier.

@@ -88,28 +88,139 @@ public sealed class OreDefinition : ScriptableObject
     [SerializeField] private int BaseWeightValue = 10;
 
     [Header("Economy")]
-    [Tooltip("Base gold value before property and upgrade modifiers are applied.")]
-    [SerializeField] private int BaseGoldValue = 10;
+    [Tooltip("Base minimum gold value before property and upgrade modifiers are applied.")]
+    [SerializeField] private int BaseGoldValueMin = 3;
 
-    [Tooltip("Base research value before property and upgrade modifiers are applied.")]
-    [SerializeField] private int BaseResearchValue = 1;
+    [Tooltip("Base maximum gold value before property and upgrade modifiers are applied.")]
+    [SerializeField] private int BaseGoldValueMax = 6;
+
+    [Tooltip("Base minimum research value before property and upgrade modifiers are applied.")]
+    [SerializeField] private int BaseResearchValueMin = 0;
+
+    [Tooltip("Base maximum research value before property and upgrade modifiers are applied.")]
+    [SerializeField] private int BaseResearchValueMax = 1;
 
     [Header("Properties")]
     [Tooltip("Configurable ore properties such as purity or size.")]
     [SerializeField] private List<OrePropertyRange> PropertyRanges = new();
 
-    public string GetOreId() { return OreId; }
-    public string GetDisplayName() { return DisplayName; }
-    public Sprite GetIcon() { return Icon; }
-    public GameObject GetVeinPrefab() { return VeinPrefab; }
-    public GameObject GetDroppedOrePrefab() { return DroppedOrePrefab; }
-    public int GetBaseHitsRequired() { return Mathf.Max(1, BaseHitsRequired); }
-    public float GetBaseRespawnTime() { return Mathf.Max(0f, BaseRespawnTime); }
-    public int GetBaseDropCountMin() { return Mathf.Max(0, BaseDropCountMin); }
-    public int GetBaseDropCountMax() { return Mathf.Max(GetBaseDropCountMin(), BaseDropCountMax); }
-    public int GetBaseGoldValue() { return Mathf.Max(0, BaseGoldValue); }
+    /// <summary>
+    /// Gets the unique ore identifier.
+    /// </summary>
+    public string GetOreId()
+    {
+        return OreId;
+    }
 
-    public int GetBaseWeightValue() { return Mathf.Max(0, BaseWeightValue); }
-    public int GetBaseResearchValue() { return Mathf.Max(0, BaseResearchValue); }
-    public IReadOnlyList<OrePropertyRange> GetPropertyRanges() { return PropertyRanges; }
+    /// <summary>
+    /// Gets the display name shown in UI.
+    /// </summary>
+    public string GetDisplayName()
+    {
+        return DisplayName;
+    }
+
+    /// <summary>
+    /// Gets the optional icon used by UI.
+    /// </summary>
+    public Sprite GetIcon()
+    {
+        return Icon;
+    }
+
+    /// <summary>
+    /// Gets the prefab spawned as the mineable ore vein.
+    /// </summary>
+    public GameObject GetVeinPrefab()
+    {
+        return VeinPrefab;
+    }
+
+    /// <summary>
+    /// Gets the prefab spawned as the dropped physical ore piece.
+    /// </summary>
+    public GameObject GetDroppedOrePrefab()
+    {
+        return DroppedOrePrefab;
+    }
+
+    /// <summary>
+    /// Gets the base amount of hits required before the vein breaks.
+    /// </summary>
+    public int GetBaseHitsRequired()
+    {
+        return Mathf.Max(1, BaseHitsRequired);
+    }
+
+    /// <summary>
+    /// Gets the base time required for the vein to fully regrow after being mined.
+    /// </summary>
+    public float GetBaseRespawnTime()
+    {
+        return Mathf.Max(0f, BaseRespawnTime);
+    }
+
+    /// <summary>
+    /// Gets the base minimum amount of ore pieces dropped when the vein breaks.
+    /// </summary>
+    public int GetBaseDropCountMin()
+    {
+        return Mathf.Max(0, BaseDropCountMin);
+    }
+
+    /// <summary>
+    /// Gets the base maximum amount of ore pieces dropped when the vein breaks.
+    /// </summary>
+    public int GetBaseDropCountMax()
+    {
+        return Mathf.Max(GetBaseDropCountMin(), BaseDropCountMax);
+    }
+
+    /// <summary>
+    /// Gets the base weight value in KG before property and upgrade modifiers are applied.
+    /// </summary>
+    public int GetBaseWeightValue()
+    {
+        return Mathf.Max(0, BaseWeightValue);
+    }
+
+    /// <summary>
+    /// Gets the base minimum gold value before property and upgrade modifiers are applied.
+    /// </summary>
+    public int GetBaseGoldValueMin()
+    {
+        return Mathf.Max(0, BaseGoldValueMin);
+    }
+
+    /// <summary>
+    /// Gets the base maximum gold value before property and upgrade modifiers are applied.
+    /// </summary>
+    public int GetBaseGoldValueMax()
+    {
+        return Mathf.Max(GetBaseGoldValueMin(), BaseGoldValueMax);
+    }
+
+    /// <summary>
+    /// Gets the base minimum research value before property and upgrade modifiers are applied.
+    /// </summary>
+    public int GetBaseResearchValueMin()
+    {
+        return Mathf.Max(0, BaseResearchValueMin);
+    }
+
+    /// <summary>
+    /// Gets the base maximum research value before property and upgrade modifiers are applied.
+    /// </summary>
+    public int GetBaseResearchValueMax()
+    {
+        return Mathf.Max(GetBaseResearchValueMin(), BaseResearchValueMax);
+    }
+
+    /// <summary>
+    /// Gets the configured ore property ranges such as purity or size.
+    /// </summary>
+    public IReadOnlyList<OrePropertyRange> GetPropertyRanges()
+    {
+        return PropertyRanges;
+    }
 }

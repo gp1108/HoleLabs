@@ -117,6 +117,54 @@ public sealed class UpgradeManager : MonoBehaviour
         return null;
     }
 
+    public float GetModifiedOreFloatStat(UpgradeStatType StatType, string OreId, float BaseValue)
+    {
+        float CurrentValue = BaseValue;
+
+        foreach (UpgradeDefinition Definition in UpgradeDefinitions)
+        {
+            if (Definition == null)
+            {
+                continue;
+            }
+
+            int CurrentLevel = GetUpgradeLevel(Definition);
+
+            if (CurrentLevel <= 0)
+            {
+                continue;
+            }
+
+            IReadOnlyList<UpgradeDefinition.StatModifierDefinition> Modifiers = Definition.GetStatModifiers();
+
+            for (int Index = 0; Index < Modifiers.Count; Index++)
+            {
+                UpgradeDefinition.StatModifierDefinition Modifier = Modifiers[Index];
+
+                if (Modifier == null || Modifier.GetStatType() != StatType)
+                {
+                    continue;
+                }
+
+                if (!Modifier.AppliesToOre(OreId))
+                {
+                    continue;
+                }
+
+                float ModifierValue = Modifier.EvaluateValue(CurrentLevel);
+                CurrentValue = ApplyModifier(CurrentValue, Modifier.GetModifierType(), ModifierValue);
+            }
+        }
+
+        return CurrentValue;
+    }
+
+    public int GetModifiedOreIntStat(UpgradeStatType StatType, string OreId, int BaseValue)
+    {
+        float ModifiedValue = GetModifiedOreFloatStat(StatType, OreId, BaseValue);
+        return Mathf.RoundToInt(ModifiedValue);
+    }
+
     public bool CanPurchaseUpgrade(UpgradeDefinition UpgradeDefinition)
     {
         if (UpgradeDefinition == null || CurrencyWallet == null)
