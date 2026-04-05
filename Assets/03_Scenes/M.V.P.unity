@@ -350,7 +350,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CurrencyWallet
   DefaultCurrencies:
   - Type: 0
-    Amount: 100
+    Amount: 10000
   - Type: 1
     Amount: 100
   DebugLogs: 0
@@ -6541,6 +6541,10 @@ MonoBehaviour:
   - Id: Small_Bill
     Prefab: {fileID: 6431823255149733203, guid: 3c3af70d8d802534b8fb11228e210b1f, type: 3}
     GoldValue: 10
+    Weight: 1
+  - Id: Penny
+    Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
+    GoldValue: 0.01
     Weight: 1
   AlternativeCompositionChance: 0.2
   ShuffleEmissionOrder: 1

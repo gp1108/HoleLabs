@@ -63,19 +63,19 @@ public sealed class CurrencyDisplayUI : MonoBehaviour
 
         if (GoldAmountText != null)
         {
-            GoldAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Gold).ToString();
+            GoldAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Gold).ToString("0.00");
         }
 
         if (ResearchAmountText != null)
         {
-            ResearchAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research).ToString();
+            ResearchAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research).ToString("0.00");
         }
     }
 
     /// <summary>
     /// Handles wallet changes by refreshing the displayed values.
     /// </summary>
-    private void HandleCurrencyChanged(CurrencyWallet.CurrencyType CurrencyType, int NewAmount)
+    private void HandleCurrencyChanged(CurrencyWallet.CurrencyType CurrencyType, float NewAmount)
     {
         RefreshView();
     }

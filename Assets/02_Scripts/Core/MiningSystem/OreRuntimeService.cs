@@ -8,39 +8,20 @@ using UnityEngine;
 public sealed class OreRuntimeService : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("Upgrade manager used to resolve upgrade-modified mining values.")]
     [SerializeField] private UpgradeManager UpgradeManager;
-
-    [Tooltip("Optional pickup pool used to reuse dropped ore objects instead of instantiating and destroying them.")]
     [SerializeField] private OrePickupPool OrePickupPool;
 
     [Header("Economy Influence")]
-    [Tooltip("How strongly purity affects the final gold value. 0 means no effect, 1 means full linear effect.")]
     [SerializeField] private float PurityGoldInfluence = 0.35f;
-
-    [Tooltip("How strongly size affects the final gold value. 0 means no effect, 1 means full linear effect.")]
     [SerializeField] private float SizeGoldInfluence = 0.25f;
-
-    [Tooltip("How strongly purity affects the final research value.")]
     [SerializeField] private float PurityResearchInfluence = 0.20f;
-
-    [Tooltip("How strongly size affects the final research value.")]
     [SerializeField] private float SizeResearchInfluence = 0.10f;
-
-    [Tooltip("How strongly size affects the final weight value.")]
     [SerializeField] private float SizeWeightInfluence = 0.75f;
-
-    [Tooltip("How strongly purity affects the final weight value.")]
     [SerializeField] private float PurityWeightInfluence = 0.10f;
 
     [Header("Debug")]
-    [Tooltip("Logs generation and value resolution details.")]
     [SerializeField] private bool DebugLogs = false;
 
-    /// <summary>
-    /// Resolves the final hits required for the provided ore definition.
-    /// Supports both global and ore-specific modifiers.
-    /// </summary>
     public int ResolveHitsRequired(OreDefinition OreDefinition)
     {
         if (OreDefinition == null)
@@ -64,10 +45,6 @@ public sealed class OreRuntimeService : MonoBehaviour
         return Mathf.Max(1, FinalHitsRequired);
     }
 
-    /// <summary>
-    /// Resolves the final respawn time for the provided ore definition.
-    /// Respawn remains global for now.
-    /// </summary>
     public float ResolveRespawnTime(OreDefinition OreDefinition)
     {
         if (OreDefinition == null)
@@ -90,10 +67,6 @@ public sealed class OreRuntimeService : MonoBehaviour
         return Mathf.Max(0f, BaseRespawnTime * Mathf.Max(0.01f, RespawnMultiplier));
     }
 
-    /// <summary>
-    /// Resolves the final drop count using ore-specific min and max modifiers.
-    /// Supports both global modifiers and per-ore modifiers through TargetOreId.
-    /// </summary>
     public int ResolveDropCount(OreDefinition OreDefinition)
     {
         if (OreDefinition == null)
@@ -125,9 +98,6 @@ public sealed class OreRuntimeService : MonoBehaviour
         return Random.Range(FinalDropCountMin, FinalDropCountMax + 1);
     }
 
-    /// <summary>
-    /// Creates runtime ore data with generated properties and resolved values.
-    /// </summary>
     public OreItemData CreateOreItemData(OreDefinition OreDefinition)
     {
         if (OreDefinition == null)
@@ -169,13 +139,6 @@ public sealed class OreRuntimeService : MonoBehaviour
         return OreItemData;
     }
 
-    /// <summary>
-    /// Resolves the final gold, research and weight values for one runtime ore payload.
-    /// Supports:
-    /// - global ore sell multiplier
-    /// - per-ore sell multiplier
-    /// - per-ore flat gold bonus
-    /// </summary>
     public void ResolveOreValues(OreItemData OreItemData)
     {
         if (OreItemData == null || OreItemData.GetOreDefinition() == null)
@@ -189,19 +152,19 @@ public sealed class OreRuntimeService : MonoBehaviour
         float Purity = Mathf.Max(0.01f, OreItemData.GetPropertyValue(OrePropertyType.Purity, 1f));
         float Size = Mathf.Max(0.01f, OreItemData.GetPropertyValue(OrePropertyType.Size, 1f));
 
-        int BaseGoldRoll = Random.Range(
+        float BaseGoldRoll = CurrencyMath.RoundCurrency(Random.Range(
             OreDefinition.GetBaseGoldValueMin(),
-            OreDefinition.GetBaseGoldValueMax() + 1
-        );
+            OreDefinition.GetBaseGoldValueMax()
+        ));
 
-        int BaseResearchRoll = Random.Range(
+        float BaseResearchRoll = CurrencyMath.RoundCurrency(Random.Range(
             OreDefinition.GetBaseResearchValueMin(),
-            OreDefinition.GetBaseResearchValueMax() + 1
-        );
+            OreDefinition.GetBaseResearchValueMax()
+        ));
 
         float GlobalGoldMultiplier = 1f;
         float PerOreGoldMultiplier = 1f;
-        int PerOreFlatGoldBonus = 0;
+        float PerOreFlatGoldBonus = 0f;
         float ResearchMultiplier = 1f;
 
         if (UpgradeManager != null)
@@ -217,10 +180,10 @@ public sealed class OreRuntimeService : MonoBehaviour
                 1f
             );
 
-            PerOreFlatGoldBonus = UpgradeManager.GetModifiedOreIntStat(
+            PerOreFlatGoldBonus = UpgradeManager.GetModifiedOreFloatStat(
                 UpgradeStatType.OreSellValueFlatBonusPerOre,
                 OreId,
-                0
+                0f
             );
 
             ResearchMultiplier = UpgradeManager.GetModifiedFloatStat(
@@ -239,7 +202,7 @@ public sealed class OreRuntimeService : MonoBehaviour
             (1f + ((Size - 1f) * SizeWeightInfluence)) *
             (1f + ((Purity - 1f) * PurityWeightInfluence));
 
-        int FinalGoldValue = Mathf.RoundToInt(
+        float FinalGoldValue = CurrencyMath.RoundCurrency(
             (
                 BaseGoldRoll *
                 Mathf.Max(0.1f, GoldPurityFactor) *
@@ -249,29 +212,28 @@ public sealed class OreRuntimeService : MonoBehaviour
             ) + PerOreFlatGoldBonus
         );
 
-        int FinalResearchValue = Mathf.RoundToInt(
+        float FinalResearchValue = CurrencyMath.RoundCurrency(
             BaseResearchRoll *
             Mathf.Max(0.1f, ResearchPurityFactor) *
             Mathf.Max(0.1f, ResearchSizeFactor) *
             Mathf.Max(0.01f, ResearchMultiplier)
         );
 
-        int FinalWeightValue = Mathf.RoundToInt(
+        float FinalWeightValue =
             OreDefinition.GetBaseWeightValue() *
-            Mathf.Max(0.1f, WeightFactor)
-        );
+            Mathf.Max(0.1f, WeightFactor);
 
-        OreItemData.SetGoldValue(Mathf.Max(0, FinalGoldValue));
-        OreItemData.SetResearchValue(Mathf.Max(0, FinalResearchValue));
-        OreItemData.SetWeightValue(Mathf.Max(0, FinalWeightValue));
+        OreItemData.SetGoldValue(Mathf.Max(0f, FinalGoldValue));
+        OreItemData.SetResearchValue(Mathf.Max(0f, FinalResearchValue));
+        OreItemData.SetWeightValue(Mathf.Max(0f, FinalWeightValue));
 
         if (DebugLogs)
         {
             Debug.Log(
                 "[OreRuntimeService] Resolved values for " + OreDefinition.GetDisplayName() +
-                " | Gold=" + FinalGoldValue +
-                " | Research=" + FinalResearchValue +
-                " | Weight=" + FinalWeightValue +
+                " | Gold=" + FinalGoldValue.ToString("0.00") +
+                " | Research=" + FinalResearchValue.ToString("0.00") +
+                " | Weight=" + FinalWeightValue.ToString("0.00") +
                 " | Purity=" + Purity.ToString("F2") +
                 " | Size=" + Size.ToString("F2") +
                 " | OreId=" + OreId,
@@ -279,10 +241,6 @@ public sealed class OreRuntimeService : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Spawns one dropped ore pickup using the configured pool when available.
-    /// Falls back to regular instantiation if no pool has been assigned.
-    /// </summary>
     public GameObject SpawnOrePickup(OreItemData OreItemData, Vector3 Position, Quaternion Rotation)
     {
         if (OreItemData == null || OreItemData.GetOreDefinition() == null)
@@ -324,9 +282,6 @@ public sealed class OreRuntimeService : MonoBehaviour
         return OrePickup.GetRuntimeRoot().gameObject;
     }
 
-    /// <summary>
-    /// Applies the corresponding global property multiplier from upgrades.
-    /// </summary>
     private float ApplyPropertyUpgradeMultiplier(OrePropertyType PropertyType, float Value)
     {
         if (UpgradeManager == null)
@@ -347,9 +302,6 @@ public sealed class OreRuntimeService : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Logs ore runtime messages if debug logging is enabled.
-    /// </summary>
     private void Log(string Message)
     {
         if (!DebugLogs)

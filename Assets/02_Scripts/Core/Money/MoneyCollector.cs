@@ -8,51 +8,26 @@ using UnityEngine;
 public sealed class MoneyCollector : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("Camera used to cast the collection ray.")]
     [SerializeField] private Camera PlayerCamera;
-
-    [Tooltip("Wallet that receives the collected money.")]
     [SerializeField] private CurrencyWallet CurrencyWallet;
 
     [Header("Collection")]
-    [Tooltip("Maximum distance used to detect money pickups.")]
     [SerializeField] private float CollectDistance = 4f;
-
-    [Tooltip("Layers considered valid for money collection.")]
     [SerializeField] private LayerMask CollectionLayers = ~0;
-
-    [Tooltip("Defines whether trigger colliders are considered by the collection ray.")]
     [SerializeField] private QueryTriggerInteraction TriggerInteraction = QueryTriggerInteraction.Ignore;
 
     [Header("Debug")]
-    [Tooltip("Logs money collection operations to the console.")]
     [SerializeField] private bool DebugLogs = false;
-
-    [Tooltip("Draws the collection ray in the Scene view.")]
     [SerializeField] private bool DrawDebugRay = false;
 
-    /// <summary>
-    /// Money pickup currently under the center-screen ray.
-    /// </summary>
     private MoneyPickup CurrentLookedMoneyPickup;
-
-    /// <summary>
-    /// Whether money collection input is currently blocked by an external modal state.
-    /// </summary>
     private bool IsExternalCollectionBlocked;
 
-    /// <summary>
-    /// Allows external systems to block or restore money collection processing.
-    /// </summary>
-    /// <param name="IsBlocked">True to block collection, false to restore it.</param>
     public void SetExternalCollectionBlocked(bool IsBlocked)
     {
         IsExternalCollectionBlocked = IsBlocked;
     }
 
-    /// <summary>
-    /// Caches required references.
-    /// </summary>
     private void Awake()
     {
         if (PlayerCamera == null)
@@ -89,9 +64,6 @@ public sealed class MoneyCollector : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Updates the current looked money pickup.
-    /// </summary>
     private void Update()
     {
         if (IsExternalCollectionBlocked)
@@ -103,18 +75,11 @@ public sealed class MoneyCollector : MonoBehaviour
         UpdateLookTarget();
     }
 
-    /// <summary>
-    /// Returns whether the player is currently looking at a valid money pickup.
-    /// </summary>
     public bool HasCurrentLookedMoneyPickup()
     {
         return CurrentLookedMoneyPickup != null;
     }
 
-    /// <summary>
-    /// Attempts to collect the money pickup currently looked at by the player.
-    /// </summary>
-    /// <returns>True when a pickup was successfully collected.</returns>
     public bool TryCollectCurrentLookedMoney()
     {
         if (IsExternalCollectionBlocked)
@@ -132,9 +97,6 @@ public sealed class MoneyCollector : MonoBehaviour
         return true;
     }
 
-    /// <summary>
-    /// Updates the money pickup currently looked at by the player.
-    /// </summary>
     private void UpdateLookTarget()
     {
         CurrentLookedMoneyPickup = null;
@@ -159,9 +121,6 @@ public sealed class MoneyCollector : MonoBehaviour
         CurrentLookedMoneyPickup = ResolveMoneyPickup(HitInfo);
     }
 
-    /// <summary>
-    /// Resolves a money pickup from the current raycast hit.
-    /// </summary>
     private MoneyPickup ResolveMoneyPickup(RaycastHit HitInfo)
     {
         if (HitInfo.collider == null)
@@ -184,9 +143,6 @@ public sealed class MoneyCollector : MonoBehaviour
         return MoneyPickup;
     }
 
-    /// <summary>
-    /// Transfers the pickup value to the wallet and returns the pickup to the pool.
-    /// </summary>
     private void CollectMoneyPickup(MoneyPickup MoneyPickup)
     {
         if (MoneyPickup == null)
@@ -194,9 +150,9 @@ public sealed class MoneyCollector : MonoBehaviour
             return;
         }
 
-        int Amount = Mathf.Max(0, MoneyPickup.GetAmount());
+        float Amount = Mathf.Max(0f, MoneyPickup.GetAmount());
 
-        if (Amount <= 0)
+        if (Amount <= 0f)
         {
             Log("Money pickup amount was zero. Returning pickup to pool.");
             MoneyPickup.ReturnToPool();
@@ -204,14 +160,11 @@ public sealed class MoneyCollector : MonoBehaviour
         }
 
         CurrencyWallet.AddCurrency(MoneyPickup.GetCurrencyType(), Amount);
-        Log("Collected money pickup: " + MoneyPickup.name + " | Amount: " + Amount);
+        Log("Collected money pickup: " + MoneyPickup.name + " | Amount: " + Amount.ToString("0.00"));
 
         MoneyPickup.ReturnToPool();
     }
 
-    /// <summary>
-    /// Writes a collector-specific debug message when logging is enabled.
-    /// </summary>
     private void Log(string Message)
     {
         if (!DebugLogs)

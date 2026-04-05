@@ -12,9 +12,7 @@ public sealed class UpgradeDefinition : ScriptableObject
         [SerializeField] private CurrencyWallet.CurrencyType CurrencyType = CurrencyWallet.CurrencyType.Research;
 
         [Tooltip("Amount required to purchase this level.")]
-        [SerializeField] private int Cost = 100;
-
-
+        [SerializeField] private float Cost = 100f;
 
         /// <summary>
         /// Gets the currency type used by this level cost.
@@ -27,9 +25,9 @@ public sealed class UpgradeDefinition : ScriptableObject
         /// <summary>
         /// Gets the numeric amount required by this level cost.
         /// </summary>
-        public int GetCost()
+        public float GetCost()
         {
-            return Mathf.Max(0, Cost);
+            return CurrencyMath.RoundCurrency(Mathf.Max(0f, Cost));
         }
     }
 
@@ -69,40 +67,31 @@ public sealed class UpgradeDefinition : ScriptableObject
             return string.Equals(TargetOreId, OreId, StringComparison.Ordinal);
         }
 
-        /// <summary>
-        /// Gets the target stat affected by this modifier.
-        /// </summary>
         public UpgradeStatType GetStatType()
         {
             return StatType;
         }
 
-        /// <summary>
-        /// Gets the modifier operation used by this modifier.
-        /// </summary>
         public UpgradeModifierType GetModifierType()
         {
             return ModifierType;
         }
 
-        /// <summary>
-        /// Evaluates the modifier numeric value for the provided upgrade level.
-        /// </summary>
-        public float EvaluateValue(int currentLevel)
+        public float EvaluateValue(int CurrentLevel)
         {
-            int effectiveLevel = Mathf.Max(0, currentLevel);
+            int EffectiveLevel = Mathf.Max(0, CurrentLevel);
 
             if (StartApplyingAtLevelOne)
             {
-                if (effectiveLevel <= 0)
+                if (EffectiveLevel <= 0)
                 {
                     return 0f;
                 }
 
-                return BaseValue + (ValuePerLevel * (effectiveLevel - 1));
+                return BaseValue + (ValuePerLevel * (EffectiveLevel - 1));
             }
 
-            return BaseValue + (ValuePerLevel * effectiveLevel);
+            return BaseValue + (ValuePerLevel * EffectiveLevel);
         }
     }
 
@@ -129,33 +118,21 @@ public sealed class UpgradeDefinition : ScriptableObject
         [Tooltip("Level at which this reward becomes active.")]
         [SerializeField] private int RequiredLevel = 1;
 
-        /// <summary>
-        /// Gets the reward category used by this unlock reward.
-        /// </summary>
         public UnlockRewardType GetRewardType()
         {
             return RewardType;
         }
 
-        /// <summary>
-        /// Gets the unique reward identifier.
-        /// </summary>
         public string GetRewardId()
         {
             return RewardId;
         }
 
-        /// <summary>
-        /// Gets the optional item definition referenced by this reward.
-        /// </summary>
         public ItemDefinition GetItemDefinition()
         {
             return ItemDefinition;
         }
 
-        /// <summary>
-        /// Gets the minimum level required to activate this reward.
-        /// </summary>
         public int GetRequiredLevel()
         {
             return Mathf.Max(1, RequiredLevel);
@@ -163,102 +140,46 @@ public sealed class UpgradeDefinition : ScriptableObject
     }
 
     [Header("Identity")]
-    [Tooltip("Unique identifier of this upgrade.")]
     [SerializeField] private string UpgradeId;
-
-    [Tooltip("Display name shown in UI.")]
     [SerializeField] private string DisplayName;
-
-    [Tooltip("Description shown in UI.")]
     [TextArea]
     [SerializeField] private string Description;
-
-    [Tooltip("Optional icon displayed by the upgrade UI.")]
     [SerializeField] private Sprite Icon;
 
     [Header("Leveling")]
-    [Tooltip("Maximum level supported by this upgrade.")]
     [SerializeField] private int MaxLevel = 1;
-
-    [Tooltip("Costs configured for each purchasable level. Element 0 represents level 1.")]
     [SerializeField] private List<UpgradeLevelCost> LevelCosts = new();
 
     [Header("Stat Modifiers")]
-    [Tooltip("Numeric stat modifiers applied by this upgrade.")]
     [SerializeField] private List<StatModifierDefinition> StatModifiers = new();
 
     [Header("Unlock Rewards")]
-    [Tooltip("Non numeric rewards activated by this upgrade, such as feature flags, visuals or items.")]
     [SerializeField] private List<UnlockRewardDefinition> UnlockRewards = new();
 
-    /// <summary>
-    /// Gets the unique identifier of this upgrade.
-    /// </summary>
-    public string GetUpgradeId()
-    {
-        return UpgradeId;
-    }
+    public string GetUpgradeId() => UpgradeId;
+    public string GetDisplayName() => DisplayName;
+    public string GetDescription() => Description;
+    public Sprite GetIcon() => Icon;
+    public int GetMaxLevel() => Mathf.Max(1, MaxLevel);
 
-    /// <summary>
-    /// Gets the display name of this upgrade.
-    /// </summary>
-    public string GetDisplayName()
+    public UpgradeLevelCost GetCostForLevel(int Level)
     {
-        return DisplayName;
-    }
+        int ClampedLevel = Mathf.Clamp(Level, 1, GetMaxLevel());
+        int CostIndex = ClampedLevel - 1;
 
-    /// <summary>
-    /// Gets the UI description of this upgrade.
-    /// </summary>
-    public string GetDescription()
-    {
-        return Description;
-    }
-
-    /// <summary>
-    /// Gets the icon used by the UI for this upgrade.
-    /// </summary>
-    public Sprite GetIcon()
-    {
-        return Icon;
-    }
-
-    /// <summary>
-    /// Gets the maximum level supported by this upgrade.
-    /// </summary>
-    public int GetMaxLevel()
-    {
-        return Mathf.Max(1, MaxLevel);
-    }
-
-    /// <summary>
-    /// Gets the configured level cost for the provided level.
-    /// Level one maps to index zero in the serialized list.
-    /// </summary>
-    public UpgradeLevelCost GetCostForLevel(int level)
-    {
-        int clampedLevel = Mathf.Clamp(level, 1, GetMaxLevel());
-        int costIndex = clampedLevel - 1;
-
-        if (costIndex < 0 || costIndex >= LevelCosts.Count)
+        if (CostIndex < 0 || CostIndex >= LevelCosts.Count)
         {
             return null;
         }
 
-        return LevelCosts[costIndex];
+        return LevelCosts[CostIndex];
     }
 
-    /// <summary>
-    /// Gets the numeric modifiers configured for this upgrade.
-    /// </summary>
     public IReadOnlyList<StatModifierDefinition> GetStatModifiers()
     {
         return StatModifiers;
     }
 
-    /// <summary>
-    /// Gets the non numeric unlock rewards configured for this upgrade.
-    /// </summary>
     public IReadOnlyList<UnlockRewardDefinition> GetUnlockRewards()
     {
         return UnlockRewards;

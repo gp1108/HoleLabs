@@ -1,20 +1,17 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using static CurrencyWallet;
 
 /// <summary>
 /// Stores and manages every gameplay currency owned by the player.
-/// This wallet is intentionally generic so both shops and research stations
-/// can consume different currencies through the same API.
+/// This wallet uses float balances rounded to currency precision so gameplay
+/// can support cents while UI and purchases remain deterministic.
 /// </summary>
 public sealed class CurrencyWallet : MonoBehaviour
 {
     /// <summary>
     /// Defines every supported currency type used by the game.
-    /// This enum lives inside the wallet so currency ownership
-    /// and currency identification stay grouped together.
-/// </summary>
+    /// </summary>
     public enum CurrencyType
     {
         Gold = 0,
@@ -28,7 +25,7 @@ public sealed class CurrencyWallet : MonoBehaviour
         [SerializeField] private CurrencyType Type;
 
         [Tooltip("Current amount owned for this currency type.")]
-        [SerializeField] private int Amount;
+        [SerializeField] private float Amount;
 
         /// <summary>
         /// Gets the currency type represented by this entry.
@@ -41,7 +38,7 @@ public sealed class CurrencyWallet : MonoBehaviour
         /// <summary>
         /// Gets the amount currently stored by this entry.
         /// </summary>
-        public int GetAmount()
+        public float GetAmount()
         {
             return Amount;
         }
@@ -49,9 +46,9 @@ public sealed class CurrencyWallet : MonoBehaviour
         /// <summary>
         /// Sets the amount currently stored by this entry.
         /// </summary>
-        public void SetAmount(int amount)
+        public void SetAmount(float AmountValue)
         {
-            Amount = Mathf.Max(0, amount);
+            Amount = CurrencyMath.RoundCurrency(Mathf.Max(0f, AmountValue));
         }
     }
 
@@ -63,13 +60,13 @@ public sealed class CurrencyWallet : MonoBehaviour
     [Tooltip("Logs wallet operations to the console.")]
     [SerializeField] private bool DebugLogs = false;
 
-    private readonly Dictionary<CurrencyType, int> Balances = new();
+    private readonly Dictionary<CurrencyType, float> Balances = new();
 
     /// <summary>
     /// Fired whenever a currency amount changes.
     /// The first argument is the affected currency type and the second argument is the new amount.
     /// </summary>
-    public event Action<CurrencyType, int> OnCurrencyChanged;
+    public event Action<CurrencyType, float> OnCurrencyChanged;
 
     /// <summary>
     /// Initializes balances from the configured default values.
@@ -78,91 +75,91 @@ public sealed class CurrencyWallet : MonoBehaviour
     {
         Balances.Clear();
 
-        foreach (CurrencyEntry entry in DefaultCurrencies)
+        foreach (CurrencyEntry Entry in DefaultCurrencies)
         {
-            if (entry == null)
+            if (Entry == null)
             {
                 continue;
             }
 
-            Balances[entry.GetTypeValue()] = Mathf.Max(0, entry.GetAmount());
+            Balances[Entry.GetTypeValue()] = CurrencyMath.RoundCurrency(Mathf.Max(0f, Entry.GetAmount()));
         }
     }
 
     [ContextMenu("DebugCurrency")]
     public void DebugCurrency()
     {
-        Debug.Log(GetBalance(CurrencyType.Gold) + " gold");
-        Debug.Log(GetBalance(CurrencyType.Research) + " research");
+        Debug.Log(GetBalance(CurrencyType.Gold).ToString("0.00") + " gold");
+        Debug.Log(GetBalance(CurrencyType.Research).ToString("0.00") + " research");
     }
 
     /// <summary>
     /// Gets the current balance for the provided currency type.
     /// </summary>
-    /// 
-    public int GetBalance(CurrencyType currencyType)
+    public float GetBalance(CurrencyType CurrencyTypeValue)
     {
-        if (Balances.TryGetValue(currencyType, out int amount))
+        if (Balances.TryGetValue(CurrencyTypeValue, out float Amount))
         {
-            return amount;
+            return Amount;
         }
 
-        return 0;
+        return 0f;
     }
 
     /// <summary>
     /// Adds currency to the wallet.
     /// </summary>
-    public void AddCurrency(CurrencyType currencyType, int amount)
+    public void AddCurrency(CurrencyType CurrencyTypeValue, float Amount)
     {
-        if (amount <= 0)
+        if (Amount <= 0f)
         {
             return;
         }
 
-        int newAmount = GetBalance(currencyType) + amount;
-        Balances[currencyType] = newAmount;
+        float NewAmount = CurrencyMath.RoundCurrency(GetBalance(CurrencyTypeValue) + Amount);
+        Balances[CurrencyTypeValue] = NewAmount;
 
-        NotifyCurrencyChanged(currencyType, newAmount);
-        Log("Added " + amount + " " + currencyType + ". New balance: " + newAmount);
+        NotifyCurrencyChanged(CurrencyTypeValue, NewAmount);
+        Log("Added " + Amount.ToString("0.00") + " " + CurrencyTypeValue + ". New balance: " + NewAmount.ToString("0.00"));
     }
 
     /// <summary>
     /// Checks whether the wallet contains enough of the provided currency.
     /// </summary>
-    public bool HasEnough(CurrencyType currencyType, int amount)
+    public bool HasEnough(CurrencyType CurrencyTypeValue, float Amount)
     {
-        if (amount <= 0)
+        if (Amount <= 0f)
         {
             return true;
         }
 
-        return GetBalance(currencyType) >= amount;
+        return GetBalance(CurrencyTypeValue) + CurrencyMath.CurrencyComparisonEpsilon >= CurrencyMath.RoundCurrency(Amount);
     }
 
     /// <summary>
     /// Attempts to spend currency from the wallet.
     /// </summary>
-    public bool TrySpendCurrency(CurrencyType currencyType, int amount)
+    public bool TrySpendCurrency(CurrencyType CurrencyTypeValue, float Amount)
     {
-        if (amount <= 0)
+        if (Amount <= 0f)
         {
             return true;
         }
 
-        int currentBalance = GetBalance(currencyType);
+        float RoundedAmount = CurrencyMath.RoundCurrency(Amount);
+        float CurrentBalance = GetBalance(CurrencyTypeValue);
 
-        if (currentBalance < amount)
+        if (CurrentBalance + CurrencyMath.CurrencyComparisonEpsilon < RoundedAmount)
         {
-            Log("Failed to spend " + amount + " " + currencyType + ". Current balance: " + currentBalance);
+            Log("Failed to spend " + RoundedAmount.ToString("0.00") + " " + CurrencyTypeValue + ". Current balance: " + CurrentBalance.ToString("0.00"));
             return false;
         }
 
-        int newAmount = currentBalance - amount;
-        Balances[currencyType] = newAmount;
+        float NewAmount = CurrencyMath.RoundCurrency(CurrentBalance - RoundedAmount);
+        Balances[CurrencyTypeValue] = Mathf.Max(0f, NewAmount);
 
-        NotifyCurrencyChanged(currencyType, newAmount);
-        Log("Spent " + amount + " " + currencyType + ". New balance: " + newAmount);
+        NotifyCurrencyChanged(CurrencyTypeValue, Balances[CurrencyTypeValue]);
+        Log("Spent " + RoundedAmount.ToString("0.00") + " " + CurrencyTypeValue + ". New balance: " + Balances[CurrencyTypeValue].ToString("0.00"));
         return true;
     }
 
@@ -170,33 +167,68 @@ public sealed class CurrencyWallet : MonoBehaviour
     /// Sets the exact balance for a currency type.
     /// Useful for loading save data or debugging.
     /// </summary>
-    public void SetBalance(CurrencyType currencyType, int amount)
+    public void SetBalance(CurrencyType CurrencyTypeValue, float Amount)
     {
-        int clampedAmount = Mathf.Max(0, amount);
-        Balances[currencyType] = clampedAmount;
+        float ClampedAmount = CurrencyMath.RoundCurrency(Mathf.Max(0f, Amount));
+        Balances[CurrencyTypeValue] = ClampedAmount;
 
-        NotifyCurrencyChanged(currencyType, clampedAmount);
-        Log("Set " + currencyType + " balance to " + clampedAmount);
+        NotifyCurrencyChanged(CurrencyTypeValue, ClampedAmount);
+        Log("Set " + CurrencyTypeValue + " balance to " + ClampedAmount.ToString("0.00"));
     }
 
     /// <summary>
     /// Raises the currency changed event.
     /// </summary>
-    private void NotifyCurrencyChanged(CurrencyType currencyType, int newAmount)
+    private void NotifyCurrencyChanged(CurrencyType CurrencyTypeValue, float NewAmount)
     {
-        OnCurrencyChanged?.Invoke(currencyType, newAmount);
+        OnCurrencyChanged?.Invoke(CurrencyTypeValue, NewAmount);
     }
 
     /// <summary>
     /// Logs wallet messages if debug logging is enabled.
     /// </summary>
-    private void Log(string message)
+    private void Log(string Message)
     {
         if (!DebugLogs)
         {
             return;
         }
 
-        Debug.Log("[CurrencyWallet] " + message);
+        Debug.Log("[CurrencyWallet] " + Message, this);
+    }
+}
+
+/// <summary>
+/// Shared helpers for deterministic currency rounding and conversion.
+/// </summary>
+public static class CurrencyMath
+{
+    /// <summary>
+    /// Small epsilon used to compare rounded currency values safely.
+    /// </summary>
+    public const float CurrencyComparisonEpsilon = 0.0001f;
+
+    /// <summary>
+    /// Rounds a currency value to two decimals.
+    /// </summary>
+    public static float RoundCurrency(float Value)
+    {
+        return Mathf.Round(Value * 100f) / 100f;
+    }
+
+    /// <summary>
+    /// Converts a currency float value to integer cents.
+    /// </summary>
+    public static int CurrencyToCents(float Value)
+    {
+        return Mathf.RoundToInt(RoundCurrency(Value) * 100f);
+    }
+
+    /// <summary>
+    /// Converts integer cents back to a currency float value.
+    /// </summary>
+    public static float CentsToCurrency(int Cents)
+    {
+        return Cents / 100f;
     }
 }

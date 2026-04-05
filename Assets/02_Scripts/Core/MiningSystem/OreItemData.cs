@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using UnityEditor.Search;
 using UnityEngine;
 
 /// <summary>
@@ -13,78 +12,66 @@ public sealed class OreItemData
     [Serializable]
     public sealed class OrePropertyValue
     {
-        [Tooltip("Type of ore property stored by this entry.")]
         [SerializeField] private OrePropertyType PropertyType = OrePropertyType.None;
-
-        [Tooltip("Runtime numeric value of the property.")]
         [SerializeField] private float Value = 0f;
 
-        public OrePropertyValue(OrePropertyType propertyType, float value)
+        public OrePropertyValue(OrePropertyType PropertyTypeValue, float ValueAmount)
         {
-            PropertyType = propertyType;
-            Value = value;
+            PropertyType = PropertyTypeValue;
+            Value = ValueAmount;
         }
 
-        public OrePropertyType GetPropertyType() { return PropertyType; }
-        public float GetValue() { return Value; }
-        public void SetValue(float value) { Value = value; }
+        public OrePropertyType GetPropertyType() => PropertyType;
+        public float GetValue() => Value;
+        public void SetValue(float ValueAmount) => Value = ValueAmount;
     }
 
-    [Tooltip("Static ore definition used to identify this runtime payload.")]
     [SerializeField] private OreDefinition OreDefinition;
-
-    [Tooltip("Generated ore properties such as purity and size.")]
     [SerializeField] private List<OrePropertyValue> Properties = new();
+    [SerializeField] private float GoldValue;
+    [SerializeField] private float ResearchValue;
+    [SerializeField] private float WeightValue;
 
-    [Tooltip("Resolved gold value of this ore payload.")]
-    [SerializeField] private int GoldValue;
-
-    [Tooltip("Resolved research value of this ore payload.")]
-    [SerializeField] private int ResearchValue;
-
-    [Tooltip("Resolved weight value of this ore payload.")]
-    [SerializeField] private int WeightValue;
-
-    public OreItemData(OreDefinition oreDefinition)
+    public OreItemData(OreDefinition OreDefinitionValue)
     {
-        OreDefinition = oreDefinition;
+        OreDefinition = OreDefinitionValue;
     }
 
-    public OreDefinition GetOreDefinition() { return OreDefinition; }
-    public int GetGoldValue() { return GoldValue; }
-    public void SetGoldValue(int goldValue) { GoldValue = Mathf.Max(0, goldValue); }
-    public int GetResearchValue() { return ResearchValue; }
-    public void SetResearchValue(int researchValue) { ResearchValue = Mathf.Max(0, researchValue); }
-    public void SetWeightValue(int weightvalue) { WeightValue = Mathf.Max(0, weightvalue); }
-    public float GetWeightValue() { return WeightValue; }
-    public IReadOnlyList<OrePropertyValue> GetProperties() { return Properties; }
+    public OreDefinition GetOreDefinition() => OreDefinition;
+    public float GetGoldValue() => GoldValue;
+    public void SetGoldValue(float GoldValueValue) => GoldValue = CurrencyMath.RoundCurrency(Mathf.Max(0f, GoldValueValue));
+    public float GetResearchValue() => ResearchValue;
+    public void SetResearchValue(float ResearchValueValue) => ResearchValue = CurrencyMath.RoundCurrency(Mathf.Max(0f, ResearchValueValue));
+    public void SetWeightValue(float WeightValueAmount) => WeightValue = Mathf.Max(0f, WeightValueAmount);
+    public float GetWeightValue() => WeightValue;
+    public IReadOnlyList<OrePropertyValue> GetProperties() => Properties;
 
-    public void SetProperty(OrePropertyType propertyType, float value)
+    public void SetProperty(OrePropertyType PropertyTypeValue, float Value)
     {
-        for (int index = 0; index < Properties.Count; index++)
+        for (int Index = 0; Index < Properties.Count; Index++)
         {
-            if (Properties[index].GetPropertyType() != propertyType)
+            if (Properties[Index].GetPropertyType() != PropertyTypeValue)
             {
                 continue;
             }
 
-            Properties[index].SetValue(value);
+            Properties[Index].SetValue(Value);
             return;
         }
 
-        Properties.Add(new OrePropertyValue(propertyType, value));
+        Properties.Add(new OrePropertyValue(PropertyTypeValue, Value));
     }
 
-    public float GetPropertyValue(OrePropertyType propertyType, float fallbackValue = 0f)
+    public float GetPropertyValue(OrePropertyType PropertyTypeValue, float FallbackValue = 0f)
     {
-        for (int index = 0; index < Properties.Count; index++)
+        for (int Index = 0; Index < Properties.Count; Index++)
         {
-            if (Properties[index].GetPropertyType() == propertyType)
+            if (Properties[Index].GetPropertyType() == PropertyTypeValue)
             {
-                return Properties[index].GetValue();
+                return Properties[Index].GetValue();
             }
         }
 
-        return fallbackValue;
+        return FallbackValue;
     }
 }

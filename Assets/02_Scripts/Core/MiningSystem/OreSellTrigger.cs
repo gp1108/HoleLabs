@@ -6,10 +6,20 @@ using UnityEngine;
 /// converts processed ore values into exact fixed denominations
 /// and ejects physical money pickups over time.
 /// Currency is only added later when the player collects emitted money objects.
+/// 
+/// Float economy note:
+/// This component keeps exact physical payout stability by converting every monetary value
+/// to integer minor units (cents) internally. Public inspector values still use float currency.
 /// </summary>
 [RequireComponent(typeof(Collider))]
 public sealed class OreSellTrigger : MonoBehaviour
 {
+    /// <summary>
+    /// Runtime precision used for every exact payout decomposition.
+    /// 100 means the smallest supported physical unit is 0.01 currency.
+    /// </summary>
+    private const int CurrencyMinorUnitFactor = 100;
+
     [System.Serializable]
     private sealed class MoneyDenomination
     {
@@ -20,7 +30,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         [SerializeField] private GameObject Prefab;
 
         [Tooltip("Fixed gold value represented by this denomination.")]
-        [SerializeField] private int GoldValue = 1;
+        [SerializeField] private float GoldValue = 1f;
 
         [Tooltip("Relative random weight used when multiple prefabs share the same fixed value.")]
         [SerializeField] private int Weight = 1;
@@ -44,9 +54,17 @@ public sealed class OreSellTrigger : MonoBehaviour
         /// <summary>
         /// Gets the fixed gold value of this denomination.
         /// </summary>
-        public int GetGoldValue()
+        public float GetGoldValue()
         {
-            return Mathf.Max(1, GoldValue);
+            return Mathf.Max(0.01f, GoldValue);
+        }
+
+        /// <summary>
+        /// Gets the fixed gold value converted to exact minor currency units.
+        /// </summary>
+        public int GetGoldValueMinorUnits()
+        {
+            return Mathf.Max(1, ToMinorUnits(GoldValue));
         }
 
         /// <summary>
@@ -353,16 +371,16 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-        int GoldValue = Mathf.Max(0, OreItemData.GetGoldValue());
+        float GoldValue = Mathf.Max(0f, OreItemData.GetGoldValue());
 
-        if (GoldValue > 0)
+        if (GoldValue > 0f)
         {
             bool CouldBuildExactPayout = TryEnqueueExactMoneyPayout(GoldValue);
 
             if (!CouldBuildExactPayout)
             {
                 Log(
-                    "Failed to build exact payout for ore value " + GoldValue +
+                    "Failed to build exact payout for ore value " + GoldValue.ToString("0.00") +
                     ". Check configured denominations. At least one denomination combination is missing."
                 );
             }
@@ -370,9 +388,9 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         if (GrantResearchInstantly && CurrencyWallet != null)
         {
-            int ResearchValue = Mathf.Max(0, OreItemData.GetResearchValue());
+            float ResearchValue = Mathf.Max(0f, OreItemData.GetResearchValue());
 
-            if (ResearchValue > 0)
+            if (ResearchValue > 0f)
             {
                 CurrencyWallet.AddCurrency(global::CurrencyWallet.CurrencyType.Research, ResearchValue);
             }
@@ -385,14 +403,16 @@ public sealed class OreSellTrigger : MonoBehaviour
     /// Attempts to decompose an exact gold value into configured fixed denominations
     /// and enqueue every resulting physical money piece.
     /// </summary>
-    private bool TryEnqueueExactMoneyPayout(int GoldValue)
+    private bool TryEnqueueExactMoneyPayout(float GoldValue)
     {
-        if (GoldValue <= 0)
+        int TargetMinorUnits = ToMinorUnits(GoldValue);
+
+        if (TargetMinorUnits <= 0)
         {
             return true;
         }
 
-        List<MoneyDenomination> Result = BuildExactDenominationComposition(GoldValue);
+        List<MoneyDenomination> Result = BuildExactDenominationComposition(TargetMinorUnits);
 
         if (Result == null || Result.Count == 0)
         {
@@ -412,7 +432,11 @@ public sealed class OreSellTrigger : MonoBehaviour
             });
         }
 
-        Log("Queued exact payout for gold value " + GoldValue + " | Pieces: " + Result.Count);
+        Log(
+            "Queued exact payout for gold value " + GoldValue.ToString("0.00") +
+            " | Pieces: " + Result.Count
+        );
+
         return true;
     }
 
@@ -474,13 +498,12 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-    moneyPickupInitialize:
         MoneyPickup.Initialize(Denomination.GetGoldValue(), CurrencyWallet.CurrencyType.Gold);
         ApplyEmissionImpulse(MoneyPickup);
 
         Log(
             "Emitted denomination | Id: " + Denomination.GetId() +
-            " | Value: " + Denomination.GetGoldValue() +
+            " | Value: " + Denomination.GetGoldValue().ToString("0.00") +
             " | Remaining pending pieces: " + PendingMoneyEmissions.Count
         );
     }
@@ -514,9 +537,9 @@ public sealed class OreSellTrigger : MonoBehaviour
     /// Most of the time it returns the optimal composition.
     /// Sometimes it expands one denomination into several smaller exact pieces for variation.
     /// </summary>
-    private List<MoneyDenomination> BuildExactDenominationComposition(int TargetValue)
+    private List<MoneyDenomination> BuildExactDenominationComposition(int TargetMinorUnits)
     {
-        if (TargetValue <= 0)
+        if (TargetMinorUnits <= 0)
         {
             return new List<MoneyDenomination>();
         }
@@ -526,27 +549,27 @@ public sealed class OreSellTrigger : MonoBehaviour
             return null;
         }
 
-        Dictionary<int, List<MoneyDenomination>> DenominationsByValue = new Dictionary<int, List<MoneyDenomination>>();
-        List<int> UniqueValues = new List<int>();
+        Dictionary<int, List<MoneyDenomination>> DenominationsByMinorUnits = new Dictionary<int, List<MoneyDenomination>>();
+        List<int> UniqueMinorUnitValues = new List<int>();
 
         for (int Index = 0; Index < SortedDenominations.Count; Index++)
         {
             MoneyDenomination Denomination = SortedDenominations[Index];
-            int Value = Denomination.GetGoldValue();
+            int Value = Denomination.GetGoldValueMinorUnits();
 
-            if (!DenominationsByValue.TryGetValue(Value, out List<MoneyDenomination> Bucket))
+            if (!DenominationsByMinorUnits.TryGetValue(Value, out List<MoneyDenomination> Bucket))
             {
                 Bucket = new List<MoneyDenomination>();
-                DenominationsByValue.Add(Value, Bucket);
-                UniqueValues.Add(Value);
+                DenominationsByMinorUnits.Add(Value, Bucket);
+                UniqueMinorUnitValues.Add(Value);
             }
 
             Bucket.Add(Denomination);
         }
 
-        UniqueValues.Sort((Left, Right) => Right.CompareTo(Left));
+        UniqueMinorUnitValues.Sort((Left, Right) => Right.CompareTo(Left));
 
-        List<int> OptimalValueComposition = BuildOptimalValueComposition(TargetValue, UniqueValues);
+        List<int> OptimalValueComposition = BuildOptimalValueComposition(TargetMinorUnits, UniqueMinorUnitValues);
 
         if (OptimalValueComposition == null || OptimalValueComposition.Count == 0)
         {
@@ -557,11 +580,13 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         if (AlternativeCompositionChance > 0f && Random.value < AlternativeCompositionChance)
         {
-            if (TryApplyAlternativeExpansion(FinalValueComposition, UniqueValues))
+            if (TryApplyAlternativeExpansion(FinalValueComposition, UniqueMinorUnitValues))
             {
                 Log(
-                    "Using alternative payout composition for value " + TargetValue +
-                    " | Piece count: " + FinalValueComposition.Count);
+                    "Using alternative payout composition for value " +
+                    FromMinorUnits(TargetMinorUnits).ToString("0.00") +
+                    " | Piece count: " + FinalValueComposition.Count
+                );
             }
         }
 
@@ -571,7 +596,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         {
             int Value = FinalValueComposition[Index];
 
-            if (!DenominationsByValue.TryGetValue(Value, out List<MoneyDenomination> Bucket) || Bucket.Count == 0)
+            if (!DenominationsByMinorUnits.TryGetValue(Value, out List<MoneyDenomination> Bucket) || Bucket.Count == 0)
             {
                 return null;
             }
@@ -592,9 +617,9 @@ public sealed class OreSellTrigger : MonoBehaviour
     /// <summary>
     /// Builds the optimal exact composition by minimizing total piece count.
     /// </summary>
-    private List<int> BuildOptimalValueComposition(int TargetValue, List<int> AvailableValues)
+    private List<int> BuildOptimalValueComposition(int TargetMinorUnits, List<int> AvailableValues)
     {
-        if (TargetValue <= 0)
+        if (TargetMinorUnits <= 0)
         {
             return new List<int>();
         }
@@ -604,11 +629,11 @@ public sealed class OreSellTrigger : MonoBehaviour
             return null;
         }
 
-        int[] BestCountForValue = new int[TargetValue + 1];
-        int[] PreviousAmount = new int[TargetValue + 1];
-        int[] ChosenValue = new int[TargetValue + 1];
+        int[] BestCountForValue = new int[TargetMinorUnits + 1];
+        int[] PreviousAmount = new int[TargetMinorUnits + 1];
+        int[] ChosenValue = new int[TargetMinorUnits + 1];
 
-        for (int Amount = 0; Amount <= TargetValue; Amount++)
+        for (int Amount = 0; Amount <= TargetMinorUnits; Amount++)
         {
             BestCountForValue[Amount] = int.MaxValue;
             PreviousAmount[Amount] = -1;
@@ -617,7 +642,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         BestCountForValue[0] = 0;
 
-        for (int Amount = 1; Amount <= TargetValue; Amount++)
+        for (int Amount = 1; Amount <= TargetMinorUnits; Amount++)
         {
             for (int Index = 0; Index < AvailableValues.Count; Index++)
             {
@@ -651,13 +676,13 @@ public sealed class OreSellTrigger : MonoBehaviour
             }
         }
 
-        if (BestCountForValue[TargetValue] == int.MaxValue)
+        if (BestCountForValue[TargetMinorUnits] == int.MaxValue)
         {
             return null;
         }
 
         List<int> Result = new List<int>();
-        int CurrentAmount = TargetValue;
+        int CurrentAmount = TargetMinorUnits;
 
         while (CurrentAmount > 0)
         {
@@ -817,7 +842,9 @@ public sealed class OreSellTrigger : MonoBehaviour
             SortedDenominations.Add(Denomination);
         }
 
-        SortedDenominations.Sort((Left, Right) => Right.GetGoldValue().CompareTo(Left.GetGoldValue()));
+        SortedDenominations.Sort(
+            (Left, Right) => Right.GetGoldValueMinorUnits().CompareTo(Left.GetGoldValueMinorUnits())
+        );
     }
 
     /// <summary>
@@ -869,8 +896,8 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         Log(
             "Queued ore sale: " + OreName +
-            " | Gold: " + (OreItemData != null ? OreItemData.GetGoldValue() : 0) +
-            " | Research: " + (OreItemData != null ? OreItemData.GetResearchValue() : 0) +
+            " | Gold: " + (OreItemData != null ? OreItemData.GetGoldValue().ToString("0.00") : "0.00") +
+            " | Research: " + (OreItemData != null ? OreItemData.GetResearchValue().ToString("0.00") : "0.00") +
             " | Pending ore queue: " + PendingOreSales.Count
         );
     }
@@ -886,10 +913,27 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         Log(
             "Processed ore sale: " + OreName +
-            " | Gold queued: " + (OreItemData != null ? OreItemData.GetGoldValue() : 0) +
-            " | Research granted instantly: " + (GrantResearchInstantly && OreItemData != null ? OreItemData.GetResearchValue() : 0) +
+            " | Gold queued: " + (OreItemData != null ? OreItemData.GetGoldValue().ToString("0.00") : "0.00") +
+            " | Research granted instantly: " +
+            (GrantResearchInstantly && OreItemData != null ? OreItemData.GetResearchValue().ToString("0.00") : "0.00") +
             " | Pending money pieces: " + PendingMoneyEmissions.Count
         );
+    }
+
+    /// <summary>
+    /// Converts a float currency amount to exact minor units using the configured precision.
+    /// </summary>
+    private static int ToMinorUnits(float Value)
+    {
+        return Mathf.Max(0, Mathf.RoundToInt(Value * CurrencyMinorUnitFactor));
+    }
+
+    /// <summary>
+    /// Converts integer minor units back to float currency amount.
+    /// </summary>
+    private static float FromMinorUnits(int MinorUnits)
+    {
+        return Mathf.Max(0f, MinorUnits / (float)CurrencyMinorUnitFactor);
     }
 
     /// <summary>
