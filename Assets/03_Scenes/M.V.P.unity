@@ -806,6 +806,7 @@ Transform:
   - {fileID: 1851162040}
   - {fileID: 1391958419}
   - {fileID: 1530515851}
+  - {fileID: 1602796395}
   m_Father: {fileID: 352662281}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &181549094
@@ -822,7 +823,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ElevatorPhysicalMotor
   TopAnchor: {fileID: 1148626320}
   ElevatorWeightSystem: {fileID: 1530515852}
-  UpgradeManager: {fileID: 0}
+  UpgradeManager: {fileID: 1860831231}
   LocalTravelDirection: {x: 0, y: -1, z: 0}
   MinDistance: 0
   BaseMaxDistance: 10
@@ -7050,6 +7051,82 @@ MonoBehaviour:
   ResearchAmountText: {fileID: 786510450}
   RebuildOnAwake: 1
   RebuildOnStart: 1
+--- !u!1 &1602796394
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1602796395}
+  - component: {fileID: 1602796397}
+  - component: {fileID: 1602796396}
+  m_Layer: 7
+  m_Name: ElevatorOreSpawnMagnet
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1602796395
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1602796394}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 181549093}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1602796396
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1602796394}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e7d1259e239ced348be17da05e727170, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ElevatorOreSpawnMagnet
+  EffectTrigger: {fileID: 1602796397}
+  AttractionCenter: {fileID: 1602796395}
+  UpgradeManager: {fileID: 1860831231}
+  BaseMaxAttractedOreWeight: 100
+  HorizontalLaunchSpeed: 2.2
+  UpwardLaunchSpeed: 1.1
+  OverrideExistingVelocity: 0
+  ClearDownwardVelocity: 1
+  MaxTotalLaunchSpeed: 2.6
+  DebugLogs: 1
+--- !u!65 &1602796397
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1602796394}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 15, y: 4.747406, z: 15}
+  m_Center: {x: 0, y: 2.546723, z: 0}
 --- !u!1 &1661761507
 GameObject:
   m_ObjectHideFlags: 0
@@ -10906,7 +10983,7 @@ MonoBehaviour:
   Slot7ActionName: Slot7
   Slot8ActionName: Slot8
   Slot9ActionName: Slot9
-  DebugLogs: 1
+  DebugLogs: 0
   PlayerInput: {fileID: 5305257728739790326}
   MoveAction:
     m_Name: Move

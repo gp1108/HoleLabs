@@ -19,8 +19,8 @@ MonoBehaviour:
   DroppedOrePrefab: {fileID: 8732322352325557543, guid: b232062c340ba0743b97382b96ef9142, type: 3}
   BaseHitsRequired: 4
   BaseRespawnTime: 35
-  BaseDropCountMin: 1
-  BaseDropCountMax: 2
+  BaseDropCountMin: 10
+  BaseDropCountMax: 20
   BaseWeightValue: 14
   BaseGoldValueMin: 5
   BaseGoldValueMax: 10

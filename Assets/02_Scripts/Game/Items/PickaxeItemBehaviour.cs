@@ -28,13 +28,13 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     /// <summary>
     /// Initializes the pickaxe and resolves missing owner references.
     /// </summary>
-    public override void Initialize(HotbarController ownerHotbar, ItemInstance itemInstance)
+    public override void Initialize(HotbarController OwnerHotbar, ItemInstance ItemInstance)
     {
-        base.Initialize(ownerHotbar, itemInstance);
+        base.Initialize(OwnerHotbar, ItemInstance);
 
-        if (PlayerCamera == null && OwnerHotbar != null)
+        if (PlayerCamera == null && this.OwnerHotbar != null)
         {
-            PlayerCamera = OwnerHotbar.GetComponentInChildren<Camera>();
+            PlayerCamera = this.OwnerHotbar.GetComponentInChildren<Camera>();
         }
     }
 
@@ -49,30 +49,34 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
             return;
         }
 
-        Ray miningRay = PlayerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        Ray MiningRay = PlayerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
 
         if (DrawDebugRay)
         {
-            Debug.DrawRay(miningRay.origin, miningRay.direction * MiningDistance, Color.yellow, 0.5f);
+            Debug.DrawRay(MiningRay.origin, MiningRay.direction * MiningDistance, Color.yellow, 0.5f);
         }
 
-        if (!Physics.Raycast(miningRay, out RaycastHit hitInfo, MiningDistance, MiningLayers, QueryTriggerInteraction.Ignore))
+        if (!Physics.Raycast(MiningRay, out RaycastHit HitInfo, MiningDistance, MiningLayers, QueryTriggerInteraction.Ignore))
         {
             Log("Mining ray hit nothing.");
             return;
         }
 
-        IMineable mineable = ResolveMineable(hitInfo);
+        IMineable Mineable = ResolveMineable(HitInfo);
 
-        if (mineable == null)
+        if (Mineable == null)
         {
             Log("Mining ray hit a non-mineable target.");
             return;
         }
 
-        bool wasMined = mineable.TryMine(MiningPower);
+        MiningHitContext HitContext = new MiningHitContext(
+            MiningHitContext.HitSourceType.Player,
+            this.OwnerHotbar != null ? this.OwnerHotbar.gameObject : gameObject);
 
-        if (wasMined)
+        bool WasMined = Mineable.TryMine(MiningPower, HitContext);
+
+        if (WasMined)
         {
             Log("Mineable target was successfully hit at animation impact time.");
         }
@@ -81,41 +85,41 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     /// <summary>
     /// Resolves a mineable target from the current raycast hit.
     /// </summary>
-    private IMineable ResolveMineable(RaycastHit hitInfo)
+    private IMineable ResolveMineable(RaycastHit HitInfo)
     {
-        if (hitInfo.collider == null)
+        if (HitInfo.collider == null)
         {
             return null;
         }
 
-        IMineable mineable = hitInfo.collider.GetComponent<IMineable>();
+        IMineable Mineable = HitInfo.collider.GetComponent<IMineable>();
 
-        if (mineable != null)
+        if (Mineable != null)
         {
-            return mineable;
+            return Mineable;
         }
 
-        mineable = hitInfo.collider.GetComponentInParent<IMineable>();
+        Mineable = HitInfo.collider.GetComponentInParent<IMineable>();
 
-        if (mineable != null)
+        if (Mineable != null)
         {
-            return mineable;
+            return Mineable;
         }
 
-        if (hitInfo.rigidbody != null)
+        if (HitInfo.rigidbody != null)
         {
-            mineable = hitInfo.rigidbody.GetComponent<IMineable>();
+            Mineable = HitInfo.rigidbody.GetComponent<IMineable>();
 
-            if (mineable != null)
+            if (Mineable != null)
             {
-                return mineable;
+                return Mineable;
             }
 
-            mineable = hitInfo.rigidbody.GetComponentInParent<IMineable>();
+            Mineable = HitInfo.rigidbody.GetComponentInParent<IMineable>();
 
-            if (mineable != null)
+            if (Mineable != null)
             {
-                return mineable;
+                return Mineable;
             }
         }
 

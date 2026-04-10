@@ -20,7 +20,7 @@ MonoBehaviour:
   BaseHitsRequired: 2
   BaseRespawnTime: 20
   BaseDropCountMin: 1
-  BaseDropCountMax: 2
+  BaseDropCountMax: 30
   BaseWeightValue: 8
   BaseGoldValueMin: 3
   BaseGoldValueMax: 6
