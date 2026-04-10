@@ -10,36 +10,22 @@ using UnityEngine;
 public sealed class UpgradePanelUI : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("Upgrade manager used as the main data source for upgrade levels and purchases.")]
     [SerializeField] private UpgradeManager UpgradeManager;
-
-    [Tooltip("Currency wallet used to show current balances and react to currency changes.")]
     [SerializeField] private CurrencyWallet CurrencyWallet;
-
-    [Tooltip("Container where upgrade entry instances will be spawned.")]
+    [SerializeField] private GameObject PanelRoot;
     [SerializeField] private Transform EntryContainer;
-
-    [Tooltip("Prefab used to represent one upgrade entry.")]
     [SerializeField] private UpgradeEntryUI EntryPrefab;
 
     [Header("Currencies")]
-    [Tooltip("Optional text field used to display the current gold amount.")]
     [SerializeField] private TMP_Text GoldAmountText;
-
-    [Tooltip("Optional text field used to display the current research amount.")]
     [SerializeField] private TMP_Text ResearchAmountText;
 
     [Header("Behaviour")]
-    [Tooltip("If true, the panel is fully rebuilt during Awake.")]
     [SerializeField] private bool RebuildOnAwake = true;
-    [Tooltip("If true, the panel is fully rebuilt during Start.")]
     [SerializeField] private bool RebuildOnStart = true;
 
     private readonly List<UpgradeEntryUI> SpawnedEntries = new();
 
-    /// <summary>
-    /// Initializes references, subscribes to runtime events and optionally rebuilds the UI.
-    /// </summary>
     private void Awake()
     {
         if (UpgradeManager == null)
@@ -52,6 +38,11 @@ public sealed class UpgradePanelUI : MonoBehaviour
             CurrencyWallet = FindFirstObjectByType<CurrencyWallet>();
         }
 
+        if (PanelRoot == null)
+        {
+            PanelRoot = gameObject;
+        }
+
         SubscribeToEvents();
 
         if (RebuildOnAwake)
@@ -59,6 +50,8 @@ public sealed class UpgradePanelUI : MonoBehaviour
             RebuildEntries();
             RefreshAll();
         }
+
+        PanelRoot.SetActive(false);
     }
 
     private void Start()
@@ -70,17 +63,11 @@ public sealed class UpgradePanelUI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Unsubscribes from runtime events.
-    /// </summary>
     private void OnDestroy()
     {
         UnsubscribeFromEvents();
     }
 
-    /// <summary>
-    /// Rebuilds all upgrade entries from the manager definitions.
-    /// </summary>
     public void RebuildEntries()
     {
         ClearEntries();
@@ -107,9 +94,6 @@ public sealed class UpgradePanelUI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Refreshes currencies and all upgrade entries.
-    /// </summary>
     public void RefreshAll()
     {
         RefreshCurrencyTexts();
@@ -123,9 +107,6 @@ public sealed class UpgradePanelUI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Refreshes the visible currency texts.
-    /// </summary>
     public void RefreshCurrencyTexts()
     {
         if (CurrencyWallet == null)
@@ -135,18 +116,41 @@ public sealed class UpgradePanelUI : MonoBehaviour
 
         if (GoldAmountText != null)
         {
-            GoldAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Gold).ToString();
+            GoldAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Gold).ToString("0.00");
         }
 
         if (ResearchAmountText != null)
         {
-            ResearchAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research).ToString();
+            ResearchAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research).ToString("0.00");
         }
     }
 
-    /// <summary>
-    /// Subscribes to wallet and upgrade manager events.
-    /// </summary>
+    public void SetVisible(bool IsVisible)
+    {
+        if (PanelRoot == null)
+        {
+            return;
+        }
+
+        PanelRoot.SetActive(IsVisible);
+
+        if (IsVisible)
+        {
+            RebuildEntries();
+            RefreshAll();
+        }
+    }
+
+    public void ShowPanel()
+    {
+        SetVisible(true);
+    }
+
+    public void HidePanel()
+    {
+        SetVisible(false);
+    }
+
     private void SubscribeToEvents()
     {
         if (CurrencyWallet != null)
@@ -160,9 +164,6 @@ public sealed class UpgradePanelUI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Unsubscribes from wallet and upgrade manager events.
-    /// </summary>
     private void UnsubscribeFromEvents()
     {
         if (CurrencyWallet != null)
@@ -176,9 +177,6 @@ public sealed class UpgradePanelUI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Destroys all currently spawned UI entries.
-    /// </summary>
     private void ClearEntries()
     {
         for (int Index = 0; Index < SpawnedEntries.Count; Index++)
@@ -192,17 +190,11 @@ public sealed class UpgradePanelUI : MonoBehaviour
         SpawnedEntries.Clear();
     }
 
-    /// <summary>
-    /// Handles currency changes by refreshing currency texts and entry states.
-    /// </summary>
-    private void HandleCurrencyChanged(CurrencyWallet.CurrencyType CurrencyType, int NewAmount)
+    private void HandleCurrencyChanged(CurrencyWallet.CurrencyType CurrencyTypeValue, float NewAmount)
     {
         RefreshAll();
     }
 
-    /// <summary>
-    /// Handles upgrade state changes by refreshing the whole panel.
-    /// </summary>
     private void HandleUpgradeStateChanged()
     {
         RefreshAll();

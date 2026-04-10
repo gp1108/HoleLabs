@@ -7,5 +7,7 @@ public interface IMineable
     /// <summary>
     /// Attempts to apply one mining hit to this target.
     /// </summary>
-    bool TryMine(float miningPower);
+    /// <param name="MiningPower">Power value of the mining hit.</param>
+    /// <param name="HitContext">Explicit source context that caused the hit.</param>
+    bool TryMine(float MiningPower, MiningHitContext HitContext);
 }

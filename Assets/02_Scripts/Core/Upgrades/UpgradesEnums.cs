@@ -1,6 +1,5 @@
 using Unity.VisualScripting;
 
-
 /// <summary>
 /// Identifies all gameplay stats that can be modified by upgrades.
 /// Keep this enum focused on numeric values that gameplay systems can query directly.
@@ -12,15 +11,28 @@ public enum UpgradeStatType
     MiningSwingSpeed = 2,
     ElevatorDownSpeed = 3,
     ElevatorUpSpeed = 4,
-    OreYieldAmount = 5,
-    OreSellValueMultiplier = 6,
+
     ScannerRange = 7,
     ScannerDuration = 8,
     CarryCapacity = 9,
     OreRespawnTimeMultiplier = 10,
     OrePurityMultiplier = 11,
     OreSizeMultiplier = 12,
-    ResearchSellValueMultiplier = 13
+    ResearchSellValueMultiplier = 13,
+
+    // Elevator
+    ElevatorMoveSpeed = 14,
+    ElevatorMaxTravelDistance = 15,
+    ElevatorMaxAllowedWeight = 16,
+    ElevatorOreMagnetMaxWeight = 17,
+
+    // Ores
+    OreYieldAmount = 5,
+    OreSellValueMultiplier = 6,
+    OreYieldAmountMin = 18,
+    OreYieldAmountMax = 19,
+    OreSellValueMultiplierPerOre = 20,
+    OreSellValueFlatBonusPerOre = 21
 }
 
 /// <summary>

@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b14e2cff467300941bec1438b983a8f4, type: 3}
+  m_Name: UD_ElevatorMagnetMaxWeight
+  m_EditorClassIdentifier: Assembly-CSharp::UpgradeDefinition
+  UpgradeId: ElevatorMagnetMaxWeight
+  DisplayName: Stronger elevator magnet
+  Description: Allows to pull towards the elevator heavier ores
+  Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
+  MaxLevel: 4
+  LevelCosts:
+  - CurrencyType: 0
+    Cost: 5
+  - CurrencyType: 0
+    Cost: 10
+  - CurrencyType: 0
+    Cost: 30
+  - CurrencyType: 0
+    Cost: 100
+  StatModifiers:
+  - StatType: 17
+    ModifierType: 0
+    BaseValue: 20
+    ValuePerLevel: 20
+    StartApplyingAtLevelOne: 0
+    TargetOreId: 
+  UnlockRewards: []

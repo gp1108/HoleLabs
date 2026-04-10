@@ -9,46 +9,23 @@ using UnityEngine.UI;
 public sealed class UpgradeEntryUI : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("Image used to display the upgrade icon.")]
     [SerializeField] private Image IconImage;
-
-    [Tooltip("Text used to display the upgrade name.")]
     [SerializeField] private TMP_Text NameText;
-
-    [Tooltip("Text used to display the upgrade description.")]
     [SerializeField] private TMP_Text DescriptionText;
-
-    [Tooltip("Text used to display the current level and max level.")]
     [SerializeField] private TMP_Text LevelText;
-
-    [Tooltip("Text used to display the next purchase cost.")]
     [SerializeField] private TMP_Text CostText;
-
-    [Tooltip("Text used to display the preview of the next effect or current state.")]
     [SerializeField] private TMP_Text EffectPreviewText;
-
-    [Tooltip("Text used to display the current availability state.")]
     [SerializeField] private TMP_Text StateText;
-
-    [Tooltip("Button used to purchase the next upgrade level.")]
     [SerializeField] private Button PurchaseButton;
 
     [Header("Colors")]
-    [Tooltip("Color applied when the upgrade can be purchased.")]
     [SerializeField] private Color PurchasableColor = Color.white;
-
-    [Tooltip("Color applied when the upgrade cannot currently be purchased.")]
     [SerializeField] private Color NotPurchasableColor = new Color(1f, 0.55f, 0.55f, 1f);
-
-    [Tooltip("Color applied when the upgrade is already at maximum level.")]
     [SerializeField] private Color MaxedColor = new Color(0.5f, 1f, 0.5f, 1f);
 
     private UpgradeManager UpgradeManager;
     private UpgradeDefinition UpgradeDefinition;
 
-    /// <summary>
-    /// Initializes this entry with runtime references and the represented upgrade definition.
-    /// </summary>
     public void Initialize(UpgradeManager UpgradeManagerReference, CurrencyWallet CurrencyWalletReference, UpgradeDefinition UpgradeDefinitionReference)
     {
         UpgradeManager = UpgradeManagerReference;
@@ -63,9 +40,6 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         RefreshView();
     }
 
-    /// <summary>
-    /// Refreshes all texts, icon state and purchase availability.
-    /// </summary>
     public void RefreshView()
     {
         if (UpgradeDefinition == null || UpgradeManager == null)
@@ -122,9 +96,6 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Attempts to purchase the represented upgrade.
-    /// </summary>
     private void HandlePurchaseButtonClicked()
     {
         if (UpgradeManager == null || UpgradeDefinition == null)
@@ -135,9 +106,6 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         UpgradeManager.TryPurchaseUpgrade(UpgradeDefinition);
     }
 
-    /// <summary>
-    /// Builds the cost text for the next upgrade level.
-    /// </summary>
     private string BuildCostText(int CurrentLevel, bool IsMaxed)
     {
         if (IsMaxed)
@@ -153,12 +121,9 @@ public sealed class UpgradeEntryUI : MonoBehaviour
             return "Cost: N/A";
         }
 
-        return "Cost: " + NextCost.GetCost() + " " + NextCost.GetCurrencyType();
+        return "Cost: " + NextCost.GetCost().ToString("0.00") + " " + NextCost.GetCurrencyType();
     }
 
-    /// <summary>
-    /// Builds a short effect preview text for the represented upgrade.
-    /// </summary>
     private string BuildEffectPreviewText(int CurrentLevel, bool IsMaxed)
     {
         if (UpgradeDefinition == null)
@@ -200,9 +165,6 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         return "No preview";
     }
 
-    /// <summary>
-    /// Builds the current state label of the upgrade entry.
-    /// </summary>
     private string BuildStateText(bool IsMaxed, bool CanPurchase)
     {
         if (IsMaxed)
@@ -213,9 +175,6 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         return CanPurchase ? "Available" : "Not enough currency";
     }
 
-    /// <summary>
-    /// Returns the color used by the state label.
-    /// </summary>
     private Color GetStateColor(bool IsMaxed, bool CanPurchase)
     {
         if (IsMaxed)

@@ -89,6 +89,11 @@ public sealed class PlayerController : MonoBehaviour
     [SerializeField] private float StandingCameraPivotLocalY = 1.8f;
 
     /// <summary>
+    /// Whether camera look is temporarily blocked by an external interaction such as lever dragging.
+    /// </summary>
+    private bool IsExternalLookBlocked;
+
+    /// <summary>
     /// Current raw movement input.
     /// </summary>
     public Vector2 MoveInput { get; private set; }
@@ -171,6 +176,30 @@ public sealed class PlayerController : MonoBehaviour
     /// <summary>
     /// Caches references and initializes the standing controller state.
     /// </summary>
+
+    /// <summary>
+    /// Allows external systems to temporarily block or restore camera look processing.
+    /// </summary>
+    /// <param name="IsBlocked">True to block camera look, false to restore it.</param>
+
+    /// <summary>
+    /// Whether movement input is temporarily blocked by an external modal state.
+    /// </summary>
+    private bool IsExternalMovementBlocked;
+    public void SetExternalLookBlocked(bool IsBlocked)
+    {
+        IsExternalLookBlocked = IsBlocked;
+    }
+
+
+    /// <summary>
+    /// Allows external systems to temporarily block or restore movement processing.
+    /// </summary>
+    /// <param name="IsBlocked">True to block movement, false to restore it.</param>
+    public void SetExternalMovementBlocked(bool IsBlocked)
+    {
+        IsExternalMovementBlocked = IsBlocked;
+    }
     private void Awake()
     {
         if (CharacterController == null) CharacterController = GetComponent<CharacterController>();
@@ -227,15 +256,7 @@ public sealed class PlayerController : MonoBehaviour
     {
         UpdateLook();
 
-        if (CurrentPlatform != null)
-        {
-            CharacterController.Move(CurrentPlatform.DeltaPosition);
-            LastPlatformUpwardSpeed = Mathf.Max(0f, CurrentPlatform.DeltaPosition.y / Mathf.Max(Time.deltaTime, 0.0001f));
-        }
-        else
-        {
-            LastPlatformUpwardSpeed = 0f;
-        }
+        ApplyPlatformCarry();
 
         UpdateJumpSupport();
         UpdateCrouch();
@@ -252,6 +273,11 @@ public sealed class PlayerController : MonoBehaviour
     /// </summary>
     private void UpdateLook()
     {
+        if (IsExternalLookBlocked)
+        {
+            return;
+        }
+
         Vector2 LookInput = PlayerInputReader.Look;
         ViewRoot.Rotate(0f, LookInput.x * LookSensitivityX * Time.deltaTime, 0f, Space.World);
         PitchDegrees = Mathf.Clamp(PitchDegrees - LookInput.y * LookSensitivityY * Time.deltaTime, MinPitch, MaxPitch);
@@ -310,12 +336,14 @@ public sealed class PlayerController : MonoBehaviour
 
     /// <summary>
     /// Moves the controller using cached input plus minimal jump and gravity logic.
+    /// When movement is externally blocked, horizontal locomotion and jump requests are ignored,
+    /// but gravity and platform carry still remain stable.
     /// </summary>
     private void UpdateMovement()
     {
         bool HasJumpSupport = CharacterController.isGrounded || GroundGraceTimer > 0f || PlatformGraceTimer > 0f;
 
-        if (JumpRequested && HasJumpSupport)
+        if (!IsExternalMovementBlocked && JumpRequested && HasJumpSupport)
         {
             VerticalVelocity = Mathf.Sqrt(JumpHeight * 2f * Gravity) + LastPlatformUpwardSpeed;
             JumpRequested = false;
@@ -333,10 +361,13 @@ public sealed class PlayerController : MonoBehaviour
             VerticalVelocity -= Gravity * Time.deltaTime;
         }
 
-        MoveInput = PlayerInputReader.Move;
+        MoveInput = IsExternalMovementBlocked ? Vector2.zero : PlayerInputReader.Move;
+
         Vector3 MoveDirection = ViewRoot.forward * MoveInput.y + ViewRoot.right * MoveInput.x;
         float SelectedMoveSpeed = IsCrouching ? CrouchSpeed : (PlayerInputReader.IsSprintHeld ? SprintSpeed : WalkSpeed);
-        Vector3 Motion = MoveDirection.normalized * SelectedMoveSpeed + Vector3.up * VerticalVelocity;
+        Vector3 HorizontalMotion = MoveDirection.normalized * SelectedMoveSpeed;
+        Vector3 Motion = HorizontalMotion + Vector3.up * VerticalVelocity;
+
         CharacterController.Move(Motion * Time.deltaTime);
         Velocity = Motion;
     }
@@ -390,6 +421,55 @@ public sealed class PlayerController : MonoBehaviour
     {
         CharacterController.height = NewHeight;
         CharacterController.center = new Vector3(0f, NewHeight * 0.5f, 0f);
+    }
+
+
+    /// <summary>
+    /// Applies full platform carry to the character controller, including the displacement of the
+    /// player support point caused by platform rotation and the visual yaw rotation of the player.
+    /// </summary>
+    private void ApplyPlatformCarry()
+    {
+        if (CurrentPlatform == null)
+        {
+            LastPlatformUpwardSpeed = 0f;
+            return;
+        }
+
+        Vector3 SupportPoint = transform.position;
+        Vector3 PlatformPointDelta = CurrentPlatform.GetWorldPointDelta(SupportPoint);
+
+        if (PlatformPointDelta.sqrMagnitude > 0f)
+        {
+            CharacterController.Move(PlatformPointDelta);
+        }
+
+        ApplyPlatformRotation(CurrentPlatform.DeltaRotation);
+        LastPlatformUpwardSpeed = Mathf.Max(0f, PlatformPointDelta.y / Mathf.Max(Time.deltaTime, 0.0001f));
+    }
+
+
+    /// <summary>
+    /// Applies the carrier yaw rotation to the player view root so the player orientation rotates
+    /// with the platform while preserving the independent camera pitch controlled by the camera pivot.
+    /// </summary>
+    /// <param name="CarrierRotationDelta">Frame rotation delta received from the current platform.</param>
+    private void ApplyPlatformRotation(Quaternion CarrierRotationDelta)
+    {
+        if (ViewRoot == null)
+        {
+            return;
+        }
+
+        Vector3 DeltaEulerAngles = CarrierRotationDelta.eulerAngles;
+        float DeltaYaw = NormalizeAngle(DeltaEulerAngles.y);
+
+        if (Mathf.Abs(DeltaYaw) <= 0.0001f)
+        {
+            return;
+        }
+
+        ViewRoot.Rotate(0f, DeltaYaw, 0f, Space.World);
     }
 
     /// <summary>

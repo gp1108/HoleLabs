@@ -1,8 +1,9 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// Runtime mineable ore vein.
-/// This component handles mining hits, drop spawning, depletion state and visual regrowth.
+/// This component handles mining hits, robust drop spawning, depletion state and visual regrowth.
 /// </summary>
 public sealed class OreVein : MonoBehaviour, IMineable
 {
@@ -16,6 +17,9 @@ public sealed class OreVein : MonoBehaviour, IMineable
     [Tooltip("Optional visual root scaled during regrowth. If empty, this transform is used.")]
     [SerializeField] private Transform VisualRoot;
 
+    [Tooltip("Optional explicit world point used as the preferred ore drop origin. If empty, this transform is used.")]
+    [SerializeField] private Transform DropOrigin;
+
     [Header("Regrowth")]
     [Tooltip("Minimum scale used while the ore is regrowing.")]
     [SerializeField] private float MinimumGrowthScale = 0.05f;
@@ -24,32 +28,87 @@ public sealed class OreVein : MonoBehaviour, IMineable
     [SerializeField] private bool AnimateGrowth = true;
 
     [Header("Drops")]
-    [Tooltip("Radius used to scatter dropped ore pickups.")]
+    [Tooltip("Base horizontal radius used to spread multiple drops around the origin.")]
     [SerializeField] private float DropScatterRadius = 0.45f;
 
-    [Tooltip("Vertical offset applied when dropping ore pickups.")]
+    [Tooltip("Base vertical offset applied to dropped ore spawn points.")]
     [SerializeField] private float DropVerticalOffset = 0.2f;
 
+    [Header("Safe Spawn")]
+    [Tooltip("Approximate clearance radius used to keep ore spawns away from walls and from each other.")]
+    [SerializeField] private float SpawnClearanceRadius = 0.2f;
+
+    [Tooltip("Maximum amount of candidate positions tested per ore drop before using the last safe fallback.")]
+    [SerializeField] private int MaxSpawnAttemptsPerDrop = 12;
+
+    [Tooltip("Horizontal distance added on each retry while searching for a valid spawn point.")]
+    [SerializeField] private float SpawnRadiusStep = 0.18f;
+
+    [Tooltip("Vertical distance added on each retry while searching for a valid spawn point.")]
+    [SerializeField] private float SpawnHeightStep = 0.12f;
+
     [Header("Debug")]
-    [Tooltip("Logs mining and regeneration operations.")]
+    [Tooltip("Logs mining, spawning and regeneration operations.")]
     [SerializeField] private bool DebugLogs = false;
 
+    /// <summary>
+    /// Reusable overlap buffer used to validate candidate spawn positions without allocations.
+    /// </summary>
+    private static readonly Collider[] SpawnOverlapBuffer = new Collider[32];
+
+    /// <summary>
+    /// Current ore definition used by this vein.
+    /// </summary>
     private OreDefinition OreDefinition;
+
+    /// <summary>
+    /// Runtime service used to resolve drops and values.
+    /// </summary>
     private OreRuntimeService OreRuntimeService;
+
+    /// <summary>
+    /// Spawn point that owns this vein instance.
+    /// </summary>
     private OreSpawnPoint OwnerSpawnPoint;
 
+    /// <summary>
+    /// Current vein runtime state.
+    /// </summary>
     private VeinState CurrentState = VeinState.Ready;
+
+    /// <summary>
+    /// Remaining hits required before the vein breaks.
+    /// </summary>
     private int CurrentHitsRemaining;
+
+    /// <summary>
+    /// Remaining respawn time while the vein is regrowing.
+    /// </summary>
     private float CurrentRespawnTimer;
+
+    /// <summary>
+    /// Last valid mining context that affected this vein.
+    /// The context that actually causes the break is the one consumed by the drop logic.
+    /// </summary>
+    private MiningHitContext LastMiningHitContext = default;
+
+    /// <summary>
+    /// Soft cached reference to the elevator magnet resolved for recent spawns.
+    /// </summary>
+    private ElevatorOreSpawnMagnet CachedElevatorOreSpawnMagnet;
 
     /// <summary>
     /// Initializes this ore vein with its definition, runtime service and owner point.
     /// </summary>
-    public void Initialize(OreDefinition oreDefinition, OreRuntimeService oreRuntimeService, OreSpawnPoint ownerSpawnPoint)
+    /// <param name="OreDefinitionValue">Definition used by this ore vein.</param>
+    /// <param name="OreRuntimeServiceValue">Runtime service used to resolve ore values and drops.</param>
+    /// <param name="OwnerSpawnPointValue">Spawn point that owns this vein instance.</param>
+    public void Initialize(OreDefinition OreDefinitionValue, OreRuntimeService OreRuntimeServiceValue, OreSpawnPoint OwnerSpawnPointValue)
     {
-        OreDefinition = oreDefinition;
-        OreRuntimeService = oreRuntimeService;
-        OwnerSpawnPoint = ownerSpawnPoint;
+        OreDefinition = OreDefinitionValue;
+        OreRuntimeService = OreRuntimeServiceValue;
+        OwnerSpawnPoint = OwnerSpawnPointValue;
+        LastMiningHitContext = MiningHitContext.CreateUnknown();
 
         if (VisualRoot == null)
         {
@@ -76,10 +135,10 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         CurrentRespawnTimer -= Time.deltaTime;
 
-        float respawnDuration = Mathf.Max(0.01f, OreRuntimeService.ResolveRespawnTime(OreDefinition));
-        float normalizedProgress = 1f - Mathf.Clamp01(CurrentRespawnTimer / respawnDuration);
+        float RespawnDuration = Mathf.Max(0.01f, OreRuntimeService.ResolveRespawnTime(OreDefinition));
+        float NormalizedProgress = 1f - Mathf.Clamp01(CurrentRespawnTimer / RespawnDuration);
 
-        UpdateGrowthVisual(normalizedProgress);
+        UpdateGrowthVisual(NormalizedProgress);
 
         if (CurrentRespawnTimer <= 0f)
         {
@@ -90,22 +149,28 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <summary>
     /// Attempts to apply one mining hit through the generic mineable interface.
     /// </summary>
-    public bool TryMine(float miningPower)
+    /// <param name="MiningPower">Power value of the mining hit.</param>
+    /// <param name="HitContext">Explicit source context that caused the hit.</param>
+    /// <returns>True when the vein accepted the mining hit.</returns>
+    public bool TryMine(float MiningPower, MiningHitContext HitContext)
     {
-        return ApplyHit();
+        return ApplyHit(HitContext);
     }
 
     /// <summary>
     /// Applies one mining hit to this ore vein.
     /// Returns true if the vein was successfully hit.
     /// </summary>
-    public bool ApplyHit()
+    /// <param name="HitContext">Explicit source context that caused the hit.</param>
+    /// <returns>True when the hit was accepted.</returns>
+    public bool ApplyHit(MiningHitContext HitContext)
     {
         if (CurrentState != VeinState.Ready || OreDefinition == null || OreRuntimeService == null)
         {
             return false;
         }
 
+        LastMiningHitContext = HitContext;
         CurrentHitsRemaining--;
         Log("Ore vein hit. Remaining hits: " + CurrentHitsRemaining);
 
@@ -120,6 +185,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <summary>
     /// Gets whether this vein is currently mineable.
     /// </summary>
+    /// <returns>True when the vein is ready to receive mining hits.</returns>
     public bool GetIsReady()
     {
         return CurrentState == VeinState.Ready;
@@ -130,26 +196,212 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// </summary>
     private void BreakVein()
     {
-        int dropCount = OreRuntimeService.ResolveDropCount(OreDefinition);
+        int DropCount = OreRuntimeService.ResolveDropCount(OreDefinition);
+        List<Vector3> ReservedSpawnPositions = new List<Vector3>(DropCount);
 
-        for (int index = 0; index < dropCount; index++)
+        for (int Index = 0; Index < DropCount; Index++)
         {
-            OreItemData oreItemData = OreRuntimeService.CreateOreItemData(OreDefinition);
+            OreItemData OreItemData = OreRuntimeService.CreateOreItemData(OreDefinition);
 
-            if (oreItemData == null)
+            if (OreItemData == null)
             {
                 continue;
             }
 
-            Vector2 randomCircle = Random.insideUnitCircle * DropScatterRadius;
-            Vector3 dropPosition = transform.position +
-                                   new Vector3(randomCircle.x, DropVerticalOffset, randomCircle.y);
+            Vector3 DropPosition = ResolveRobustDropSpawnPosition(Index, DropCount, ReservedSpawnPositions);
+            ReservedSpawnPositions.Add(DropPosition);
 
-            OreRuntimeService.SpawnOrePickup(oreItemData, dropPosition, Quaternion.identity);
+            SpawnDropWithOptionalPlayerElevatorAssist(OreItemData, DropPosition);
         }
 
+        LastMiningHitContext = MiningHitContext.CreateUnknown();
         StartRegrowth();
-        Log("Ore vein broken and " + dropCount + " drops were spawned.");
+        Log("Ore vein broken and " + DropCount + " drops were spawned.");
+    }
+
+    /// <summary>
+    /// Resolves a robust world spawn position for one drop.
+    /// The position is separated from already reserved drops and must be free from blocking geometry.
+    /// </summary>
+    /// <param name="DropIndex">Index of the drop being spawned in this break event.</param>
+    /// <param name="TotalDropCount">Total amount of drops being spawned in this break event.</param>
+    /// <param name="ReservedSpawnPositions">Already accepted spawn positions for previous drops.</param>
+    /// <returns>Resolved world spawn position.</returns>
+    private Vector3 ResolveRobustDropSpawnPosition(int DropIndex, int TotalDropCount, List<Vector3> ReservedSpawnPositions)
+    {
+        Vector3 BasePosition = GetDropOriginPosition() + (Vector3.up * DropVerticalOffset);
+        float ClearanceRadius = Mathf.Max(0.05f, SpawnClearanceRadius);
+        float SeparationDistance = ClearanceRadius * 2f;
+
+        Vector3 LastValidFallback = BasePosition + (Vector3.up * Mathf.Max(0f, SpawnHeightStep));
+
+        for (int AttemptIndex = 0; AttemptIndex < Mathf.Max(1, MaxSpawnAttemptsPerDrop); AttemptIndex++)
+        {
+            Vector3 CandidateOffset = GetSpawnPatternOffset(DropIndex, TotalDropCount, AttemptIndex);
+            Vector3 CandidatePosition = BasePosition + CandidateOffset;
+
+            if (!IsFarEnoughFromReservedSpawns(CandidatePosition, ReservedSpawnPositions, SeparationDistance))
+            {
+                continue;
+            }
+
+            if (!IsWorldPositionFree(CandidatePosition, ClearanceRadius))
+            {
+                continue;
+            }
+
+            return CandidatePosition;
+        }
+
+        Log("Failed to resolve a fully clean drop spawn. Using elevated fallback.");
+        return LastValidFallback;
+    }
+
+    /// <summary>
+    /// Builds a deterministic spread pattern so multiple drops do not spawn on top of each other.
+    /// It expands horizontally and vertically across retries.
+    /// </summary>
+    /// <param name="DropIndex">Index of the drop being spawned.</param>
+    /// <param name="TotalDropCount">Total amount of drops spawned in the current break.</param>
+    /// <param name="AttemptIndex">Current retry index for this drop.</param>
+    /// <returns>Offset from the base drop origin.</returns>
+    private Vector3 GetSpawnPatternOffset(int DropIndex, int TotalDropCount, int AttemptIndex)
+    {
+        if (TotalDropCount <= 1 && AttemptIndex == 0)
+        {
+            return Vector3.zero;
+        }
+
+        float BaseAngle = 360f / Mathf.Max(1, TotalDropCount);
+        float AttemptAngleOffset = 41f * AttemptIndex;
+        float AngleDegrees = (DropIndex * BaseAngle) + AttemptAngleOffset;
+        float AngleRadians = AngleDegrees * Mathf.Deg2Rad;
+
+        float Radius = Mathf.Max(0f, DropScatterRadius) + (AttemptIndex * Mathf.Max(0f, SpawnRadiusStep));
+        float Height = AttemptIndex * Mathf.Max(0f, SpawnHeightStep);
+
+        return new Vector3(
+            Mathf.Cos(AngleRadians) * Radius,
+            Height,
+            Mathf.Sin(AngleRadians) * Radius);
+    }
+
+    /// <summary>
+    /// Returns whether the candidate spawn position is far enough from already reserved ore spawns.
+    /// This prevents multiple drops from appearing inside each other during the same break event.
+    /// </summary>
+    /// <param name="CandidatePosition">Candidate spawn position being evaluated.</param>
+    /// <param name="ReservedSpawnPositions">Already accepted spawn positions.</param>
+    /// <param name="MinimumDistance">Minimum allowed distance between drops.</param>
+    /// <returns>True when the candidate is sufficiently separated.</returns>
+    private bool IsFarEnoughFromReservedSpawns(Vector3 CandidatePosition, List<Vector3> ReservedSpawnPositions, float MinimumDistance)
+    {
+        if (ReservedSpawnPositions == null || ReservedSpawnPositions.Count == 0)
+        {
+            return true;
+        }
+
+        float MinimumDistanceSqr = MinimumDistance * MinimumDistance;
+
+        for (int Index = 0; Index < ReservedSpawnPositions.Count; Index++)
+        {
+            if ((ReservedSpawnPositions[Index] - CandidatePosition).sqrMagnitude < MinimumDistanceSqr)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns whether the candidate world position is free of blocking geometry.
+    /// The check is automatic, ignores triggers and ignores the vein's own hierarchy.
+    /// </summary>
+    /// <param name="CandidatePosition">World spawn point to validate.</param>
+    /// <param name="ClearanceRadius">Approximate ore clearance radius.</param>
+    /// <returns>True when the candidate position is free enough to use.</returns>
+    private bool IsWorldPositionFree(Vector3 CandidatePosition, float ClearanceRadius)
+    {
+        int HitCount = Physics.OverlapSphereNonAlloc(
+            CandidatePosition,
+            ClearanceRadius,
+            SpawnOverlapBuffer,
+            ~0,
+            QueryTriggerInteraction.Ignore);
+
+        for (int Index = 0; Index < HitCount; Index++)
+        {
+            Collider HitCollider = SpawnOverlapBuffer[Index];
+
+            if (HitCollider == null)
+            {
+                continue;
+            }
+
+            if (HitCollider.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (OwnerSpawnPoint != null && HitCollider.transform.IsChildOf(OwnerSpawnPoint.transform))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the preferred world drop origin.
+    /// Uses the explicit drop origin when assigned, otherwise falls back to the vein transform.
+    /// </summary>
+    /// <returns>World position used as the base drop origin.</returns>
+    private Vector3 GetDropOriginPosition()
+    {
+        return DropOrigin != null ? DropOrigin.position : transform.position;
+    }
+
+    /// <summary>
+    /// Spawns one ore pickup and applies the optional elevator spawn assist only
+    /// when the breaking hit was explicitly caused by the player.
+    /// </summary>
+    /// <param name="OreItemData">Runtime ore payload to spawn.</param>
+    /// <param name="DropPosition">World spawn position.</param>
+    private void SpawnDropWithOptionalPlayerElevatorAssist(OreItemData OreItemData, Vector3 DropPosition)
+    {
+        if (OreRuntimeService == null || OreItemData == null)
+        {
+            return;
+        }
+
+        GameObject SpawnedOreObject = OreRuntimeService.SpawnOrePickup(
+            OreItemData,
+            DropPosition,
+            Quaternion.identity);
+
+        if (SpawnedOreObject == null)
+        {
+            return;
+        }
+
+        if (!LastMiningHitContext.IsPlayerSource())
+        {
+            return;
+        }
+
+        ElevatorOreSpawnMagnet ElevatorOreSpawnMagnet = ElevatorOreSpawnMagnet.FindBestForPoint(DropPosition);
+
+        if (ElevatorOreSpawnMagnet == null)
+        {
+            return;
+        }
+
+        CachedElevatorOreSpawnMagnet = ElevatorOreSpawnMagnet;
+        ElevatorOreSpawnMagnet.TryAssistSpawnedOre(SpawnedOreObject, DropPosition);
     }
 
     /// <summary>
@@ -183,29 +435,31 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <summary>
     /// Updates the visual scale of the vein according to a normalized regrowth progress.
     /// </summary>
-    private void UpdateGrowthVisual(float normalizedProgress)
+    /// <param name="NormalizedProgress">Normalized growth progress in the [0, 1] range.</param>
+    private void UpdateGrowthVisual(float NormalizedProgress)
     {
         if (!AnimateGrowth || VisualRoot == null)
         {
             return;
         }
 
-        float clampedProgress = Mathf.Clamp01(normalizedProgress);
-        float scaleMultiplier = Mathf.Lerp(MinimumGrowthScale, 1f, clampedProgress);
-        VisualRoot.localScale = Vector3.one * scaleMultiplier;
+        float ClampedProgress = Mathf.Clamp01(NormalizedProgress);
+        float ScaleMultiplier = Mathf.Lerp(MinimumGrowthScale, 1f, ClampedProgress);
+        VisualRoot.localScale = Vector3.one * ScaleMultiplier;
     }
 
     /// <summary>
     /// Logs ore vein messages if debug logging is enabled.
     /// </summary>
-    private void Log(string message)
+    /// <param name="Message">Message to log.</param>
+    private void Log(string Message)
     {
         if (!DebugLogs)
         {
             return;
         }
 
-        Debug.Log("[OreVein] " + message);
+        Debug.Log("[OreVein] " + Message, this);
     }
 
     /// <summary>

@@ -1,15 +1,16 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 /// <summary>
 /// Handles runtime hotbar storage, selection, equipping, dropping and swapping.
-/// This version exposes UI notifications so the hotbar can update without polling heavy logic.
-/// It also safely interrupts equipped items before they are destroyed so animations,
-/// VFX and tool states do not get stuck when switching slots quickly.
+/// This version routes every player input through PlayerInputReader instead of reading
+/// PlayerInput actions directly, which keeps input ownership centralized.
+/// 
+/// Input ownership rule:
+/// - Equipped items only receive use input while no higher-priority world interaction is capturing it.
+/// - Lever dragging is considered a higher-priority interaction and blocks item use routing.
 /// </summary>
-[RequireComponent(typeof(PlayerInput))]
 public sealed class HotbarController : MonoBehaviour
 {
     [Header("References")]
@@ -19,28 +20,18 @@ public sealed class HotbarController : MonoBehaviour
     [Tooltip("Socket used to parent equipped prefabs while selected.")]
     [SerializeField] private Transform EquippedItemSocket;
 
+    [Tooltip("Optional lever interactor that can temporarily capture primary and secondary use input.")]
+    [SerializeField] private LeverInteractor LeverInteractor;
+
+    [Tooltip("Centralized player input reader used as the only input source for the hotbar.")]
+    [SerializeField] private PlayerInputReader PlayerInputReader;
+
     [Header("Hotbar")]
     [Tooltip("Current number of slots available in the hotbar.")]
     [SerializeField] private int SlotCount = 8;
 
     [Tooltip("If true, the controller equips the currently selected slot on start.")]
     [SerializeField] private bool EquipSelectedSlotOnStart = true;
-
-    [Header("Input Actions")]
-    [Tooltip("Input action used to change hotbar selection with the mouse wheel or equivalent.")]
-    [SerializeField] private string HotbarScrollActionName = "HotbarScroll";
-
-    [Tooltip("Input action used for the primary item action.")]
-    [SerializeField] private string UsePrimaryActionName = "UsePrimary";
-
-    [Tooltip("Input action used for the secondary item action.")]
-    [SerializeField] private string UseSecondaryActionName = "UseSecondary";
-
-    [Tooltip("Input action used to drop the selected hotbar item into the world.")]
-    [SerializeField] private string DropItemActionName = "DropItem";
-
-    [Tooltip("Prefix used for direct slot selection input actions such as Slot1, Slot2 and so on.")]
-    [SerializeField] private string SlotActionPrefix = "Slot";
 
     [Header("Scroll")]
     [Tooltip("Minimum time between scroll inputs to avoid overly fast slot switching.")]
@@ -69,53 +60,133 @@ public sealed class HotbarController : MonoBehaviour
     [Tooltip("Current selected hotbar slot index.")]
     [SerializeField] private int SelectedIndex = 0;
 
-    private PlayerInput PlayerInput;
-    private InputAction HotbarScrollAction;
-    private InputAction UsePrimaryAction;
-    private InputAction UseSecondaryAction;
-    private InputAction DropItemAction;
-
-    private readonly List<InputAction> SlotActions = new List<InputAction>();
-
+    /// <summary>
+    /// Currently spawned equipped object instance.
+    /// </summary>
     private GameObject CurrentEquippedObject;
+
+    /// <summary>
+    /// Equipped behaviour currently owned by the selected slot.
+    /// </summary>
     private EquippedItemBehaviour CurrentEquippedBehaviour;
+
+    /// <summary>
+    /// Last time a scroll input was accepted.
+    /// </summary>
     private float LastScrollTime;
 
+    /// <summary>
+    /// Whether the primary use state was forcibly interrupted because another interaction captured input.
+    /// This prevents repeatedly calling ForceStopItemUsage every frame.
+    /// </summary>
+    private bool WasItemUseBlockedLastFrame;
+
+    /// <summary>
+    /// Whether hotbar selection, use and drop input is currently blocked by an external modal state.
+    /// </summary>
+    private bool IsExternalHotbarInputBlocked;
+
+    /// <summary>
+    /// Previous-frame held state for primary use.
+    /// </summary>
+    private bool WasPrimaryHeldLastFrame;
+
+    /// <summary>
+    /// Previous-frame held state for secondary use.
+    /// </summary>
+    private bool WasSecondaryHeldLastFrame;
+
+    /// <summary>
+    /// Invoked when a slot content changes.
+    /// </summary>
     public event Action<int> OnSlotChanged;
+
+    /// <summary>
+    /// Invoked when the selected hotbar slot changes.
+    /// </summary>
     public event Action<int> OnSelectedSlotChanged;
+
+    /// <summary>
+    /// Invoked when the hotbar structure changes, for example after resizing.
+    /// </summary>
     public event Action OnHotbarStructureChanged;
 
+    /// <summary>
+    /// Gets the currently selected slot index.
+    /// </summary>
     public int GetSelectedIndex()
     {
         return SelectedIndex;
     }
 
+    /// <summary>
+    /// Gets the current number of hotbar slots.
+    /// </summary>
     public int GetSlotCount()
     {
         return SlotCount;
     }
 
-    public ItemInstance GetItemAtSlot(int slotIndex)
+    /// <summary>
+    /// Gets the equipped item behaviour currently instantiated for the selected slot.
+    /// This is used by higher-priority interaction systems to safely interrupt item usage.
+    /// </summary>
+    public EquippedItemBehaviour GetCurrentEquippedItemBehaviour()
     {
-        if (!IsValidSlotIndex(slotIndex))
+        return CurrentEquippedBehaviour;
+    }
+
+    /// <summary>
+    /// Gets the item instance stored at the given slot index.
+    /// </summary>
+    /// <param name="SlotIndex">Target hotbar slot index.</param>
+    /// <returns>Stored runtime item instance or null.</returns>
+    public ItemInstance GetItemAtSlot(int SlotIndex)
+    {
+        if (!IsValidSlotIndex(SlotIndex))
         {
             return null;
         }
 
-        return Slots[slotIndex];
+        return Slots[SlotIndex];
     }
 
+    /// <summary>
+    /// Allows external systems to block or restore hotbar runtime input.
+    /// </summary>
+    /// <param name="IsBlocked">True to block hotbar input, false to restore it.</param>
+    public void SetExternalHotbarInputBlocked(bool IsBlocked)
+    {
+        IsExternalHotbarInputBlocked = IsBlocked;
+
+        if (IsBlocked)
+        {
+            ForceStopCurrentItemUsage();
+            ResetUseTracking();
+        }
+    }
+
+    /// <summary>
+    /// Initializes references, allocates slots and optionally equips the selected slot.
+    /// </summary>
     private void Awake()
     {
-        PlayerInput = GetComponent<PlayerInput>();
-
         if (PlayerCamera == null)
         {
             PlayerCamera = Camera.main;
         }
 
+        if (LeverInteractor == null)
+        {
+            LeverInteractor = GetComponentInChildren<LeverInteractor>(true);
+        }
+
+        if (PlayerInputReader == null)
+        {
+            PlayerInputReader = GetComponent<PlayerInputReader>();
+        }
+
         EnsureSlotListSize(SlotCount);
-        BindActions();
 
         if (EquipSelectedSlotOnStart)
         {
@@ -123,18 +194,60 @@ public sealed class HotbarController : MonoBehaviour
         }
     }
 
-    private void Update()
+    /// <summary>
+    /// Subscribes discrete input events from the centralized input reader.
+    /// </summary>
+    private void OnEnable()
     {
-        HandleSelectionInput();
-        HandleUseInput();
-        HandleDropInput();
+        if (PlayerInputReader == null)
+        {
+            return;
+        }
+
+        PlayerInputReader.DropItemPerformed += HandleDropItemPerformed;
+        PlayerInputReader.SlotPerformed += HandleSlotPerformed;
+        PlayerInputReader.PreviousPerformed += HandlePreviousPerformed;
+        PlayerInputReader.NextPerformed += HandleNextPerformed;
     }
 
-    public void ResizeHotbar(int newSlotCount)
+    /// <summary>
+    /// Unsubscribes discrete input events from the centralized input reader.
+    /// </summary>
+    private void OnDisable()
     {
-        SlotCount = Mathf.Max(1, newSlotCount);
+        if (PlayerInputReader != null)
+        {
+            PlayerInputReader.DropItemPerformed -= HandleDropItemPerformed;
+            PlayerInputReader.SlotPerformed -= HandleSlotPerformed;
+            PlayerInputReader.PreviousPerformed -= HandlePreviousPerformed;
+            PlayerInputReader.NextPerformed -= HandleNextPerformed;
+        }
+
+        ResetUseTracking();
+    }
+
+    /// <summary>
+    /// Processes selection and use input every frame through PlayerInputReader.
+    /// </summary>
+    private void Update()
+    {
+        if (IsExternalHotbarInputBlocked)
+        {
+            return;
+        }
+
+        HandleScrollSelectionInput();
+        HandleUseInput();
+    }
+
+    /// <summary>
+    /// Resizes the hotbar and keeps the selected index valid.
+    /// </summary>
+    /// <param name="NewSlotCount">Requested new slot count.</param>
+    public void ResizeHotbar(int NewSlotCount)
+    {
+        SlotCount = Mathf.Max(1, NewSlotCount);
         EnsureSlotListSize(SlotCount);
-        RebuildSlotActions();
 
         if (SelectedIndex >= SlotCount)
         {
@@ -146,11 +259,17 @@ public sealed class HotbarController : MonoBehaviour
         OnHotbarStructureChanged?.Invoke();
     }
 
+    /// <summary>
+    /// Returns whether the selected slot currently contains an item.
+    /// </summary>
     public bool HasSelectedItem()
     {
         return GetSelectedItem() != null;
     }
 
+    /// <summary>
+    /// Gets the runtime item instance currently stored in the selected slot.
+    /// </summary>
     public ItemInstance GetSelectedItem()
     {
         if (SelectedIndex < 0 || SelectedIndex >= Slots.Count)
@@ -161,333 +280,368 @@ public sealed class HotbarController : MonoBehaviour
         return Slots[SelectedIndex];
     }
 
-    public bool TryAddItem(ItemInstance itemInstance, int preferredSlotIndex, out int insertedSlotIndex)
+    /// <summary>
+    /// Tries to add an item instance to the hotbar, preferring stacking and then empty slots.
+    /// </summary>
+    public bool TryAddItem(ItemInstance ItemInstance, int PreferredSlotIndex, out int InsertedSlotIndex)
     {
-        insertedSlotIndex = -1;
+        InsertedSlotIndex = -1;
 
-        if (itemInstance == null || itemInstance.GetDefinition() == null)
+        if (ItemInstance == null || ItemInstance.GetDefinition() == null)
         {
             return false;
         }
 
         EnsureSlotListSize(SlotCount);
 
-        if (TryStackIntoSlot(itemInstance, preferredSlotIndex))
+        if (TryStackIntoSlot(ItemInstance, PreferredSlotIndex))
         {
-            insertedSlotIndex = preferredSlotIndex;
-            NotifySlotChanged(insertedSlotIndex);
+            InsertedSlotIndex = PreferredSlotIndex;
+            NotifySlotChanged(InsertedSlotIndex);
             return true;
         }
 
-        for (int index = 0; index < Slots.Count; index++)
+        for (int Index = 0; Index < Slots.Count; Index++)
         {
-            if (index == preferredSlotIndex)
+            if (Index == PreferredSlotIndex)
             {
                 continue;
             }
 
-            if (TryStackIntoSlot(itemInstance, index))
+            if (TryStackIntoSlot(ItemInstance, Index))
             {
-                insertedSlotIndex = index;
-                NotifySlotChanged(insertedSlotIndex);
+                InsertedSlotIndex = Index;
+                NotifySlotChanged(InsertedSlotIndex);
                 return true;
             }
         }
 
-        if (IsValidSlotIndex(preferredSlotIndex) && Slots[preferredSlotIndex] == null)
+        if (IsValidSlotIndex(PreferredSlotIndex) && Slots[PreferredSlotIndex] == null)
         {
-            Slots[preferredSlotIndex] = itemInstance.Clone();
-            insertedSlotIndex = preferredSlotIndex;
-            AutoEquipIfNeeded(insertedSlotIndex);
-            NotifySlotChanged(insertedSlotIndex);
-            Log("Added item to preferred empty slot: " + insertedSlotIndex);
+            Slots[PreferredSlotIndex] = ItemInstance.Clone();
+            InsertedSlotIndex = PreferredSlotIndex;
+            AutoEquipIfNeeded(InsertedSlotIndex);
+            NotifySlotChanged(InsertedSlotIndex);
+            Log("Added item to preferred empty slot: " + InsertedSlotIndex);
             return true;
         }
 
-        for (int index = 0; index < Slots.Count; index++)
+        for (int Index = 0; Index < Slots.Count; Index++)
         {
-            if (Slots[index] != null)
+            if (Slots[Index] != null)
             {
                 continue;
             }
 
-            Slots[index] = itemInstance.Clone();
-            insertedSlotIndex = index;
-            AutoEquipIfNeeded(insertedSlotIndex);
-            NotifySlotChanged(insertedSlotIndex);
-            Log("Added item to first free slot: " + insertedSlotIndex);
+            Slots[Index] = ItemInstance.Clone();
+            InsertedSlotIndex = Index;
+            AutoEquipIfNeeded(InsertedSlotIndex);
+            NotifySlotChanged(InsertedSlotIndex);
+            Log("Added item to first free slot: " + InsertedSlotIndex);
             return true;
         }
 
         return false;
     }
 
-    public ItemInstance ReplaceSelectedItem(ItemInstance newItemInstance)
+    /// <summary>
+    /// Replaces the currently selected item and returns the previous one.
+    /// </summary>
+    public ItemInstance ReplaceSelectedItem(ItemInstance NewItemInstance)
     {
-        if (newItemInstance == null)
+        if (NewItemInstance == null)
         {
             return null;
         }
 
         EnsureSlotListSize(SlotCount);
 
-        ItemInstance previousItem = Slots[SelectedIndex];
-        Slots[SelectedIndex] = newItemInstance.Clone();
+        ItemInstance PreviousItem = Slots[SelectedIndex];
+        Slots[SelectedIndex] = NewItemInstance.Clone();
         RefreshEquippedItem();
         NotifySlotChanged(SelectedIndex);
 
         Log("Replaced selected slot item at index: " + SelectedIndex);
-        return previousItem;
+        return PreviousItem;
     }
 
+    /// <summary>
+    /// Removes and returns the item currently stored in the selected slot.
+    /// </summary>
     public ItemInstance RemoveSelectedItem()
     {
         EnsureSlotListSize(SlotCount);
 
-        ItemInstance removedItem = Slots[SelectedIndex];
+        ItemInstance RemovedItem = Slots[SelectedIndex];
         Slots[SelectedIndex] = null;
         RefreshEquippedItem();
         NotifySlotChanged(SelectedIndex);
 
         Log("Removed selected item at index: " + SelectedIndex);
-        return removedItem;
+        return RemovedItem;
     }
 
+    /// <summary>
+    /// Drops the selected item into the world using the configured drop helpers.
+    /// </summary>
     public bool DropSelectedItemToWorld()
     {
-        ItemInstance itemToDrop = RemoveSelectedItem();
+        ItemInstance ItemToDrop = RemoveSelectedItem();
 
-        if (itemToDrop == null)
+        if (ItemToDrop == null)
         {
             return false;
         }
 
-        return SpawnWorldItem(itemToDrop, GetDropSpawnPosition(), Quaternion.LookRotation(GetDropDirection(), Vector3.up), Vector3.zero, Vector3.zero, true);
+        return SpawnWorldItem(
+            ItemToDrop,
+            GetDropSpawnPosition(),
+            Quaternion.LookRotation(GetDropDirection(), Vector3.up),
+            Vector3.zero,
+            Vector3.zero,
+            true);
     }
 
-    public bool SpawnWorldItem(ItemInstance itemInstance, Vector3 position, Vector3 direction)
+    /// <summary>
+    /// Spawns a world item using a forward direction.
+    /// </summary>
+    public bool SpawnWorldItem(ItemInstance ItemInstance, Vector3 Position, Vector3 Direction)
     {
-        Quaternion rotation = Quaternion.LookRotation(direction.sqrMagnitude > 0.0001f ? direction : transform.forward, Vector3.up);
-        return SpawnWorldItem(itemInstance, position, rotation, Vector3.zero, Vector3.zero, true);
+        Quaternion Rotation = Quaternion.LookRotation(
+            Direction.sqrMagnitude > 0.0001f ? Direction : transform.forward,
+            Vector3.up);
+
+        return SpawnWorldItem(ItemInstance, Position, Rotation, Vector3.zero, Vector3.zero, true);
     }
 
-    public bool SpawnWorldItem(ItemInstance itemInstance, Vector3 position, Quaternion rotation, Vector3 linearVelocity, Vector3 angularVelocity, bool applyDropImpulse)
+    /// <summary>
+    /// Spawns a world item with explicit transform and rigidbody settings.
+    /// </summary>
+    public bool SpawnWorldItem(ItemInstance ItemInstance, Vector3 Position, Quaternion Rotation, Vector3 LinearVelocity, Vector3 AngularVelocity, bool ApplyDropImpulse)
     {
-        if (itemInstance == null || itemInstance.GetDefinition() == null)
+        if (ItemInstance == null || ItemInstance.GetDefinition() == null)
         {
             return false;
         }
 
-        GameObject worldPrefab = itemInstance.GetDefinition().GetWorldPrefab();
+        GameObject WorldPrefab = ItemInstance.GetDefinition().GetWorldPrefab();
 
-        if (worldPrefab == null)
+        if (WorldPrefab == null)
         {
             Debug.LogWarning("The item definition has no world prefab assigned.");
             return false;
         }
 
-        GameObject worldObject = Instantiate(worldPrefab, position, rotation);
+        GameObject WorldObject = Instantiate(WorldPrefab, Position, Rotation);
 
-        WorldItem worldItem = worldObject.GetComponent<WorldItem>();
-        if (worldItem == null)
+        WorldItem WorldItem = WorldObject.GetComponent<WorldItem>();
+        if (WorldItem == null)
         {
-            worldItem = worldObject.GetComponentInChildren<WorldItem>();
+            WorldItem = WorldObject.GetComponentInChildren<WorldItem>();
         }
 
-        if (worldItem != null)
+        if (WorldItem != null)
         {
-            worldItem.ApplyItemInstance(itemInstance.Clone());
+            WorldItem.ApplyItemInstance(ItemInstance.Clone());
 
-            Rigidbody rigidbody = worldItem.GetRigidbody();
-            if (rigidbody != null)
+            Rigidbody RigidbodyComponent = WorldItem.GetRigidbody();
+            if (RigidbodyComponent != null)
             {
-                rigidbody.linearVelocity = linearVelocity;
-                rigidbody.angularVelocity = angularVelocity;
+                RigidbodyComponent.linearVelocity = LinearVelocity;
+                RigidbodyComponent.angularVelocity = AngularVelocity;
 
-                if (applyDropImpulse)
+                if (ApplyDropImpulse)
                 {
-                    Vector3 impulseDirection = rotation * Vector3.forward;
-                    rigidbody.AddForce(impulseDirection.normalized * DropImpulse, ForceMode.Impulse);
+                    Vector3 ImpulseDirection = Rotation * Vector3.forward;
+                    RigidbodyComponent.AddForce(ImpulseDirection.normalized * DropImpulse, ForceMode.Impulse);
                 }
             }
         }
 
-        Log("Spawned world item: " + itemInstance.GetDefinition().GetDisplayName());
+        Log("Spawned world item: " + ItemInstance.GetDefinition().GetDisplayName());
         return true;
     }
 
-    public void SelectSlot(int slotIndex)
+    /// <summary>
+    /// Selects a hotbar slot and refreshes the equipped object if needed.
+    /// </summary>
+    public void SelectSlot(int SlotIndex)
     {
         EnsureSlotListSize(SlotCount);
 
-        if (!IsValidSlotIndex(slotIndex))
+        if (!IsValidSlotIndex(SlotIndex))
         {
             return;
         }
 
-        if (slotIndex == SelectedIndex)
+        if (SlotIndex == SelectedIndex)
         {
             return;
         }
 
-        SelectedIndex = slotIndex;
+        ForceStopCurrentItemUsage();
+        ResetUseTracking();
+
+        SelectedIndex = SlotIndex;
         RefreshEquippedItem();
         OnSelectedSlotChanged?.Invoke(SelectedIndex);
 
         Log("Selected slot index: " + SelectedIndex);
     }
 
+    /// <summary>
+    /// Unequips the current equipped object and re-equips the selected slot item.
+    /// </summary>
     public void RefreshEquippedItem()
     {
         UnequipCurrentItem();
         EquipSelectedItem();
     }
 
-    private void EnsureSlotListSize(int desiredSize)
+    /// <summary>
+    /// Ensures the internal slot list exactly matches the desired size.
+    /// </summary>
+    private void EnsureSlotListSize(int DesiredSize)
     {
-        desiredSize = Mathf.Max(1, desiredSize);
+        DesiredSize = Mathf.Max(1, DesiredSize);
 
-        while (Slots.Count < desiredSize)
+        while (Slots.Count < DesiredSize)
         {
             Slots.Add(null);
         }
 
-        while (Slots.Count > desiredSize)
+        while (Slots.Count > DesiredSize)
         {
             Slots.RemoveAt(Slots.Count - 1);
         }
 
-        SlotCount = desiredSize;
+        SlotCount = DesiredSize;
         SelectedIndex = Mathf.Clamp(SelectedIndex, 0, SlotCount - 1);
     }
 
-    private void BindActions()
+    /// <summary>
+    /// Processes scroll-based slot selection from PlayerInputReader.
+    /// </summary>
+    private void HandleScrollSelectionInput()
     {
-        if (PlayerInput == null || PlayerInput.actions == null)
+        if (PlayerInputReader == null)
         {
             return;
         }
 
-        HotbarScrollAction = PlayerInput.actions[HotbarScrollActionName];
-        UsePrimaryAction = PlayerInput.actions[UsePrimaryActionName];
-        UseSecondaryAction = PlayerInput.actions[UseSecondaryActionName];
-        DropItemAction = PlayerInput.actions[DropItemActionName];
+        float ScrollValue = PlayerInputReader.HotbarScroll;
 
-        RebuildSlotActions();
-    }
-
-    private void RebuildSlotActions()
-    {
-        SlotActions.Clear();
-
-        if (PlayerInput == null || PlayerInput.actions == null)
+        if (Mathf.Abs(ScrollValue) <= 0.01f)
         {
             return;
         }
 
-        for (int index = 0; index < SlotCount && index < 9; index++)
+        if (Time.time - LastScrollTime < ScrollCooldown)
         {
-            string actionName = SlotActionPrefix + (index + 1);
-            InputAction slotAction = PlayerInput.actions[actionName];
-            SlotActions.Add(slotAction);
+            return;
         }
+
+        LastScrollTime = Time.time;
+
+        int Direction = ScrollValue > 0f ? 1 : -1;
+        int NextIndex = SelectedIndex + Direction;
+
+        if (NextIndex < 0)
+        {
+            NextIndex = SlotCount - 1;
+        }
+        else if (NextIndex >= SlotCount)
+        {
+            NextIndex = 0;
+        }
+
+        SelectSlot(NextIndex);
     }
 
-    private void HandleSelectionInput()
-    {
-        if (HotbarScrollAction != null)
-        {
-            float scrollValue = HotbarScrollAction.ReadValue<float>();
-
-            if (Mathf.Abs(scrollValue) > 0.01f)
-            {
-                if (Time.time - LastScrollTime < ScrollCooldown)
-                {
-                    return;
-                }
-
-                LastScrollTime = Time.time;
-
-                int direction = scrollValue > 0f ? 1 : -1;
-                int nextIndex = SelectedIndex + direction;
-
-                if (nextIndex < 0)
-                {
-                    nextIndex = SlotCount - 1;
-                }
-                else if (nextIndex >= SlotCount)
-                {
-                    nextIndex = 0;
-                }
-
-                SelectSlot(nextIndex);
-            }
-        }
-
-        for (int index = 0; index < SlotActions.Count; index++)
-        {
-            InputAction slotAction = SlotActions[index];
-
-            if (slotAction != null && slotAction.WasPressedThisFrame())
-            {
-                SelectSlot(index);
-                return;
-            }
-        }
-    }
-
+    /// <summary>
+    /// Routes primary and secondary use input to the equipped item using the centralized input reader.
+    /// </summary>
     private void HandleUseInput()
     {
-        if (CurrentEquippedBehaviour == null)
+        if (CurrentEquippedBehaviour == null || PlayerInputReader == null)
         {
+            ResetUseTracking();
+            WasItemUseBlockedLastFrame = false;
             return;
         }
 
-        if (UsePrimaryAction != null)
+        bool IsPrimaryHeldNow = PlayerInputReader.IsUsePrimaryHeld;
+        bool IsSecondaryHeldNow = PlayerInputReader.IsUseSecondaryHeld;
+
+        if (IsUseInputCapturedByExternalInteraction())
         {
-            if (UsePrimaryAction.WasPressedThisFrame())
+            if (!WasItemUseBlockedLastFrame)
             {
-                CurrentEquippedBehaviour.OnPrimaryUseStarted();
+                CurrentEquippedBehaviour.ForceStopItemUsage();
+                WasItemUseBlockedLastFrame = true;
+                Log("Blocked equipped item use because a higher-priority interaction captured input.");
             }
 
-            if (UsePrimaryAction.IsPressed())
-            {
-                CurrentEquippedBehaviour.OnPrimaryUseHeld();
-            }
-
-            if (UsePrimaryAction.WasReleasedThisFrame())
-            {
-                CurrentEquippedBehaviour.OnPrimaryUseEnded();
-            }
+            WasPrimaryHeldLastFrame = IsPrimaryHeldNow;
+            WasSecondaryHeldLastFrame = IsSecondaryHeldNow;
+            return;
         }
 
-        if (UseSecondaryAction != null)
+        WasItemUseBlockedLastFrame = false;
+
+        if (IsPrimaryHeldNow && !WasPrimaryHeldLastFrame)
         {
-            if (UseSecondaryAction.WasPressedThisFrame())
-            {
-                CurrentEquippedBehaviour.OnSecondaryUseStarted();
-            }
-
-            if (UseSecondaryAction.IsPressed())
-            {
-                CurrentEquippedBehaviour.OnSecondaryUseHeld();
-            }
-
-            if (UseSecondaryAction.WasReleasedThisFrame())
-            {
-                CurrentEquippedBehaviour.OnSecondaryUseEnded();
-            }
+            CurrentEquippedBehaviour.OnPrimaryUseStarted();
         }
+
+        if (IsPrimaryHeldNow)
+        {
+            CurrentEquippedBehaviour.OnPrimaryUseHeld();
+        }
+
+        if (!IsPrimaryHeldNow && WasPrimaryHeldLastFrame)
+        {
+            CurrentEquippedBehaviour.OnPrimaryUseEnded();
+        }
+
+        if (IsSecondaryHeldNow && !WasSecondaryHeldLastFrame)
+        {
+            CurrentEquippedBehaviour.OnSecondaryUseStarted();
+        }
+
+        if (IsSecondaryHeldNow)
+        {
+            CurrentEquippedBehaviour.OnSecondaryUseHeld();
+        }
+
+        if (!IsSecondaryHeldNow && WasSecondaryHeldLastFrame)
+        {
+            CurrentEquippedBehaviour.OnSecondaryUseEnded();
+        }
+
+        WasPrimaryHeldLastFrame = IsPrimaryHeldNow;
+        WasSecondaryHeldLastFrame = IsSecondaryHeldNow;
     }
 
-    private void HandleDropInput()
+    /// <summary>
+    /// Returns whether an external world interaction currently owns the use input.
+    /// </summary>
+    private bool IsUseInputCapturedByExternalInteraction()
     {
-        if (DropItemAction == null)
+        if (LeverInteractor == null)
         {
-            return;
+            return false;
         }
 
-        if (!DropItemAction.WasPressedThisFrame())
+        return LeverInteractor.IsCapturingPrimaryInput;
+    }
+
+    /// <summary>
+    /// Handles the drop item discrete input coming from PlayerInputReader.
+    /// </summary>
+    private void HandleDropItemPerformed()
+    {
+        if (IsExternalHotbarInputBlocked)
         {
             return;
         }
@@ -495,56 +649,117 @@ public sealed class HotbarController : MonoBehaviour
         DropSelectedItemToWorld();
     }
 
-    private bool TryStackIntoSlot(ItemInstance incomingItem, int slotIndex)
+    /// <summary>
+    /// Handles direct slot selection from PlayerInputReader.
+    /// </summary>
+    /// <param name="SlotNumber">One-based slot number.</param>
+    private void HandleSlotPerformed(int SlotNumber)
     {
-        if (!IsValidSlotIndex(slotIndex))
+        if (IsExternalHotbarInputBlocked)
         {
-            return false;
+            return;
         }
 
-        ItemInstance existingItem = Slots[slotIndex];
-
-        if (existingItem == null || !existingItem.CanStackWith(incomingItem))
-        {
-            return false;
-        }
-
-        ItemDefinition definition = existingItem.GetDefinition();
-        int maxStackSize = definition.GetMaxStackSize();
-        int freeSpace = maxStackSize - existingItem.GetAmount();
-
-        if (freeSpace <= 0)
-        {
-            return false;
-        }
-
-        int transferAmount = Mathf.Min(freeSpace, incomingItem.GetAmount());
-        existingItem.SetAmount(existingItem.GetAmount() + transferAmount);
-        incomingItem.SetAmount(incomingItem.GetAmount() - transferAmount);
-
-        Log("Stacked item into slot: " + slotIndex);
-
-        return incomingItem.GetAmount() <= 0;
+        int SlotIndex = SlotNumber - 1;
+        SelectSlot(SlotIndex);
     }
 
+    /// <summary>
+    /// Handles previous input as one slot step to the left.
+    /// </summary>
+    private void HandlePreviousPerformed()
+    {
+        if (IsExternalHotbarInputBlocked)
+        {
+            return;
+        }
+
+        int PreviousIndex = SelectedIndex - 1;
+
+        if (PreviousIndex < 0)
+        {
+            PreviousIndex = SlotCount - 1;
+        }
+
+        SelectSlot(PreviousIndex);
+    }
+
+    /// <summary>
+    /// Handles next input as one slot step to the right.
+    /// </summary>
+    private void HandleNextPerformed()
+    {
+        if (IsExternalHotbarInputBlocked)
+        {
+            return;
+        }
+
+        int NextIndex = SelectedIndex + 1;
+
+        if (NextIndex >= SlotCount)
+        {
+            NextIndex = 0;
+        }
+
+        SelectSlot(NextIndex);
+    }
+
+    /// <summary>
+    /// Tries to stack the incoming item into the specified slot.
+    /// </summary>
+    private bool TryStackIntoSlot(ItemInstance IncomingItem, int SlotIndex)
+    {
+        if (!IsValidSlotIndex(SlotIndex))
+        {
+            return false;
+        }
+
+        ItemInstance ExistingItem = Slots[SlotIndex];
+
+        if (ExistingItem == null || !ExistingItem.CanStackWith(IncomingItem))
+        {
+            return false;
+        }
+
+        ItemDefinition Definition = ExistingItem.GetDefinition();
+        int MaxStackSize = Definition.GetMaxStackSize();
+        int FreeSpace = MaxStackSize - ExistingItem.GetAmount();
+
+        if (FreeSpace <= 0)
+        {
+            return false;
+        }
+
+        int TransferAmount = Mathf.Min(FreeSpace, IncomingItem.GetAmount());
+        ExistingItem.SetAmount(ExistingItem.GetAmount() + TransferAmount);
+        IncomingItem.SetAmount(IncomingItem.GetAmount() - TransferAmount);
+
+        Log("Stacked item into slot: " + SlotIndex);
+
+        return IncomingItem.GetAmount() <= 0;
+    }
+
+    /// <summary>
+    /// Instantiates and initializes the equipped prefab of the selected slot item.
+    /// </summary>
     private void EquipSelectedItem()
     {
-        ItemInstance selectedItem = GetSelectedItem();
+        ItemInstance SelectedItem = GetSelectedItem();
 
-        if (selectedItem == null || selectedItem.GetDefinition() == null)
+        if (SelectedItem == null || SelectedItem.GetDefinition() == null)
         {
             return;
         }
 
-        GameObject equippedPrefab = selectedItem.GetDefinition().GetEquippedPrefab();
+        GameObject EquippedPrefab = SelectedItem.GetDefinition().GetEquippedPrefab();
 
-        if (equippedPrefab == null)
+        if (EquippedPrefab == null)
         {
             return;
         }
 
-        Transform parent = EquippedItemSocket != null ? EquippedItemSocket : transform;
-        CurrentEquippedObject = Instantiate(equippedPrefab, parent);
+        Transform Parent = EquippedItemSocket != null ? EquippedItemSocket : transform;
+        CurrentEquippedObject = Instantiate(EquippedPrefab, Parent);
         CurrentEquippedObject.transform.localPosition = Vector3.zero;
         CurrentEquippedObject.transform.localRotation = Quaternion.identity;
 
@@ -552,13 +767,16 @@ public sealed class HotbarController : MonoBehaviour
 
         if (CurrentEquippedBehaviour != null)
         {
-            CurrentEquippedBehaviour.Initialize(this, selectedItem);
+            CurrentEquippedBehaviour.Initialize(this, SelectedItem);
             CurrentEquippedBehaviour.OnEquipped();
         }
 
         Log("Equipped item from slot: " + SelectedIndex);
     }
 
+    /// <summary>
+    /// Safely interrupts and destroys the current equipped object.
+    /// </summary>
     private void UnequipCurrentItem()
     {
         if (CurrentEquippedBehaviour != null)
@@ -574,27 +792,31 @@ public sealed class HotbarController : MonoBehaviour
 
         CurrentEquippedBehaviour = null;
         CurrentEquippedObject = null;
+        WasItemUseBlockedLastFrame = false;
     }
 
-    private void AutoEquipIfNeeded(int slotIndex)
+    /// <summary>
+    /// Auto-equips the given slot item if it matches the current selection and supports auto-equip.
+    /// </summary>
+    private void AutoEquipIfNeeded(int SlotIndex)
     {
-        if (!IsValidSlotIndex(slotIndex))
+        if (!IsValidSlotIndex(SlotIndex))
         {
             return;
         }
 
-        ItemInstance itemInstance = Slots[slotIndex];
-        if (itemInstance == null || itemInstance.GetDefinition() == null)
+        ItemInstance ItemInstance = Slots[SlotIndex];
+        if (ItemInstance == null || ItemInstance.GetDefinition() == null)
         {
             return;
         }
 
-        if (slotIndex != SelectedIndex)
+        if (SlotIndex != SelectedIndex)
         {
             return;
         }
 
-        if (!itemInstance.GetDefinition().GetAutoEquipWhenSelected())
+        if (!ItemInstance.GetDefinition().GetAutoEquipWhenSelected())
         {
             return;
         }
@@ -602,49 +824,84 @@ public sealed class HotbarController : MonoBehaviour
         RefreshEquippedItem();
     }
 
-    private bool IsValidSlotIndex(int slotIndex)
+    /// <summary>
+    /// Returns whether the provided slot index is valid.
+    /// </summary>
+    private bool IsValidSlotIndex(int SlotIndex)
     {
-        return slotIndex >= 0 && slotIndex < Slots.Count;
+        return SlotIndex >= 0 && SlotIndex < Slots.Count;
     }
 
+    /// <summary>
+    /// Computes the world spawn position for dropped items.
+    /// </summary>
     private Vector3 GetDropSpawnPosition()
     {
-        Vector3 origin = PlayerCamera != null ? PlayerCamera.transform.position : transform.position;
-        Vector3 direction = GetDropDirection();
-        Vector3 position = origin + (direction * DropForwardDistance) + (Vector3.up * DropVerticalOffset);
+        Vector3 Origin = PlayerCamera != null ? PlayerCamera.transform.position : transform.position;
+        Vector3 Direction = GetDropDirection();
+        Vector3 Position = Origin + (Direction * DropForwardDistance) + (Vector3.up * DropVerticalOffset);
 
         if (DrawDropDebug)
         {
-            Debug.DrawRay(origin, direction * DropForwardDistance, Color.yellow, 1f);
+            Debug.DrawRay(Origin, Direction * DropForwardDistance, Color.yellow, 1f);
         }
 
-        return position;
+        return Position;
     }
 
+    /// <summary>
+    /// Returns the forward direction used to drop items into the world.
+    /// </summary>
     private Vector3 GetDropDirection()
     {
         if (PlayerCamera != null)
         {
-            Vector3 cameraForward = PlayerCamera.transform.forward;
-            cameraForward.Normalize();
-            return cameraForward;
+            Vector3 CameraForward = PlayerCamera.transform.forward;
+            CameraForward.Normalize();
+            return CameraForward;
         }
 
         return transform.forward;
     }
 
-    private void NotifySlotChanged(int slotIndex)
+    /// <summary>
+    /// Notifies listeners that a specific slot changed.
+    /// </summary>
+    private void NotifySlotChanged(int SlotIndex)
     {
-        OnSlotChanged?.Invoke(slotIndex);
+        OnSlotChanged?.Invoke(SlotIndex);
     }
 
-    private void Log(string message)
+    /// <summary>
+    /// Force-stops the currently equipped item usage if any item is equipped.
+    /// </summary>
+    private void ForceStopCurrentItemUsage()
+    {
+        if (CurrentEquippedBehaviour != null)
+        {
+            CurrentEquippedBehaviour.ForceStopItemUsage();
+        }
+    }
+
+    /// <summary>
+    /// Resets local use-state tracking used to derive start and end edges from held booleans.
+    /// </summary>
+    private void ResetUseTracking()
+    {
+        WasPrimaryHeldLastFrame = false;
+        WasSecondaryHeldLastFrame = false;
+    }
+
+    /// <summary>
+    /// Writes a hotbar-specific debug log if enabled.
+    /// </summary>
+    private void Log(string Message)
     {
         if (!DebugLogs)
         {
             return;
         }
 
-        Debug.Log("[HotbarController] " + message);
+        Debug.Log("[HotbarController] " + Message, this);
     }
 }

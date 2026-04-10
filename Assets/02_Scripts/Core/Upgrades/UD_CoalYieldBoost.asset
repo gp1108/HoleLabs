@@ -10,24 +10,31 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b14e2cff467300941bec1438b983a8f4, type: 3}
-  m_Name: UD_ElevatorDownSpeed
+  m_Name: UD_CoalYieldBoost
   m_EditorClassIdentifier: Assembly-CSharp::UpgradeDefinition
-  UpgradeId: ElevatorDownSpeed
-  DisplayName: Elevator down speed
-  Description: Increases the speed of the elevator while descending
+  UpgradeId: CoalYieldBoost
+  DisplayName: Coal Extraction
+  Description: Coal veins drop more ore pieces per level.
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
   MaxLevel: 3
   LevelCosts:
   - CurrencyType: 0
-    Cost: 10
+    Cost: 30
   - CurrencyType: 0
-    Cost: 10
+    Cost: 80
   - CurrencyType: 0
-    Cost: 10
+    Cost: 160
   StatModifiers:
-  - StatType: 3
+  - StatType: 17
     ModifierType: 0
     BaseValue: 1
-    ValuePerLevel: 3
+    ValuePerLevel: 1
     StartApplyingAtLevelOne: 1
+    TargetOreId: Coal
+  - StatType: 18
+    ModifierType: 0
+    BaseValue: 1
+    ValuePerLevel: 1
+    StartApplyingAtLevelOne: 1
+    TargetOreId: Coal
   UnlockRewards: []

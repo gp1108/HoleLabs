@@ -243,6 +243,7 @@ MonoBehaviour:
     Properties: []
     GoldValue: 0
     ResearchValue: 0
+    WeightValue: 0
   RuntimeRoot: {fileID: 0}
   CachedRigidbody: {fileID: 0}
   CachedColliders: []

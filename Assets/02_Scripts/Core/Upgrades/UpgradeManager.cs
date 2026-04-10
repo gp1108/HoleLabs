@@ -11,41 +11,22 @@ public sealed class UpgradeManager : MonoBehaviour
     [Serializable]
     private sealed class UpgradeLevelEntry
     {
-        [Tooltip("Upgrade definition tracked by this entry.")]
         [SerializeField] private UpgradeDefinition Definition;
-
-        [Tooltip("Current purchased level of the upgrade.")]
         [SerializeField] private int CurrentLevel = 0;
 
-        public UpgradeDefinition GetDefinition()
-        {
-            return Definition;
-        }
-
-        public int GetCurrentLevel()
-        {
-            return CurrentLevel;
-        }
-
-        public void SetCurrentLevel(int Level)
-        {
-            CurrentLevel = Mathf.Max(0, Level);
-        }
+        public UpgradeDefinition GetDefinition() => Definition;
+        public int GetCurrentLevel() => CurrentLevel;
+        public void SetCurrentLevel(int Level) => CurrentLevel = Mathf.Max(0, Level);
     }
 
     [Header("References")]
-    [Tooltip("Wallet used to pay for upgrade purchases.")]
     [SerializeField] private CurrencyWallet CurrencyWallet;
 
     [Header("Definitions")]
-    [Tooltip("All upgrade definitions supported by this manager.")]
     [SerializeField] private List<UpgradeDefinition> UpgradeDefinitions = new();
 
     [Header("Runtime Debug")]
-    [Tooltip("Optional serialized runtime levels useful during development and save loading tests.")]
     [SerializeField] private List<UpgradeLevelEntry> DebugRuntimeLevels = new();
-
-    [Tooltip("Logs upgrade operations to the console.")]
     [SerializeField] private bool DebugLogs = false;
 
     private readonly Dictionary<string, UpgradeDefinition> DefinitionsById = new();
@@ -68,10 +49,6 @@ public sealed class UpgradeManager : MonoBehaviour
         RebuildRewardCache();
     }
 
-    /// <summary>
-    /// Gets all upgrade definitions registered in this manager.
-    /// Useful for UI generation and tooling.
-    /// </summary>
     public IReadOnlyList<UpgradeDefinition> GetAllUpgradeDefinitions()
     {
         return UpgradeDefinitions;
@@ -115,6 +92,54 @@ public sealed class UpgradeManager : MonoBehaviour
         }
 
         return null;
+    }
+
+    public float GetModifiedOreFloatStat(UpgradeStatType StatType, string OreId, float BaseValue)
+    {
+        float CurrentValue = BaseValue;
+
+        foreach (UpgradeDefinition Definition in UpgradeDefinitions)
+        {
+            if (Definition == null)
+            {
+                continue;
+            }
+
+            int CurrentLevel = GetUpgradeLevel(Definition);
+
+            if (CurrentLevel <= 0)
+            {
+                continue;
+            }
+
+            IReadOnlyList<UpgradeDefinition.StatModifierDefinition> Modifiers = Definition.GetStatModifiers();
+
+            for (int Index = 0; Index < Modifiers.Count; Index++)
+            {
+                UpgradeDefinition.StatModifierDefinition Modifier = Modifiers[Index];
+
+                if (Modifier == null || Modifier.GetStatType() != StatType)
+                {
+                    continue;
+                }
+
+                if (!Modifier.AppliesToOre(OreId))
+                {
+                    continue;
+                }
+
+                float ModifierValue = Modifier.EvaluateValue(CurrentLevel);
+                CurrentValue = ApplyModifier(CurrentValue, Modifier.GetModifierType(), ModifierValue);
+            }
+        }
+
+        return CurrentValue;
+    }
+
+    public int GetModifiedOreIntStat(UpgradeStatType StatType, string OreId, int BaseValue)
+    {
+        float ModifiedValue = GetModifiedOreFloatStat(StatType, OreId, BaseValue);
+        return Mathf.RoundToInt(ModifiedValue);
     }
 
     public bool CanPurchaseUpgrade(UpgradeDefinition UpgradeDefinition)
@@ -220,6 +245,11 @@ public sealed class UpgradeManager : MonoBehaviour
                 UpgradeDefinition.StatModifierDefinition Modifier = Modifiers[Index];
 
                 if (Modifier == null || Modifier.GetStatType() != StatType)
+                {
+                    continue;
+                }
+
+                if (!Modifier.AppliesToOre(null))
                 {
                     continue;
                 }
@@ -399,18 +429,24 @@ public sealed class UpgradeManager : MonoBehaviour
         {
             case UpgradeModifierType.Add:
                 return CurrentValue + ModifierValue;
+
             case UpgradeModifierType.Subtract:
                 return CurrentValue - ModifierValue;
+
             case UpgradeModifierType.Multiply:
                 return CurrentValue * ModifierValue;
+
             case UpgradeModifierType.Divide:
                 if (Mathf.Approximately(ModifierValue, 0f))
                 {
                     return CurrentValue;
                 }
+
                 return CurrentValue / ModifierValue;
+
             case UpgradeModifierType.Override:
                 return ModifierValue;
+
             default:
                 return CurrentValue;
         }
@@ -423,6 +459,6 @@ public sealed class UpgradeManager : MonoBehaviour
             return;
         }
 
-        Debug.Log("[UpgradeManager] " + Message);
+        Debug.Log("[UpgradeManager] " + Message, this);
     }
 }
