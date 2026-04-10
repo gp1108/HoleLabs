@@ -736,7 +736,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CurrencyWallet
   DefaultCurrencies:
   - Type: 0
-    Amount: 0
+    Amount: 1000
   - Type: 1
     Amount: 0
   DebugLogs: 0
@@ -7099,11 +7099,9 @@ MonoBehaviour:
   EffectTrigger: {fileID: 1602796397}
   AttractionCenter: {fileID: 1602796395}
   UpgradeManager: {fileID: 1860831231}
-  BaseMaxAttractedOreWeight: 100
+  BaseMaxAttractedOreWeight: 10
   HorizontalLaunchSpeed: 2.2
   UpwardLaunchSpeed: 1.1
-  OverrideExistingVelocity: 0
-  ClearDownwardVelocity: 1
   MaxTotalLaunchSpeed: 2.6
   DebugLogs: 1
 --- !u!65 &1602796397
@@ -7998,6 +7996,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: be985c50bb21c50439808cc10d8ac256, type: 2}
   - {fileID: 11400000, guid: 3fe72a52525ff5f45b6344b41c9eac66, type: 2}
   - {fileID: 11400000, guid: 657c1176ee5aa5542b40297088b749d3, type: 2}
+  - {fileID: 11400000, guid: dd4ad69acafc1f746beaf8f95ef0de20, type: 2}
   DebugRuntimeLevels: []
   DebugLogs: 0
 --- !u!1 &1865181343

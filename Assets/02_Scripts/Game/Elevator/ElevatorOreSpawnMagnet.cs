@@ -255,6 +255,10 @@ public sealed class ElevatorOreSpawnMagnet : MonoBehaviour
 
         float OreWeight = Mathf.Max(0f, OreItemData.GetWeightValue());
         float AllowedWeight = GetResolvedMaxAttractedOreWeight();
+        if(DebugLogs)
+        {
+            Debug.Log("Runtime allowedweight : " + AllowedWeight);
+        }
 
         if (OreWeight > AllowedWeight)
         {
