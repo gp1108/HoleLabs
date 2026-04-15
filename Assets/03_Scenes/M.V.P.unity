@@ -1609,7 +1609,7 @@ Transform:
   m_GameObject: {fileID: 409799998}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}
-  m_LocalPosition: {x: -0.297, y: 0.005, z: 0.837}
+  m_LocalPosition: {x: -0.297, y: 0.005, z: 0.337}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2830,6 +2830,37 @@ MonoBehaviour:
   PrewarmEntries: []
   PoolRoot: {fileID: 1825781662}
   DebugLogs: 0
+--- !u!1 &620543787
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 620543788}
+  m_Layer: 0
+  m_Name: BillEjectPoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &620543788
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 620543787}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}
+  m_LocalPosition: {x: -0.297, y: 0.005, z: 0.837}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 543450652383689342}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 90}
 --- !u!1 &645478622
 GameObject:
   m_ObjectHideFlags: 0
@@ -9175,6 +9206,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 409799999}
+  - {fileID: 620543788}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &543450653037936518
@@ -10319,57 +10351,72 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OreSellTrigger
   CurrencyWallet: {fileID: 113581520}
   MoneyPickupPool: {fileID: 646063879}
-  MoneyEjectPoint: {fileID: 409799999}
+  CoinEjectPoint: {fileID: 409799999}
+  BillEjectPoint: {fileID: 620543788}
   OreConsumeInterval: 0.5
   MaxEmissionInterval: 0.5
   MinEmissionInterval: 0.03
   FastEmissionQueueThreshold: 100
-  ForwardImpulse: 5
-  UpwardImpulse: 1.5
-  RandomImpulse: 0.75
-  RandomTorqueImpulse: 0.25
+  CoinForwardImpulse: 5
+  CoinUpwardImpulse: 1.5
+  CoinRandomImpulse: 0.75
+  CoinRandomTorqueImpulse: 0.25
+  BillForwardImpulse: 2.25
+  BillUpwardImpulse: 0.75
+  BillRandomImpulse: 0.25
+  BillRandomTorqueImpulse: 0.05
   GrantResearchInstantly: 0
   MoneyDenominations:
   - Id: Small_Bill
     Prefab: {fileID: 6431823255149733203, guid: 3c3af70d8d802534b8fb11228e210b1f, type: 3}
     GoldValue: 10
     Weight: 1
+    VisualType: 1
   - Id: Gold_Coin
     Prefab: {fileID: 7145506135256237205, guid: db1c2ab7961e3444b89d01be7d14ad74, type: 3}
     GoldValue: 5
     Weight: 1
+    VisualType: 0
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 2
     Weight: 1
+    VisualType: 0
   - Id: Silver_Coin
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 1
     Weight: 1
+    VisualType: 0
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 0.5
     Weight: 1
+    VisualType: 0
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 0.2
     Weight: 1
+    VisualType: 0
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 0.1
     Weight: 1
+    VisualType: 0
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 0.05
     Weight: 1
+    VisualType: 0
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 0.02
     Weight: 1
+    VisualType: 0
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 0.01
     Weight: 1
+    VisualType: 0
   AlternativeCompositionChance: 0
   ShuffleEmissionOrder: 1
   DebugLogs: 0

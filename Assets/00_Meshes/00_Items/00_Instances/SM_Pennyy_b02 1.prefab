@@ -14,7 +14,8 @@ GameObject:
   - component: {fileID: 2465164538180868239}
   - component: {fileID: 7772045189998505038}
   - component: {fileID: 770220998685803347}
-  m_Layer: 0
+  - component: {fileID: 5745758099802279669}
+  m_Layer: 7
   m_Name: SM_Pennyy_b02 1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -111,6 +112,7 @@ MonoBehaviour:
   CachedRigidbody: {fileID: 7772045189998505038}
   CachedColliders:
   - {fileID: 770220998685803347}
+  SleepController: {fileID: 5745758099802279669}
 --- !u!54 &7772045189998505038
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -159,3 +161,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.12, y: 0.12000003, z: 0.025000004}
   m_Center: {x: 0, y: 0, z: 0.012500002}
+--- !u!114 &5745758099802279669
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4435568468319740597}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a44c4870a6e08143836f56d738197d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MoneyPickupSleepController
+  TargetRigidbody: {fileID: 7772045189998505038}
+  Settings:
+    RequiredStillTime: 0.2
+    MaxLinearSpeed: 0.05
+    MaxAngularSpeed: 0.08
+    MinimumSupportNormalY: 0.45
+  DebugLogs: 0
