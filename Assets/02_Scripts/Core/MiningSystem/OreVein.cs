@@ -98,6 +98,15 @@ public sealed class OreVein : MonoBehaviour, IMineable
     private ElevatorOreSpawnMagnet CachedElevatorOreSpawnMagnet;
 
     /// <summary>
+    /// Gets the ore definition currently used by this vein.
+    /// This is used by external systems such as the scanner.
+    /// </summary>
+    public OreDefinition GetOreDefinition()
+    {
+        return OreDefinition;
+    }
+
+    /// <summary>
     /// Initializes this ore vein with its definition, runtime service and owner point.
     /// </summary>
     /// <param name="OreDefinitionValue">Definition used by this ore vein.</param>
