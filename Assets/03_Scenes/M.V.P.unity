@@ -7103,7 +7103,7 @@ MonoBehaviour:
   HorizontalLaunchSpeed: 2.2
   UpwardLaunchSpeed: 1.1
   MaxTotalLaunchSpeed: 2.6
-  DebugLogs: 1
+  DebugLogs: 0
 --- !u!65 &1602796397
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -10330,21 +10330,21 @@ MonoBehaviour:
   RandomTorqueImpulse: 0.25
   GrantResearchInstantly: 0
   MoneyDenominations:
-  - Id: Silver_Coin
-    Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
-    GoldValue: 1
+  - Id: Small_Bill
+    Prefab: {fileID: 6431823255149733203, guid: 3c3af70d8d802534b8fb11228e210b1f, type: 3}
+    GoldValue: 10
     Weight: 1
   - Id: Gold_Coin
     Prefab: {fileID: 7145506135256237205, guid: db1c2ab7961e3444b89d01be7d14ad74, type: 3}
     GoldValue: 5
     Weight: 1
-  - Id: Small_Bill
-    Prefab: {fileID: 6431823255149733203, guid: 3c3af70d8d802534b8fb11228e210b1f, type: 3}
-    GoldValue: 10
-    Weight: 1
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
-    GoldValue: 0.01
+    GoldValue: 2
+    Weight: 1
+  - Id: Silver_Coin
+    Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
+    GoldValue: 1
     Weight: 1
   - Id: Penny
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
@@ -10358,7 +10358,19 @@ MonoBehaviour:
     Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
     GoldValue: 0.1
     Weight: 1
-  AlternativeCompositionChance: 0.2
+  - Id: Penny
+    Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
+    GoldValue: 0.05
+    Weight: 1
+  - Id: Penny
+    Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
+    GoldValue: 0.02
+    Weight: 1
+  - Id: Penny
+    Prefab: {fileID: 4435568468319740597, guid: 611b84c5e2aaf9f40b2a98a3cb9b960c, type: 3}
+    GoldValue: 0.01
+    Weight: 1
+  AlternativeCompositionChance: 0
   ShuffleEmissionOrder: 1
   DebugLogs: 0
 --- !u!65 &6371768140910142241
