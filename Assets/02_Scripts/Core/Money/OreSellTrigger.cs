@@ -158,6 +158,10 @@ public sealed class OreSellTrigger : MonoBehaviour
     private readonly Queue<PendingMoneyEmission> PendingMoneyEmissions = new();
     private readonly List<MoneyDenomination> SortedDenominations = new();
     private readonly HashSet<OrePickup> QueuedOrePickups = new();
+    /// <summary>
+    /// Tracks ore pickups currently inside the sale trigger volume.
+    /// </summary>
+    private readonly HashSet<OrePickup> OrePickupsInsideTrigger = new();
 
     private float OreConsumeTimer;
     private float MoneyEmissionTimer;
@@ -194,7 +198,50 @@ public sealed class OreSellTrigger : MonoBehaviour
 
     private void OnTriggerEnter(Collider Other)
     {
-        TryQueueSaleFromCollider(Other);
+        if (Other == null)
+        {
+            return;
+        }
+
+        OrePickup OrePickup = Other.GetComponent<OrePickup>();
+
+        if (OrePickup == null)
+        {
+            OrePickup = Other.GetComponentInParent<OrePickup>();
+        }
+
+        if (OrePickup == null)
+        {
+            return;
+        }
+
+        OrePickupsInsideTrigger.Add(OrePickup);
+        TryQueueSalePickup(OrePickup);
+    }
+
+    private void OnTriggerExit(Collider Other)
+    {
+        if (Other == null)
+        {
+            return;
+        }
+
+        OrePickup OrePickup = Other.GetComponent<OrePickup>();
+
+        if (OrePickup == null)
+        {
+            OrePickup = Other.GetComponentInParent<OrePickup>();
+        }
+
+        if (OrePickup == null)
+        {
+            return;
+        }
+
+        OrePickupsInsideTrigger.Remove(OrePickup);
+        QueuedOrePickups.Remove(OrePickup);
+
+        Log("Removed ore pickup from active sale queue because it left the trigger: " + OrePickup.name);
     }
 
     public bool TryQueueSaleFromCollider(Collider Other)
@@ -223,6 +270,12 @@ public sealed class OreSellTrigger : MonoBehaviour
     {
         if (OrePickup == null)
         {
+            return false;
+        }
+
+        if (!OrePickupsInsideTrigger.Contains(OrePickup))
+        {
+            Log("Ignored queue request because ore pickup is not inside the trigger: " + OrePickup.name);
             return false;
         }
 
@@ -296,7 +349,36 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-        PendingOreSale PendingOreSale = PendingOreSales.Dequeue();
+        PendingOreSale PendingOreSale = null;
+
+        while (PendingOreSales.Count > 0)
+        {
+            PendingOreSale Candidate = PendingOreSales.Dequeue();
+
+            if (Candidate == null)
+            {
+                continue;
+            }
+
+            OrePickup CandidateOrePickup = Candidate.OrePickup;
+
+            if (CandidateOrePickup == null)
+            {
+                continue;
+            }
+
+            bool IsStillQueued = QueuedOrePickups.Contains(CandidateOrePickup);
+            bool IsStillInsideTrigger = OrePickupsInsideTrigger.Contains(CandidateOrePickup);
+
+            if (!IsStillQueued || !IsStillInsideTrigger)
+            {
+                Log("Skipped queued ore because it is no longer valid for sale: " + CandidateOrePickup.name);
+                continue;
+            }
+
+            PendingOreSale = Candidate;
+            break;
+        }
 
         if (PendingOreSale == null)
         {
@@ -309,6 +391,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         if (OrePickup != null)
         {
             QueuedOrePickups.Remove(OrePickup);
+            OrePickupsInsideTrigger.Remove(OrePickup);
 
             if (!OrePickup.ReturnToPool())
             {

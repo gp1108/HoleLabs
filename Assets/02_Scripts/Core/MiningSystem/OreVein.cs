@@ -47,6 +47,21 @@ public sealed class OreVein : MonoBehaviour, IMineable
     [Tooltip("Vertical distance added on each retry while searching for a valid spawn point.")]
     [SerializeField] private float SpawnHeightStep = 0.12f;
 
+    [Tooltip("Additional random vertical variation applied to each drop spawn after the base vertical offset.")]
+    [SerializeField] private float DropVerticalJitter = 0.08f;
+
+    [Tooltip("Random yaw rotation applied to each spawned ore pickup.")]
+    [SerializeField] private bool RandomizeYawRotation = true;
+
+    [Tooltip("If true, a subtle random pitch and roll are also applied to the spawned ore pickup.")]
+    [SerializeField] private bool RandomizeTiltRotation = true;
+
+    [Tooltip("Maximum absolute random pitch applied when tilt randomization is enabled.")]
+    [SerializeField] private float MaxRandomPitch = 12f;
+
+    [Tooltip("Maximum absolute random roll applied when tilt randomization is enabled.")]
+    [SerializeField] private float MaxRandomRoll = 12f;
+
     [Header("Debug")]
     [Tooltip("Logs mining, spawning and regeneration operations.")]
     [SerializeField] private bool DebugLogs = false;
@@ -218,9 +233,10 @@ public sealed class OreVein : MonoBehaviour, IMineable
             }
 
             Vector3 DropPosition = ResolveRobustDropSpawnPosition(Index, DropCount, ReservedSpawnPositions);
-            ReservedSpawnPositions.Add(DropPosition);
+            Quaternion DropRotation = GetRandomDropRotation();
 
-            SpawnDropWithOptionalPlayerElevatorAssist(OreItemData, DropPosition);
+            ReservedSpawnPositions.Add(DropPosition);
+            SpawnDropWithOptionalPlayerElevatorAssist(OreItemData, DropPosition, DropRotation);
         }
 
         LastMiningHitContext = MiningHitContext.CreateUnknown();
@@ -238,7 +254,9 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <returns>Resolved world spawn position.</returns>
     private Vector3 ResolveRobustDropSpawnPosition(int DropIndex, int TotalDropCount, List<Vector3> ReservedSpawnPositions)
     {
-        Vector3 BasePosition = GetDropOriginPosition() + (Vector3.up * DropVerticalOffset);
+        float BaseJitteredHeight = DropVerticalOffset + Random.Range(-Mathf.Abs(DropVerticalJitter), Mathf.Abs(DropVerticalJitter));
+        Vector3 BasePosition = GetDropOriginPosition() + (Vector3.up * BaseJitteredHeight);
+
         float ClearanceRadius = Mathf.Max(0.05f, SpawnClearanceRadius);
         float SeparationDistance = ClearanceRadius * 2f;
 
@@ -264,6 +282,19 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         Log("Failed to resolve a fully clean drop spawn. Using elevated fallback.");
         return LastValidFallback;
+    }
+
+
+    /// <summary>
+    /// Builds a subtle random rotation for a spawned ore pickup so repeated drops do not look identical.
+    /// </summary>
+    private Quaternion GetRandomDropRotation()
+    {
+        float Yaw = RandomizeYawRotation ? Random.Range(0f, 360f) : 0f;
+        float Pitch = RandomizeTiltRotation ? Random.Range(-Mathf.Abs(MaxRandomPitch), Mathf.Abs(MaxRandomPitch)) : 0f;
+        float Roll = RandomizeTiltRotation ? Random.Range(-Mathf.Abs(MaxRandomRoll), Mathf.Abs(MaxRandomRoll)) : 0f;
+
+        return Quaternion.Euler(Pitch, Yaw, Roll);
     }
 
     /// <summary>
@@ -380,7 +411,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// </summary>
     /// <param name="OreItemData">Runtime ore payload to spawn.</param>
     /// <param name="DropPosition">World spawn position.</param>
-    private void SpawnDropWithOptionalPlayerElevatorAssist(OreItemData OreItemData, Vector3 DropPosition)
+    private void SpawnDropWithOptionalPlayerElevatorAssist(OreItemData OreItemData, Vector3 DropPosition, Quaternion DropRotation)
     {
         if (OreRuntimeService == null || OreItemData == null)
         {
@@ -390,7 +421,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
         GameObject SpawnedOreObject = OreRuntimeService.SpawnOrePickup(
             OreItemData,
             DropPosition,
-            Quaternion.identity);
+            DropRotation);
 
         if (SpawnedOreObject == null)
         {

@@ -26,7 +26,12 @@ public sealed class OreDefinition : ScriptableObject
 
     [Header("World")]
     [SerializeField] private GameObject VeinPrefab;
+
+    [Tooltip("Legacy single dropped ore prefab. Used as fallback when the visual variants list is empty.")]
     [SerializeField] private GameObject DroppedOrePrefab;
+
+    [Tooltip("Optional list of dropped ore visual prefabs. A random one is selected every time a drop is spawned.")]
+    [SerializeField] private List<GameObject> DroppedOreVisualPrefabs = new();
 
     [Header("Mining")]
     [SerializeField] private int BaseHitsRequired = 3;
@@ -51,6 +56,7 @@ public sealed class OreDefinition : ScriptableObject
     public Sprite GetIcon() => Icon;
     public GameObject GetVeinPrefab() => VeinPrefab;
     public GameObject GetDroppedOrePrefab() => DroppedOrePrefab;
+    public IReadOnlyList<GameObject> GetDroppedOreVisualPrefabs() => DroppedOreVisualPrefabs;
     public int GetBaseHitsRequired() => Mathf.Max(1, BaseHitsRequired);
     public float GetBaseRespawnTime() => Mathf.Max(0f, BaseRespawnTime);
     public int GetBaseDropCountMin() => Mathf.Max(0, BaseDropCountMin);
@@ -61,4 +67,39 @@ public sealed class OreDefinition : ScriptableObject
     public float GetBaseResearchValueMin() => CurrencyMath.RoundCurrency(Mathf.Max(0f, BaseResearchValueMin));
     public float GetBaseResearchValueMax() => CurrencyMath.RoundCurrency(Mathf.Max(GetBaseResearchValueMin(), BaseResearchValueMax));
     public IReadOnlyList<OrePropertyRange> GetPropertyRanges() => PropertyRanges;
+
+    /// <summary>
+    /// Returns a random valid dropped ore prefab.
+    /// Uses the visual variants list when available and falls back to the legacy single prefab otherwise.
+    /// </summary>
+    public GameObject GetRandomDroppedOrePrefab()
+    {
+        if (DroppedOreVisualPrefabs != null && DroppedOreVisualPrefabs.Count > 0)
+        {
+            List<GameObject> ValidPrefabs = null;
+
+            for (int Index = 0; Index < DroppedOreVisualPrefabs.Count; Index++)
+            {
+                if (DroppedOreVisualPrefabs[Index] == null)
+                {
+                    continue;
+                }
+
+                if (ValidPrefabs == null)
+                {
+                    ValidPrefabs = new List<GameObject>();
+                }
+
+                ValidPrefabs.Add(DroppedOreVisualPrefabs[Index]);
+            }
+
+            if (ValidPrefabs != null && ValidPrefabs.Count > 0)
+            {
+                int RandomIndex = UnityEngine.Random.Range(0, ValidPrefabs.Count);
+                return ValidPrefabs[RandomIndex];
+            }
+        }
+
+        return DroppedOrePrefab;
+    }
 }

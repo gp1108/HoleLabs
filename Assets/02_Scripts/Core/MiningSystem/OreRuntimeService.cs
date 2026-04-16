@@ -248,7 +248,7 @@ public sealed class OreRuntimeService : MonoBehaviour
             return null;
         }
 
-        GameObject DroppedOrePrefab = OreItemData.GetOreDefinition().GetDroppedOrePrefab();
+        GameObject DroppedOrePrefab = OreItemData.GetOreDefinition().GetRandomDroppedOrePrefab();
 
         if (DroppedOrePrefab == null)
         {
