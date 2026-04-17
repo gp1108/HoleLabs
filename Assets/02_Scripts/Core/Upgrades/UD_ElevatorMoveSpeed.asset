@@ -16,6 +16,8 @@ MonoBehaviour:
   DisplayName: Elevator move speed
   Description: Increases the speed of the elevator while travelling vertically
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
+  ShopId: Gold
+  Prerequisites: []
   MaxLevel: 3
   LevelCosts:
   - CurrencyType: 0
@@ -30,4 +32,5 @@ MonoBehaviour:
     BaseValue: 1
     ValuePerLevel: 3
     StartApplyingAtLevelOne: 1
+    TargetOreId: 
   UnlockRewards: []

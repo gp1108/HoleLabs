@@ -16,13 +16,15 @@ MonoBehaviour:
   DisplayName: GoldOreMultiplier
   Description: Gold ore sells for 15% more per level.
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
+  ShopId: Research
+  Prerequisites: []
   MaxLevel: 4
   LevelCosts:
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 75
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 180
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 320
   - CurrencyType: 0
     Cost: 500

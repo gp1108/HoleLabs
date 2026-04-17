@@ -16,15 +16,15 @@ MonoBehaviour:
   DisplayName: Market Negotiation
   Description: All ores sell for 10% more per level.
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
-  ShopId: 
+  ShopId: Research
   Prerequisites: []
   MaxLevel: 3
   LevelCosts:
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 50
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 125
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 250
   StatModifiers:
   - StatType: 6

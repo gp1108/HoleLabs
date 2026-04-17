@@ -16,15 +16,15 @@ MonoBehaviour:
   DisplayName: Mining Efficiency
   Description: All ore veins require fewer hits to break.
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
-  ShopId: 
+  ShopId: Research
   Prerequisites: []
   MaxLevel: 3
   LevelCosts:
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 35
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 90
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 180
   StatModifiers:
   - StatType: 1

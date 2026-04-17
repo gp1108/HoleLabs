@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 1706.6666
     height: 889.7778
   m_ShowMode: 4
-  m_Title: Console
+  m_Title: Hierarchy
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -119,7 +119,7 @@ MonoBehaviour:
   m_MinSize: {x: 400, y: 112}
   m_MaxSize: {x: 32384, y: 16192}
   vertical: 0
-  controlID: 670
+  controlID: 88
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -145,7 +145,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 671
+  controlID: 89
   draggingID: 0
 --- !u!114 &7
 MonoBehaviour:
@@ -172,7 +172,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 56}
   m_MaxSize: {x: 24288, y: 8096}
   vertical: 0
-  controlID: 672
+  controlID: 90
   draggingID: 0
 --- !u!114 &8
 MonoBehaviour:
@@ -263,7 +263,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: ConsoleWindow
+  m_Name: ProjectBrowser
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -272,16 +272,16 @@ MonoBehaviour:
     y: 523.1111
     width: 1235.5555
     height: 310.6667
-  m_MinSize: {x: 101, y: 126}
-  m_MaxSize: {x: 4001, y: 4026}
-  m_ActualView: {fileID: 19}
+  m_MinSize: {x: 231, y: 276}
+  m_MaxSize: {x: 10001, y: 10026}
+  m_ActualView: {fileID: 18}
   m_Panes:
   - {fileID: 18}
   - {fileID: 19}
   - {fileID: 20}
   - {fileID: 21}
-  m_Selected: 1
-  m_LastSelected: 0
+  m_Selected: 0
+  m_LastSelected: 1
 --- !u!114 &12
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -643,7 +643,7 @@ MonoBehaviour:
     m_VAllowExceedBaseRangeMax: 1
     m_ScaleWithWindow: 0
     m_HSlider: 0
-    m_VSlider: 1
+    m_VSlider: 0
     m_IgnoreScrollWheelUntilClicked: 0
     m_EnableMouseInput: 1
     m_EnableSliderZoomHorizontal: 0
@@ -656,18 +656,18 @@ MonoBehaviour:
       y: 21
       width: 947.3333
       height: 476.11108
-    m_Scale: {x: 0.5122581, y: 0.5122581}
-    m_Translation: {x: 473.66666, y: 231.75386}
+    m_Scale: {x: 0.49594906, y: 0.49594906}
+    m_Translation: {x: 473.66666, y: 238.05554}
     m_MarginLeft: 0
     m_MarginRight: 0
     m_MarginTop: 0
     m_MarginBottom: 0
     m_LastShownAreaInsideMargins:
       serializedVersion: 2
-      x: -924.66406
-      y: -452.4162
-      width: 1849.3281
-      height: 929.4359
+      x: -955.07117
+      y: -480
+      width: 1910.1423
+      height: 960
     m_MinimalGUI: 1
   m_defaultScale: 0.49594906
   m_LastWindowPixelSize: {x: 947.3333, y: 497.11108}
@@ -722,17 +722,7 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
-      - m_Data: -192950
-      - m_Data: -181206
-      - m_Data: -181194
-      - m_Data: -181190
       - m_Data: -1296
-      - m_Data: 46412
-      - m_Data: 46678
-      - m_Data: 46712
-      - m_Data: 46822
-      - m_Data: 46826
-      - m_Data: 46886
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -1537,7 +1527,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 592
+    y: 547.1111
     width: 1234.5555
     height: 284.6667
   m_SerializedDataModeController:
@@ -1564,7 +1554,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 1
     m_Folders:
-    - Assets/02_Scripts/Core/Upgrades
+    - Assets/02_Scripts/Core/MiningSystem/Minerals
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1574,7 +1564,7 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 85
   m_LastFolders:
-  - Assets/02_Scripts/Core/Upgrades
+  - Assets/02_Scripts/Core/MiningSystem/Minerals
   m_LastFoldersGridSize: 85
   m_LastProjectPath: D:\UNITY-Proyectos\HoleLabs
   m_LockTracker:
@@ -1583,9 +1573,9 @@ MonoBehaviour:
   m_FolderTreeState:
     scrollPos: {x: 0, y: 159}
     m_SelectedIDs:
-    - m_Data: 48194
+    - m_Data: 49296
     m_LastClickedID:
-      m_Data: 48194
+      m_Data: 49296
     m_ExpandedIDs:
     - m_Data: 0
     - m_Data: 47932
@@ -1648,10 +1638,9 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
   m_ListAreaState:
-    m_SelectedInstanceIDs:
-    - m_Data: -186274
-    m_LastClickedInstanceID: -186274
-    m_HadKeyboardFocusLastEvent: 0
+    m_SelectedInstanceIDs: []
+    m_LastClickedInstanceID: 0
+    m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs:
     - m_Data: 45224
     - m_Data: 47388
@@ -1680,7 +1669,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 11.333313}
+    m_ScrollPosition: {x: 0, y: 0}
     m_GridSize: 85
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 207
@@ -1706,7 +1695,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 547.1111
+    y: 592
     width: 1234.5555
     height: 284.6667
   m_SerializedDataModeController:

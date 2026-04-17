@@ -16,6 +16,8 @@ MonoBehaviour:
   DisplayName: Coal Extraction
   Description: Coal veins drop more ore pieces per level.
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
+  ShopId: Gold
+  Prerequisites: []
   MaxLevel: 3
   LevelCosts:
   - CurrencyType: 0
