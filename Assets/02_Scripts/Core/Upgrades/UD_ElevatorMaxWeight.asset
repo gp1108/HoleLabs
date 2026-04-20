@@ -16,6 +16,13 @@ MonoBehaviour:
   DisplayName: Elevator max weight
   Description: Increases the max weight capacity the elevator can carry
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
+  ShopId: Gold
+  Prerequisites: []
+  ResearchTabId: Elevator
+  ResearchGroupId: Elevator
+  ResearchVisualMode: 1
+  ResearchOrder: 1
+  ResearchManualPosition: {x: 0, y: 0}
   MaxLevel: 2
   LevelCosts:
   - CurrencyType: 0

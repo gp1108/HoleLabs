@@ -16,6 +16,13 @@ MonoBehaviour:
   DisplayName: Elevator rope
   Description: Increases the max distance the elevator can travel vertically
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
+  ShopId: Gold
+  Prerequisites: []
+  ResearchTabId: Elevator
+  ResearchGroupId: Elevator
+  ResearchVisualMode: 1
+  ResearchOrder: 3
+  ResearchManualPosition: {x: 0, y: 0}
   MaxLevel: 10
   LevelCosts:
   - CurrencyType: 0
@@ -44,4 +51,5 @@ MonoBehaviour:
     BaseValue: 5
     ValuePerLevel: 5
     StartApplyingAtLevelOne: 1
+    TargetOreId: 
   UnlockRewards: []
