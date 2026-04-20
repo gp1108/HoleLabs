@@ -207,7 +207,7 @@ public sealed class UpgradeDefinition : ScriptableObject
     [SerializeField] private Sprite Icon;
 
     [Header("Progression Metadata")]
-    [Tooltip("Logical shop identifier used by UI panels to group this upgrade into a specific store.")]
+    [Tooltip("Logical shop identifier used by UI panels or other systems to group this upgrade into a specific store.")]
     [SerializeField] private string ShopId;
 
     [Tooltip("Optional prerequisite upgrades required before this upgrade can be purchased.")]
@@ -261,7 +261,7 @@ public sealed class UpgradeDefinition : ScriptableObject
     }
 
     /// <summary>
-    /// Gets the logical shop identifier used to group this upgrade in a specific panel.
+    /// Gets the logical shop identifier used to group this upgrade in a specific panel or store.
     /// </summary>
     public string GetShopId()
     {

@@ -17,7 +17,9 @@ MonoBehaviour:
   Description: Gold ore sells for 15% more per level.
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
   ShopId: Research
-  Prerequisites: []
+  Prerequisites:
+  - RequiredUpgradeDefinition: {fileID: 11400000, guid: 1150a1a0ef76f044d8b531438711790d, type: 2}
+    RequiredLevel: 3
   MaxLevel: 4
   LevelCosts:
   - CurrencyType: 1

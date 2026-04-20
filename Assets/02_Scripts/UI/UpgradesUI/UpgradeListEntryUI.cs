@@ -3,11 +3,15 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Represents one research upgrade entry in the UI.
-/// This component is responsible only for visual data binding and purchase interaction.
+/// Manual list entry used to display one upgrade in a standard list layout.
+/// The UpgradeDefinition is assigned directly in the inspector.
 /// </summary>
-public sealed class UpgradeEntryUI : MonoBehaviour
+public sealed class UpgradeListEntryUI : MonoBehaviour
 {
+    [Header("Data")]
+    [Tooltip("Upgrade definition manually assigned to this list entry.")]
+    [SerializeField] private UpgradeDefinition UpgradeDefinition;
+
     [Header("References")]
     [Tooltip("Icon image used to display the upgrade artwork.")]
     [SerializeField] private Image IconImage;
@@ -44,19 +48,21 @@ public sealed class UpgradeEntryUI : MonoBehaviour
     [SerializeField] private Color MaxedColor = new Color(0.5f, 1f, 0.5f, 1f);
 
     private UpgradeManager UpgradeManager;
-    private UpgradeDefinition UpgradeDefinition;
 
     /// <summary>
-    /// Initializes this UI entry with runtime references and target upgrade data.
+    /// Gets the manually assigned upgrade definition.
     /// </summary>
-    public void Initialize(
-        UpgradeManager UpgradeManagerReference,
-        CurrencyWallet CurrencyWalletReference,
-        UpgradeDefinition UpgradeDefinitionReference
-    )
+    public UpgradeDefinition GetUpgradeDefinition()
+    {
+        return UpgradeDefinition;
+    }
+
+    /// <summary>
+    /// Initializes this manual list entry with runtime references.
+    /// </summary>
+    public void Initialize(UpgradeManager UpgradeManagerReference)
     {
         UpgradeManager = UpgradeManagerReference;
-        UpgradeDefinition = UpgradeDefinitionReference;
 
         if (PurchaseButton != null)
         {
@@ -68,7 +74,7 @@ public sealed class UpgradeEntryUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Refreshes all visual fields of this upgrade entry.
+    /// Refreshes all visual fields of this list entry.
     /// </summary>
     public void RefreshView()
     {
@@ -206,7 +212,7 @@ public sealed class UpgradeEntryUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Builds the current state label for the purchase button area.
+    /// Builds the current state label for the purchase area.
     /// </summary>
     private string BuildStateText(bool IsMaxed, UpgradePurchaseBlockReason BlockReason)
     {

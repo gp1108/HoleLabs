@@ -3,11 +3,10 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// Main controller for the upgrade UI.
-/// It builds upgrade entries, listens to wallet and upgrade events,
-/// and keeps the panel synchronized with runtime progression data.
-/// This panel can optionally filter definitions by ShopId so multiple stores
-/// can reuse the same central UpgradeManager without duplicating systems.
+/// Manual controller for the upgrade UI.
+/// This panel does not generate entries dynamically.
+/// Instead, it discovers manually placed list entries and tree groups,
+/// initializes them and refreshes their state when currency or upgrade data changes.
 /// </summary>
 public sealed class UpgradePanelUI : MonoBehaviour
 {
@@ -21,12 +20,6 @@ public sealed class UpgradePanelUI : MonoBehaviour
     [Tooltip("Root object toggled on and off when showing or hiding this panel.")]
     [SerializeField] private GameObject PanelRoot;
 
-    [Tooltip("Container where upgrade entry instances are spawned.")]
-    [SerializeField] private Transform EntryContainer;
-
-    [Tooltip("Prefab used to create one UI entry per visible upgrade definition.")]
-    [SerializeField] private UpgradeEntryUI EntryPrefab;
-
     [Header("Currencies")]
     [Tooltip("Text used to display the current gold balance.")]
     [SerializeField] private TMP_Text GoldAmountText;
@@ -34,30 +27,25 @@ public sealed class UpgradePanelUI : MonoBehaviour
     [Tooltip("Text used to display the current research balance.")]
     [SerializeField] private TMP_Text ResearchAmountText;
 
-    [Header("Shop Filter")]
-    [Tooltip("If true, this panel shows every upgrade definition regardless of ShopId.")]
-    [SerializeField] private bool ShowAllUpgrades = true;
+    [Header("Discovery")]
+    [Tooltip("If true, manual entries and tree groups are discovered during Awake.")]
+    [SerializeField] private bool DiscoverOnAwake = true;
 
-    [Tooltip("Logical shop id shown by this panel when ShowAllUpgrades is disabled.")]
-    [SerializeField] private string TargetShopId;
-
-    [Tooltip("If true, upgrades with an empty ShopId are also shown when filtering by TargetShopId.")]
-    [SerializeField] private bool IncludeEmptyShopIdWhenFiltering = false;
-
-    [Header("Behaviour")]
-    [Tooltip("If true, entries are rebuilt during Awake.")]
-    [SerializeField] private bool RebuildOnAwake = true;
-
-    [Tooltip("If true, entries are rebuilt during Start.")]
-    [SerializeField] private bool RebuildOnStart = true;
+    [Tooltip("If true, manual entries and tree groups are rediscovered whenever the panel is shown.")]
+    [SerializeField] private bool RediscoverOnShow = true;
 
     /// <summary>
-    /// Runtime list of entry instances currently spawned by this panel.
+    /// Manual list entries currently registered under this panel.
     /// </summary>
-    private readonly List<UpgradeEntryUI> SpawnedEntries = new();
+    private readonly List<UpgradeListEntryUI> RegisteredListEntries = new();
 
     /// <summary>
-    /// Resolves references, subscribes to runtime events and optionally builds the panel immediately.
+    /// Manual tree groups currently registered under this panel.
+    /// </summary>
+    private readonly List<UpgradeTreeGroupUI> RegisteredTreeGroups = new();
+
+    /// <summary>
+    /// Resolves references, subscribes to runtime events and optionally discovers manual UI elements.
     /// </summary>
     private void Awake()
     {
@@ -78,9 +66,10 @@ public sealed class UpgradePanelUI : MonoBehaviour
 
         SubscribeToEvents();
 
-        if (RebuildOnAwake)
+        if (DiscoverOnAwake)
         {
-            RebuildEntries();
+            DiscoverManualUi();
+            InitializeManualUi();
             RefreshAll();
         }
 
@@ -88,19 +77,7 @@ public sealed class UpgradePanelUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Optionally rebuilds the panel after all scene objects have finished initialization.
-    /// </summary>
-    private void Start()
-    {
-        if (RebuildOnStart)
-        {
-            RebuildEntries();
-            RefreshAll();
-        }
-    }
-
-    /// <summary>
-    /// Unsubscribes from wallet and upgrade events when this panel is destroyed.
+    /// Unsubscribes from runtime events when this panel is destroyed.
     /// </summary>
     private void OnDestroy()
     {
@@ -108,51 +85,68 @@ public sealed class UpgradePanelUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Rebuilds every entry shown by this panel using the configured shop filter.
+    /// Shows or hides this panel and refreshes its contents when opened.
     /// </summary>
-    public void RebuildEntries()
+    public void SetVisible(bool IsVisible)
     {
-        ClearEntries();
-
-        if (UpgradeManager == null || EntryContainer == null || EntryPrefab == null)
+        if (PanelRoot == null)
         {
             return;
         }
 
-        IReadOnlyList<UpgradeDefinition> UpgradeDefinitions = UpgradeManager.GetAllUpgradeDefinitions();
+        PanelRoot.SetActive(IsVisible);
 
-        for (int Index = 0; Index < UpgradeDefinitions.Count; Index++)
+        if (!IsVisible)
         {
-            UpgradeDefinition Definition = UpgradeDefinitions[Index];
-
-            if (Definition == null)
-            {
-                continue;
-            }
-
-            if (!ShouldDisplayUpgrade(Definition))
-            {
-                continue;
-            }
-
-            UpgradeEntryUI Entry = Instantiate(EntryPrefab, EntryContainer);
-            Entry.Initialize(UpgradeManager, CurrencyWallet, Definition);
-            SpawnedEntries.Add(Entry);
+            return;
         }
+
+        if (RediscoverOnShow)
+        {
+            DiscoverManualUi();
+        }
+
+        InitializeManualUi();
+        RefreshAll();
+        RebuildTreeGroups();
     }
 
     /// <summary>
-    /// Refreshes wallet labels and all currently spawned entries.
+    /// Shows this panel.
+    /// </summary>
+    public void ShowPanel()
+    {
+        SetVisible(true);
+    }
+
+    /// <summary>
+    /// Hides this panel.
+    /// </summary>
+    public void HidePanel()
+    {
+        SetVisible(false);
+    }
+
+    /// <summary>
+    /// Refreshes wallet labels and all registered manual entries.
     /// </summary>
     public void RefreshAll()
     {
         RefreshCurrencyTexts();
 
-        for (int Index = 0; Index < SpawnedEntries.Count; Index++)
+        for (int Index = 0; Index < RegisteredListEntries.Count; Index++)
         {
-            if (SpawnedEntries[Index] != null)
+            if (RegisteredListEntries[Index] != null)
             {
-                SpawnedEntries[Index].RefreshView();
+                RegisteredListEntries[Index].RefreshView();
+            }
+        }
+
+        for (int Index = 0; Index < RegisteredTreeGroups.Count; Index++)
+        {
+            if (RegisteredTreeGroups[Index] != null)
+            {
+                RegisteredTreeGroups[Index].RefreshAllEntries();
             }
         }
     }
@@ -179,58 +173,67 @@ public sealed class UpgradePanelUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Shows or hides this panel and refreshes its entries when opened.
+    /// Discovers all manual list entries and tree groups under this panel, including inactive children.
     /// </summary>
-    public void SetVisible(bool IsVisible)
+    public void DiscoverManualUi()
     {
-        if (PanelRoot == null)
+        RegisteredListEntries.Clear();
+        RegisteredTreeGroups.Clear();
+
+        UpgradeListEntryUI[] ListEntries = GetComponentsInChildren<UpgradeListEntryUI>(true);
+        UpgradeTreeGroupUI[] TreeGroups = GetComponentsInChildren<UpgradeTreeGroupUI>(true);
+
+        for (int Index = 0; Index < ListEntries.Length; Index++)
         {
-            return;
+            if (ListEntries[Index] != null)
+            {
+                RegisteredListEntries.Add(ListEntries[Index]);
+            }
         }
 
-        PanelRoot.SetActive(IsVisible);
-
-        if (IsVisible)
+        for (int Index = 0; Index < TreeGroups.Length; Index++)
         {
-            RebuildEntries();
-            RefreshAll();
+            if (TreeGroups[Index] != null)
+            {
+                RegisteredTreeGroups.Add(TreeGroups[Index]);
+            }
         }
     }
 
     /// <summary>
-    /// Shows this panel.
+    /// Initializes every discovered manual UI component with the runtime references required to function.
     /// </summary>
-    public void ShowPanel()
+    public void InitializeManualUi()
     {
-        SetVisible(true);
+        for (int Index = 0; Index < RegisteredListEntries.Count; Index++)
+        {
+            if (RegisteredListEntries[Index] != null)
+            {
+                RegisteredListEntries[Index].Initialize(UpgradeManager);
+            }
+        }
+
+        for (int Index = 0; Index < RegisteredTreeGroups.Count; Index++)
+        {
+            if (RegisteredTreeGroups[Index] != null)
+            {
+                RegisteredTreeGroups[Index].Initialize(UpgradeManager);
+            }
+        }
     }
 
     /// <summary>
-    /// Hides this panel.
+    /// Rebuilds all registered tree groups so their visual connections match the current manual layout.
     /// </summary>
-    public void HidePanel()
+    public void RebuildTreeGroups()
     {
-        SetVisible(false);
-    }
-
-    /// <summary>
-    /// Sets the target shop id used by this panel and rebuilds the visible entries.
-    /// </summary>
-    public void SetTargetShopId(string NewTargetShopId)
-    {
-        TargetShopId = NewTargetShopId;
-        RebuildEntries();
-        RefreshAll();
-    }
-
-    /// <summary>
-    /// Sets whether this panel should ignore shop filtering and show all upgrades.
-    /// </summary>
-    public void SetShowAllUpgrades(bool ShouldShowAllUpgrades)
-    {
-        ShowAllUpgrades = ShouldShowAllUpgrades;
-        RebuildEntries();
-        RefreshAll();
+        for (int Index = 0; Index < RegisteredTreeGroups.Count; Index++)
+        {
+            if (RegisteredTreeGroups[Index] != null)
+            {
+                RegisteredTreeGroups[Index].RebuildConnections();
+            }
+        }
     }
 
     /// <summary>
@@ -266,47 +269,6 @@ public sealed class UpgradePanelUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Destroys every currently spawned entry instance.
-    /// </summary>
-    private void ClearEntries()
-    {
-        for (int Index = 0; Index < SpawnedEntries.Count; Index++)
-        {
-            if (SpawnedEntries[Index] != null)
-            {
-                Destroy(SpawnedEntries[Index].gameObject);
-            }
-        }
-
-        SpawnedEntries.Clear();
-    }
-
-    /// <summary>
-    /// Returns whether the provided upgrade definition belongs to this panel according to the current shop filter.
-    /// </summary>
-    private bool ShouldDisplayUpgrade(UpgradeDefinition Definition)
-    {
-        if (Definition == null)
-        {
-            return false;
-        }
-
-        if (ShowAllUpgrades)
-        {
-            return true;
-        }
-
-        string DefinitionShopId = Definition.GetShopId();
-
-        if (string.IsNullOrWhiteSpace(DefinitionShopId))
-        {
-            return IncludeEmptyShopIdWhenFiltering;
-        }
-
-        return string.Equals(DefinitionShopId, TargetShopId, System.StringComparison.Ordinal);
-    }
-
-    /// <summary>
     /// Refreshes the panel when any currency amount changes.
     /// </summary>
     private void HandleCurrencyChanged(CurrencyWallet.CurrencyType CurrencyTypeValue, float NewAmount)
@@ -315,7 +277,7 @@ public sealed class UpgradePanelUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Refreshes the panel when upgrade state changes.
+    /// Refreshes all manual entries when upgrade state changes.
     /// </summary>
     private void HandleUpgradeStateChanged()
     {
