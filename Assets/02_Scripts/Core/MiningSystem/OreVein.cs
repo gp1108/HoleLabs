@@ -122,6 +122,71 @@ public sealed class OreVein : MonoBehaviour, IMineable
     }
 
     /// <summary>
+    /// Gets whether this vein is currently regrowing.
+    /// </summary>
+    public bool GetIsGrowing()
+    {
+        return CurrentState == VeinState.Growing;
+    }
+
+    /// <summary>
+    /// Gets the current remaining hit count for this vein.
+    /// </summary>
+    public int GetCurrentHitsRemaining()
+    {
+        return Mathf.Max(0, CurrentHitsRemaining);
+    }
+
+    /// <summary>
+    /// Gets the remaining regrowth timer for this vein.
+    /// </summary>
+    public float GetCurrentRespawnTimer()
+    {
+        return Mathf.Max(0f, CurrentRespawnTimer);
+    }
+
+    /// <summary>
+    /// Restores the runtime state of this vein after it has been spawned from its saved ore definition.
+    /// </summary>
+    /// <param name="IsGrowingValue">True if the vein should be regrowing.</param>
+    /// <param name="HitsRemainingValue">Saved remaining hit count for ready veins.</param>
+    /// <param name="RespawnTimerRemainingValue">Saved remaining regrowth timer.</param>
+    public void ApplySavedRuntimeState(bool IsGrowingValue, int HitsRemainingValue, float RespawnTimerRemainingValue)
+    {
+        if (OreDefinition == null || OreRuntimeService == null)
+        {
+            return;
+        }
+
+        if (IsGrowingValue)
+        {
+            CurrentState = VeinState.Growing;
+            CurrentRespawnTimer = Mathf.Max(0f, RespawnTimerRemainingValue);
+            CurrentHitsRemaining = 0;
+
+            float RespawnDuration = Mathf.Max(0.01f, OreRuntimeService.ResolveRespawnTime(OreDefinition));
+            float NormalizedProgress = 1f - Mathf.Clamp01(CurrentRespawnTimer / RespawnDuration);
+            UpdateGrowthVisual(NormalizedProgress);
+
+            if (CurrentRespawnTimer <= 0f)
+            {
+                ResetReadyState();
+            }
+
+            return;
+        }
+
+        CurrentState = VeinState.Ready;
+        CurrentRespawnTimer = 0f;
+        CurrentHitsRemaining = Mathf.Clamp(
+            HitsRemainingValue,
+            1,
+            Mathf.Max(1, OreRuntimeService.ResolveHitsRequired(OreDefinition)));
+
+        UpdateGrowthVisual(1f);
+    }
+
+    /// <summary>
     /// Initializes this ore vein with its definition, runtime service and owner point.
     /// </summary>
     /// <param name="OreDefinitionValue">Definition used by this ore vein.</param>

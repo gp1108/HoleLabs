@@ -297,6 +297,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
     /// <summary>
     /// Attempts to insert the looked world item into the hotbar or swap it with the selected slot.
+    /// Scene-placed persistent world items are hidden instead of destroyed so they can be restored by save/load.
     /// </summary>
     private void TryInteractWithWorldItem(WorldItem WorldItem)
     {
@@ -312,13 +313,24 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
+        ScenePlacedWorldItemPersistence ScenePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+
         int InsertedSlotIndex;
         bool WasAdded = HotbarController.TryAddItem(WorldItemInstance.Clone(), HotbarController.GetSelectedIndex(), out InsertedSlotIndex);
 
         if (WasAdded)
         {
             Log("Picked world item into hotbar slot: " + InsertedSlotIndex);
-            Destroy(WorldItem.gameObject);
+
+            if (ScenePersistence != null)
+            {
+                ScenePersistence.SetPresent(false);
+            }
+            else
+            {
+                Destroy(WorldItem.gameObject);
+            }
+
             CurrentLookedWorldItem = null;
             return;
         }
@@ -334,7 +346,15 @@ public sealed class PlayerInteractionController : MonoBehaviour
         Vector3 SpawnLinearVelocity = WorldItem.GetLinearVelocity();
         Vector3 SpawnAngularVelocity = WorldItem.GetAngularVelocity();
 
-        Destroy(WorldItem.gameObject);
+        if (ScenePersistence != null)
+        {
+            ScenePersistence.SetPresent(false);
+        }
+        else
+        {
+            Destroy(WorldItem.gameObject);
+        }
+
         CurrentLookedWorldItem = null;
 
         ItemInstance PreviousSelectedItem = HotbarController.ReplaceSelectedItem(WorldItemInstance.Clone());

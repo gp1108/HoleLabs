@@ -513,6 +513,11 @@ public sealed class OreSellTrigger : MonoBehaviour
             {
                 MoneyPickup = Instance.GetComponentInChildren<MoneyPickup>(true);
             }
+
+            if (MoneyPickup != null)
+            {
+                MoneyPickup.BindPool(null, Denomination.GetPrefab());
+            }
         }
 
         if (MoneyPickup == null)

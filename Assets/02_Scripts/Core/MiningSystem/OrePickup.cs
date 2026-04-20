@@ -26,6 +26,15 @@ public sealed class OrePickup : MonoBehaviour
     private GameObject SourcePrefab;
 
     /// <summary>
+    /// Gets the prefab originally used to create this pickup.
+    /// This is used by the save system to recreate the same visual object.
+    /// </summary>
+    public GameObject GetSourcePrefab()
+    {
+        return SourcePrefab;
+    }
+
+    /// <summary>
     /// Initializes this pickup with runtime ore data.
     /// </summary>
     public void Initialize(OreItemData oreItemData)

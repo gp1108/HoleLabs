@@ -24,6 +24,15 @@ public sealed class MoneyPickup : MonoBehaviour
     private GameObject SourcePrefab;
 
     /// <summary>
+    /// Gets the prefab originally used to create this pickup.
+    /// This is used by the save system to recreate the same visual object.
+    /// </summary>
+    public GameObject GetSourcePrefab()
+    {
+        return SourcePrefab;
+    }
+
+    /// <summary>
     /// Initializes the runtime currency payload stored by this pickup.
     /// </summary>
     public void Initialize(float AmountValue, CurrencyWallet.CurrencyType CurrencyTypeValue)

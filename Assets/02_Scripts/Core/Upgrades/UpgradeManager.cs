@@ -9,6 +9,132 @@ using UnityEngine;
 public sealed class UpgradeManager : MonoBehaviour
 {
     [Serializable]
+    public sealed class UpgradeSaveEntry
+    {
+        [Tooltip("Upgrade id saved in the slot.")]
+        [SerializeField] private string UpgradeId;
+
+        [Tooltip("Purchased level saved for this upgrade.")]
+        [SerializeField] private int Level;
+
+        /// <summary>
+        /// Creates one upgrade save entry.
+        /// </summary>
+        public UpgradeSaveEntry(string UpgradeIdValue, int LevelValue)
+        {
+            UpgradeId = UpgradeIdValue;
+            Level = Mathf.Max(0, LevelValue);
+        }
+
+        /// <summary>
+        /// Gets the saved upgrade id.
+        /// </summary>
+        public string GetUpgradeId()
+        {
+            return UpgradeId;
+        }
+
+        /// <summary>
+        /// Gets the saved purchased level.
+        /// </summary>
+        public int GetLevel()
+        {
+            return Mathf.Max(0, Level);
+        }
+    }
+
+    /// <summary>
+    /// Creates a compact save snapshot of all currently owned upgrade levels.
+    /// Only upgrades above level zero are stored.
+    /// </summary>
+    public List<UpgradeSaveEntry> CreateSaveEntries()
+    {
+        List<UpgradeSaveEntry> Result = new List<UpgradeSaveEntry>();
+
+        foreach (UpgradeDefinition Definition in UpgradeDefinitions)
+        {
+            if (Definition == null)
+            {
+                continue;
+            }
+
+            string UpgradeId = Definition.GetUpgradeId();
+
+            if (string.IsNullOrWhiteSpace(UpgradeId))
+            {
+                continue;
+            }
+
+            int CurrentLevel = GetUpgradeLevel(Definition);
+
+            if (CurrentLevel <= 0)
+            {
+                continue;
+            }
+
+            Result.Add(new UpgradeSaveEntry(UpgradeId, CurrentLevel));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Applies a full saved upgrade snapshot.
+    /// Known upgrades are reset first and then restored from the saved entries.
+    /// </summary>
+    /// <param name="Entries">Saved upgrade entries.</param>
+    public void ApplySaveEntries(List<UpgradeSaveEntry> Entries)
+    {
+        for (int Index = 0; Index < UpgradeDefinitions.Count; Index++)
+        {
+            UpgradeDefinition Definition = UpgradeDefinitions[Index];
+
+            if (Definition == null)
+            {
+                continue;
+            }
+
+            string UpgradeId = Definition.GetUpgradeId();
+
+            if (string.IsNullOrWhiteSpace(UpgradeId))
+            {
+                continue;
+            }
+
+            LevelsById[UpgradeId] = 0;
+            SyncDebugRuntimeLevels(Definition, 0);
+        }
+
+        if (Entries != null)
+        {
+            for (int Index = 0; Index < Entries.Count; Index++)
+            {
+                UpgradeSaveEntry Entry = Entries[Index];
+
+                if (Entry == null || string.IsNullOrWhiteSpace(Entry.GetUpgradeId()))
+                {
+                    continue;
+                }
+
+                UpgradeDefinition Definition = GetUpgradeDefinition(Entry.GetUpgradeId());
+
+                if (Definition == null)
+                {
+                    continue;
+                }
+
+                int ClampedLevel = Mathf.Clamp(Entry.GetLevel(), 0, Definition.GetMaxLevel());
+                LevelsById[Definition.GetUpgradeId()] = ClampedLevel;
+                SyncDebugRuntimeLevels(Definition, ClampedLevel);
+                OnUpgradeLevelChanged?.Invoke(Definition, ClampedLevel);
+            }
+        }
+
+        RebuildRewardCache();
+        OnUpgradeStateChanged?.Invoke();
+    }
+
+    [Serializable]
     private sealed class UpgradeLevelEntry
     {
         [Tooltip("Upgrade definition represented by this runtime debug entry.")]

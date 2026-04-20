@@ -174,13 +174,48 @@ public sealed class PlayerController : MonoBehaviour
     private float LastPlatformUpwardSpeed;
 
     /// <summary>
-    /// Caches references and initializes the standing controller state.
+    /// Gets the current player world position.
     /// </summary>
+    public Vector3 GetWorldPosition()
+    {
+        return transform.position;
+    }
 
     /// <summary>
-    /// Allows external systems to temporarily block or restore camera look processing.
+    /// Restores the saved player pose and crouch state in a stable way.
+    /// The controller is temporarily disabled so repositioning does not fight CharacterController collision resolution.
     /// </summary>
-    /// <param name="IsBlocked">True to block camera look, false to restore it.</param>
+    /// <param name="Position">Saved world position.</param>
+    /// <param name="SavedIsCrouching">Saved crouch state.</param>
+    public void ApplySavedState(Vector3 Position, bool SavedIsCrouching)
+    {
+        if (CharacterController == null)
+        {
+            return;
+        }
+
+        bool WasEnabled = CharacterController.enabled;
+        CharacterController.enabled = false;
+        transform.position = Position;
+        CharacterController.enabled = WasEnabled;
+
+        WantsToCrouch = SavedIsCrouching;
+        IsCrouching = SavedIsCrouching;
+
+        ApplyControllerHeight(SavedIsCrouching ? CrouchingHeight : StandingHeight);
+
+        Vector3 TargetPivot = CameraPivotStandingLocalPosition + Vector3.up * (SavedIsCrouching ? CrouchCameraOffset : 0f);
+        CameraPivot.localPosition = TargetPivot;
+
+        VerticalVelocity = 0f;
+        Velocity = Vector3.zero;
+        JumpRequested = false;
+        JumpBufferTimer = 0f;
+        GroundGraceTimer = 0f;
+        PlatformGraceTimer = 0f;
+        LastPlatformUpwardSpeed = 0f;
+        CurrentPlatform = null;
+    }
 
     /// <summary>
     /// Whether movement input is temporarily blocked by an external modal state.

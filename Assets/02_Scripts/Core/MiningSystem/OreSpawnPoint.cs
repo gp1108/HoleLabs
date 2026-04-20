@@ -13,6 +13,15 @@ public sealed class OreSpawnPoint : MonoBehaviour
     [Tooltip("Ore vein currently spawned at this point.")]
     [SerializeField] private OreVein CurrentVein;
 
+
+    /// <summary>
+    /// Gets the currently spawned vein hosted by this spawn point, if any.
+    /// </summary>
+    public OreVein GetCurrentVein()
+    {
+        return CurrentVein;
+    }
+
     public bool GetIsActive()
     {
         return IsActive;

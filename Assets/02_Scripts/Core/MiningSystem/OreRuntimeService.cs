@@ -269,7 +269,12 @@ public sealed class OreRuntimeService : MonoBehaviour
 
             if (OrePickup == null)
             {
-                OrePickup = DroppedObject.GetComponentInChildren<OrePickup>();
+                OrePickup = DroppedObject.GetComponentInChildren<OrePickup>(true);
+            }
+
+            if (OrePickup != null)
+            {
+                OrePickup.BindPool(null, DroppedOrePrefab);
             }
         }
 
