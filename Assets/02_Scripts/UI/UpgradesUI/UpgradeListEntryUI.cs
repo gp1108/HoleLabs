@@ -3,33 +3,66 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Represents one research upgrade entry in the UI.
-/// This component is responsible only for visual data binding and purchase interaction.
+/// Manual list entry used to display one upgrade in a standard list layout.
+/// The UpgradeDefinition is assigned directly in the inspector.
 /// </summary>
-public sealed class UpgradeEntryUI : MonoBehaviour
+public sealed class UpgradeListEntryUI : MonoBehaviour
 {
+    [Header("Data")]
+    [Tooltip("Upgrade definition manually assigned to this list entry.")]
+    [SerializeField] private UpgradeDefinition UpgradeDefinition;
+
     [Header("References")]
+    [Tooltip("Icon image used to display the upgrade artwork.")]
     [SerializeField] private Image IconImage;
+
+    [Tooltip("Text used to display the upgrade name.")]
     [SerializeField] private TMP_Text NameText;
+
+    [Tooltip("Text used to display the upgrade description.")]
     [SerializeField] private TMP_Text DescriptionText;
+
+    [Tooltip("Text used to display the current and maximum level.")]
     [SerializeField] private TMP_Text LevelText;
+
+    [Tooltip("Text used to display the next level cost.")]
     [SerializeField] private TMP_Text CostText;
+
+    [Tooltip("Text used to preview the next modifier or reward.")]
     [SerializeField] private TMP_Text EffectPreviewText;
+
+    [Tooltip("Text used to display the current purchase state.")]
     [SerializeField] private TMP_Text StateText;
+
+    [Tooltip("Button used to trigger the purchase attempt.")]
     [SerializeField] private Button PurchaseButton;
 
     [Header("Colors")]
+    [Tooltip("Color used when the upgrade is currently purchasable.")]
     [SerializeField] private Color PurchasableColor = Color.white;
+
+    [Tooltip("Color used when the upgrade is blocked.")]
     [SerializeField] private Color NotPurchasableColor = new Color(1f, 0.55f, 0.55f, 1f);
+
+    [Tooltip("Color used when the upgrade is already maxed.")]
     [SerializeField] private Color MaxedColor = new Color(0.5f, 1f, 0.5f, 1f);
 
     private UpgradeManager UpgradeManager;
-    private UpgradeDefinition UpgradeDefinition;
 
-    public void Initialize(UpgradeManager UpgradeManagerReference, CurrencyWallet CurrencyWalletReference, UpgradeDefinition UpgradeDefinitionReference)
+    /// <summary>
+    /// Gets the manually assigned upgrade definition.
+    /// </summary>
+    public UpgradeDefinition GetUpgradeDefinition()
+    {
+        return UpgradeDefinition;
+    }
+
+    /// <summary>
+    /// Initializes this manual list entry with runtime references.
+    /// </summary>
+    public void Initialize(UpgradeManager UpgradeManagerReference)
     {
         UpgradeManager = UpgradeManagerReference;
-        UpgradeDefinition = UpgradeDefinitionReference;
 
         if (PurchaseButton != null)
         {
@@ -40,6 +73,9 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         RefreshView();
     }
 
+    /// <summary>
+    /// Refreshes all visual fields of this list entry.
+    /// </summary>
     public void RefreshView()
     {
         if (UpgradeDefinition == null || UpgradeManager == null)
@@ -50,7 +86,8 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         int CurrentLevel = UpgradeManager.GetUpgradeLevel(UpgradeDefinition);
         int MaxLevel = UpgradeDefinition.GetMaxLevel();
         bool IsMaxed = CurrentLevel >= MaxLevel;
-        bool CanPurchase = !IsMaxed && UpgradeManager.CanPurchaseUpgrade(UpgradeDefinition);
+        UpgradePurchaseBlockReason BlockReason = UpgradeManager.GetPurchaseBlockReason(UpgradeDefinition);
+        bool CanPurchase = BlockReason == UpgradePurchaseBlockReason.None;
 
         if (IconImage != null)
         {
@@ -86,7 +123,7 @@ public sealed class UpgradeEntryUI : MonoBehaviour
 
         if (StateText != null)
         {
-            StateText.text = BuildStateText(IsMaxed, CanPurchase);
+            StateText.text = BuildStateText(IsMaxed, BlockReason);
             StateText.color = GetStateColor(IsMaxed, CanPurchase);
         }
 
@@ -96,6 +133,9 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Handles the purchase button click and forwards the request to the upgrade manager.
+    /// </summary>
     private void HandlePurchaseButtonClicked()
     {
         if (UpgradeManager == null || UpgradeDefinition == null)
@@ -106,6 +146,9 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         UpgradeManager.TryPurchaseUpgrade(UpgradeDefinition);
     }
 
+    /// <summary>
+    /// Builds the cost label for the next level purchase.
+    /// </summary>
     private string BuildCostText(int CurrentLevel, bool IsMaxed)
     {
         if (IsMaxed)
@@ -124,6 +167,9 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         return "Cost: " + NextCost.GetCost().ToString("0.00") + " " + NextCost.GetCurrencyType();
     }
 
+    /// <summary>
+    /// Builds the preview text for the next relevant modifier or reward.
+    /// </summary>
     private string BuildEffectPreviewText(int CurrentLevel, bool IsMaxed)
     {
         if (UpgradeDefinition == null)
@@ -165,16 +211,71 @@ public sealed class UpgradeEntryUI : MonoBehaviour
         return "No preview";
     }
 
-    private string BuildStateText(bool IsMaxed, bool CanPurchase)
+    /// <summary>
+    /// Builds the current state label for the purchase area.
+    /// </summary>
+    private string BuildStateText(bool IsMaxed, UpgradePurchaseBlockReason BlockReason)
     {
         if (IsMaxed)
         {
             return "MAXED";
         }
 
-        return CanPurchase ? "Available" : "Not enough currency";
+        switch (BlockReason)
+        {
+            case UpgradePurchaseBlockReason.None:
+                return "Available";
+
+            case UpgradePurchaseBlockReason.MissingPrerequisite:
+                return BuildMissingPrerequisiteText();
+
+            case UpgradePurchaseBlockReason.NotEnoughCurrency:
+                return "Not enough currency";
+
+            case UpgradePurchaseBlockReason.MissingLevelCost:
+                return "Missing cost config";
+
+            case UpgradePurchaseBlockReason.MissingCurrencyWallet:
+                return "Wallet missing";
+
+            case UpgradePurchaseBlockReason.MissingDefinition:
+                return "Invalid upgrade";
+
+            case UpgradePurchaseBlockReason.AlreadyMaxLevel:
+                return "MAXED";
+
+            default:
+                return "Unavailable";
+        }
     }
 
+    /// <summary>
+    /// Builds a compact state text describing the first unmet prerequisite.
+    /// </summary>
+    private string BuildMissingPrerequisiteText()
+    {
+        if (UpgradeManager == null || UpgradeDefinition == null)
+        {
+            return "Prerequisite missing";
+        }
+
+        if (!UpgradeManager.TryGetFirstUnmetPrerequisite(
+                UpgradeDefinition,
+                out UpgradeDefinition.UpgradePrerequisiteDefinition UnmetPrerequisite
+            ) || UnmetPrerequisite == null)
+        {
+            return "Prerequisite missing";
+        }
+
+        UpgradeDefinition RequiredDefinition = UnmetPrerequisite.GetRequiredUpgradeDefinition();
+        string RequiredName = RequiredDefinition != null ? RequiredDefinition.GetDisplayName() : "Missing Upgrade Reference";
+
+        return "Requires " + RequiredName + " Lv " + UnmetPrerequisite.GetRequiredLevel();
+    }
+
+    /// <summary>
+    /// Gets the color that matches the current purchase state.
+    /// </summary>
     private Color GetStateColor(bool IsMaxed, bool CanPurchase)
     {
         if (IsMaxed)

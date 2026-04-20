@@ -16,13 +16,20 @@ MonoBehaviour:
   DisplayName: Iron Pricing
   Description: Iron gains +5 gold sale value per level.
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
+  ShopId: Research
+  Prerequisites: []
+  ResearchTabId: Ores
+  ResearchGroupId: Ores
+  ResearchVisualMode: 0
+  ResearchOrder: 0
+  ResearchManualPosition: {x: 0, y: 0}
   MaxLevel: 4
   LevelCosts:
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 40
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 120
-  - CurrencyType: 0
+  - CurrencyType: 1
     Cost: 240
   - CurrencyType: 0
     Cost: 400

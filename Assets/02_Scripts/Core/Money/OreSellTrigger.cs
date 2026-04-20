@@ -14,11 +14,13 @@ using UnityEngine;
 [RequireComponent(typeof(Collider))]
 public sealed class OreSellTrigger : MonoBehaviour
 {
-    /// <summary>
-    /// Runtime precision used for every exact payout decomposition.
-    /// 100 means the smallest supported physical unit is 0.01 currency.
-    /// </summary>
     private const int CurrencyMinorUnitFactor = 100;
+
+    private enum MoneyVisualType
+    {
+        Coin = 0,
+        Bill = 1
+    }
 
     [System.Serializable]
     private sealed class MoneyDenomination
@@ -35,71 +37,48 @@ public sealed class OreSellTrigger : MonoBehaviour
         [Tooltip("Relative random weight used when multiple prefabs share the same fixed value.")]
         [SerializeField] private int Weight = 1;
 
-        /// <summary>
-        /// Gets the denomination display id.
-        /// </summary>
+        [Tooltip("Visual/physical family used to choose the correct eject point and impulse profile.")]
+        [SerializeField] private MoneyVisualType VisualType = MoneyVisualType.Coin;
+
         public string GetId()
         {
             return Id;
         }
 
-        /// <summary>
-        /// Gets the emitted prefab.
-        /// </summary>
         public GameObject GetPrefab()
         {
             return Prefab;
         }
 
-        /// <summary>
-        /// Gets the fixed gold value of this denomination.
-        /// </summary>
         public float GetGoldValue()
         {
             return Mathf.Max(0.01f, GoldValue);
         }
 
-        /// <summary>
-        /// Gets the fixed gold value converted to exact minor currency units.
-        /// </summary>
         public int GetGoldValueMinorUnits()
         {
             return Mathf.Max(1, ToMinorUnits(GoldValue));
         }
 
-        /// <summary>
-        /// Gets the random selection weight.
-        /// </summary>
         public int GetWeight()
         {
             return Mathf.Max(1, Weight);
         }
+
+        public MoneyVisualType GetVisualType()
+        {
+            return VisualType;
+        }
     }
 
-    /// <summary>
-    /// Runtime entry describing one queued ore waiting to be processed by the machine.
-    /// </summary>
     private sealed class PendingOreSale
     {
-        /// <summary>
-        /// Original ore pickup still physically stored in the machine until consumed.
-        /// </summary>
         public OrePickup OrePickup;
-
-        /// <summary>
-        /// Runtime ore payload used to calculate money and research.
-        /// </summary>
         public OreItemData OreItemData;
     }
 
-    /// <summary>
-    /// Runtime entry describing one exact money denomination waiting to be emitted.
-    /// </summary>
     private sealed class PendingMoneyEmission
     {
-        /// <summary>
-        /// Denomination selected for this exact payout piece.
-        /// </summary>
         public MoneyDenomination Denomination;
     }
 
@@ -110,8 +89,12 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("Pool used to reuse money prefabs instead of instantiating and destroying them.")]
     [SerializeField] private MoneyPickupPool MoneyPickupPool;
 
-    [Tooltip("World point and orientation used to eject coins and bills.")]
-    [SerializeField] private Transform MoneyEjectPoint;
+    [Header("Eject Points")]
+    [Tooltip("World point and orientation used to eject coins.")]
+    [SerializeField] private Transform CoinEjectPoint;
+
+    [Tooltip("World point and orientation used to eject bills.")]
+    [SerializeField] private Transform BillEjectPoint;
 
     [Header("Ore Processing")]
     [Tooltip("Time in seconds between each consumed ore while the machine has pending minerals.")]
@@ -127,18 +110,31 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("Amount of pending emitted pieces required to reach the minimum emission interval.")]
     [SerializeField] private int FastEmissionQueueThreshold = 100;
 
-    [Header("Emission")]
-    [Tooltip("Forward impulse applied to emitted money rigidbodies.")]
-    [SerializeField] private float ForwardImpulse = 5f;
+    [Header("Coin Emission")]
+    [Tooltip("Forward impulse applied to emitted coin rigidbodies.")]
+    [SerializeField] private float CoinForwardImpulse = 5f;
 
-    [Tooltip("Upward impulse applied to emitted money rigidbodies.")]
-    [SerializeField] private float UpwardImpulse = 1.5f;
+    [Tooltip("Upward impulse applied to emitted coin rigidbodies.")]
+    [SerializeField] private float CoinUpwardImpulse = 1.5f;
 
-    [Tooltip("Random sphere impulse added to make the cashier output feel less robotic.")]
-    [SerializeField] private float RandomImpulse = 0.75f;
+    [Tooltip("Random sphere impulse added to emitted coins.")]
+    [SerializeField] private float CoinRandomImpulse = 0.75f;
 
-    [Tooltip("Optional torque impulse added to emitted money rigidbodies.")]
-    [SerializeField] private float RandomTorqueImpulse = 0.25f;
+    [Tooltip("Optional torque impulse added to emitted coins.")]
+    [SerializeField] private float CoinRandomTorqueImpulse = 0.25f;
+
+    [Header("Bill Emission")]
+    [Tooltip("Forward impulse applied to emitted bill rigidbodies.")]
+    [SerializeField] private float BillForwardImpulse = 2.25f;
+
+    [Tooltip("Upward impulse applied to emitted bill rigidbodies.")]
+    [SerializeField] private float BillUpwardImpulse = 0.75f;
+
+    [Tooltip("Random sphere impulse added to emitted bills.")]
+    [SerializeField] private float BillRandomImpulse = 0.25f;
+
+    [Tooltip("Optional torque impulse added to emitted bills.")]
+    [SerializeField] private float BillRandomTorqueImpulse = 0.05f;
 
     [Header("Payout Rules")]
     [Tooltip("If true, research is still granted instantly when the ore is consumed by the machine.")]
@@ -158,44 +154,19 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("Logs sales, processed ore, denomination decomposition and money emissions.")]
     [SerializeField] private bool DebugLogs = false;
 
-    /// <summary>
-    /// Ore waiting to be consumed by the machine.
-    /// </summary>
     private readonly Queue<PendingOreSale> PendingOreSales = new();
-
-    /// <summary>
-    /// Exact physical denomination pieces waiting to be emitted.
-    /// </summary>
     private readonly Queue<PendingMoneyEmission> PendingMoneyEmissions = new();
-
-    /// <summary>
-    /// Cached valid denominations sorted from higher to lower fixed value.
-    /// </summary>
     private readonly List<MoneyDenomination> SortedDenominations = new();
-
-    /// <summary>
-    /// Tracks ore pickups already queued to avoid duplicate trigger entries.
-    /// </summary>
     private readonly HashSet<OrePickup> QueuedOrePickups = new();
-
     /// <summary>
-    /// Timer controlling the next ore consumption step.
+    /// Tracks ore pickups currently inside the sale trigger volume.
     /// </summary>
+    private readonly HashSet<OrePickup> OrePickupsInsideTrigger = new();
+
     private float OreConsumeTimer;
-
-    /// <summary>
-    /// Timer controlling the next money emission step.
-    /// </summary>
     private float MoneyEmissionTimer;
 
-    /// <summary>
-    /// Current amount of ore payloads waiting to be processed by the machine.
-    /// </summary>
     public int PendingSaleCount => PendingOreSales.Count;
-
-    /// <summary>
-    /// Current amount of physical money pieces waiting to be emitted.
-    /// </summary>
     public int PendingMoneyEmissionCount => PendingMoneyEmissions.Count;
 
     /// <summary>
@@ -205,9 +176,14 @@ public sealed class OreSellTrigger : MonoBehaviour
     {
         CacheSortedDenominations();
 
-        if (MoneyEjectPoint == null)
+        if (CoinEjectPoint == null)
         {
-            MoneyEjectPoint = transform;
+            CoinEjectPoint = transform;
+        }
+
+        if (BillEjectPoint == null)
+        {
+            BillEjectPoint = CoinEjectPoint != null ? CoinEjectPoint : transform;
         }
     }
 
@@ -220,17 +196,54 @@ public sealed class OreSellTrigger : MonoBehaviour
         UpdateMoneyEmission();
     }
 
-    /// <summary>
-    /// Receives ore pickups entering the sale trigger.
-    /// </summary>
     private void OnTriggerEnter(Collider Other)
     {
-        TryQueueSaleFromCollider(Other);
+        if (Other == null)
+        {
+            return;
+        }
+
+        OrePickup OrePickup = Other.GetComponent<OrePickup>();
+
+        if (OrePickup == null)
+        {
+            OrePickup = Other.GetComponentInParent<OrePickup>();
+        }
+
+        if (OrePickup == null)
+        {
+            return;
+        }
+
+        OrePickupsInsideTrigger.Add(OrePickup);
+        TryQueueSalePickup(OrePickup);
     }
 
-    /// <summary>
-    /// Attempts to queue one ore pickup resolved from the provided collider.
-    /// </summary>
+    private void OnTriggerExit(Collider Other)
+    {
+        if (Other == null)
+        {
+            return;
+        }
+
+        OrePickup OrePickup = Other.GetComponent<OrePickup>();
+
+        if (OrePickup == null)
+        {
+            OrePickup = Other.GetComponentInParent<OrePickup>();
+        }
+
+        if (OrePickup == null)
+        {
+            return;
+        }
+
+        OrePickupsInsideTrigger.Remove(OrePickup);
+        QueuedOrePickups.Remove(OrePickup);
+
+        Log("Removed ore pickup from active sale queue because it left the trigger: " + OrePickup.name);
+    }
+
     public bool TryQueueSaleFromCollider(Collider Other)
     {
         if (Other == null)
@@ -253,14 +266,16 @@ public sealed class OreSellTrigger : MonoBehaviour
         return TryQueueSalePickup(OrePickup);
     }
 
-    /// <summary>
-    /// Queues a physical ore pickup for delayed machine consumption.
-    /// The ore object is not returned to pool yet. That only happens when the machine consumes it.
-    /// </summary>
     public bool TryQueueSalePickup(OrePickup OrePickup)
     {
         if (OrePickup == null)
         {
+            return false;
+        }
+
+        if (!OrePickupsInsideTrigger.Contains(OrePickup))
+        {
+            Log("Ignored queue request because ore pickup is not inside the trigger: " + OrePickup.name);
             return false;
         }
 
@@ -288,13 +303,9 @@ public sealed class OreSellTrigger : MonoBehaviour
         QueuedOrePickups.Add(OrePickup);
 
         LogQueuedOre(OreItemData);
-
         return true;
     }
 
-    /// <summary>
-    /// Updates the ore consumption timer and processes one queued ore when ready.
-    /// </summary>
     private void UpdateOreConsumption()
     {
         if (PendingOreSales.Count == 0)
@@ -313,9 +324,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         ConsumeNextQueuedOre();
     }
 
-    /// <summary>
-    /// Updates the money emission timer and emits one pending denomination when ready.
-    /// </summary>
     private void UpdateMoneyEmission()
     {
         if (PendingMoneyEmissions.Count == 0)
@@ -334,10 +342,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         EmitNextMoneyPiece();
     }
 
-    /// <summary>
-    /// Consumes one ore from the machine queue, returns the ore pickup to its pool,
-    /// grants optional research and enqueues exact denomination payouts.
-    /// </summary>
     private void ConsumeNextQueuedOre()
     {
         if (PendingOreSales.Count == 0)
@@ -345,7 +349,36 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-        PendingOreSale PendingOreSale = PendingOreSales.Dequeue();
+        PendingOreSale PendingOreSale = null;
+
+        while (PendingOreSales.Count > 0)
+        {
+            PendingOreSale Candidate = PendingOreSales.Dequeue();
+
+            if (Candidate == null)
+            {
+                continue;
+            }
+
+            OrePickup CandidateOrePickup = Candidate.OrePickup;
+
+            if (CandidateOrePickup == null)
+            {
+                continue;
+            }
+
+            bool IsStillQueued = QueuedOrePickups.Contains(CandidateOrePickup);
+            bool IsStillInsideTrigger = OrePickupsInsideTrigger.Contains(CandidateOrePickup);
+
+            if (!IsStillQueued || !IsStillInsideTrigger)
+            {
+                Log("Skipped queued ore because it is no longer valid for sale: " + CandidateOrePickup.name);
+                continue;
+            }
+
+            PendingOreSale = Candidate;
+            break;
+        }
 
         if (PendingOreSale == null)
         {
@@ -358,6 +391,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         if (OrePickup != null)
         {
             QueuedOrePickups.Remove(OrePickup);
+            OrePickupsInsideTrigger.Remove(OrePickup);
 
             if (!OrePickup.ReturnToPool())
             {
@@ -381,8 +415,7 @@ public sealed class OreSellTrigger : MonoBehaviour
             {
                 Log(
                     "Failed to build exact payout for ore value " + GoldValue.ToString("0.00") +
-                    ". Check configured denominations. At least one denomination combination is missing."
-                );
+                    ". Check configured denominations. At least one denomination combination is missing.");
             }
         }
 
@@ -399,10 +432,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         LogProcessedOre(OreItemData);
     }
 
-    /// <summary>
-    /// Attempts to decompose an exact gold value into configured fixed denominations
-    /// and enqueue every resulting physical money piece.
-    /// </summary>
     private bool TryEnqueueExactMoneyPayout(float GoldValue)
     {
         int TargetMinorUnits = ToMinorUnits(GoldValue);
@@ -434,15 +463,11 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         Log(
             "Queued exact payout for gold value " + GoldValue.ToString("0.00") +
-            " | Pieces: " + Result.Count
-        );
+            " | Pieces: " + Result.Count);
 
         return true;
     }
 
-    /// <summary>
-    /// Emits the next queued physical denomination.
-    /// </summary>
     private void EmitNextMoneyPiece()
     {
         if (PendingMoneyEmissions.Count == 0)
@@ -460,9 +485,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         EmitMoneyDenomination(PendingMoneyEmission.Denomination);
     }
 
-    /// <summary>
-    /// Emits one physical money object using the provided fixed denomination.
-    /// </summary>
     private void EmitMoneyDenomination(MoneyDenomination Denomination)
     {
         if (Denomination == null || Denomination.GetPrefab() == null)
@@ -471,19 +493,20 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
+        Transform EjectPoint = ResolveEjectPoint(Denomination.GetVisualType());
         MoneyPickup MoneyPickup = null;
 
         if (MoneyPickupPool != null)
         {
             MoneyPickup = MoneyPickupPool.GetPickup(
                 Denomination.GetPrefab(),
-                MoneyEjectPoint.position,
-                MoneyEjectPoint.rotation);
+                EjectPoint.position,
+                EjectPoint.rotation);
         }
 
         if (MoneyPickup == null)
         {
-            GameObject Instance = Instantiate(Denomination.GetPrefab(), MoneyEjectPoint.position, MoneyEjectPoint.rotation);
+            GameObject Instance = Instantiate(Denomination.GetPrefab(), EjectPoint.position, EjectPoint.rotation);
             MoneyPickup = Instance.GetComponent<MoneyPickup>();
 
             if (MoneyPickup == null)
@@ -499,29 +522,46 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         MoneyPickup.Initialize(Denomination.GetGoldValue(), CurrencyWallet.CurrencyType.Gold);
-        ApplyEmissionImpulse(MoneyPickup);
+        ApplyEmissionImpulse(MoneyPickup, Denomination.GetVisualType(), EjectPoint);
 
         Log(
             "Emitted denomination | Id: " + Denomination.GetId() +
             " | Value: " + Denomination.GetGoldValue().ToString("0.00") +
-            " | Remaining pending pieces: " + PendingMoneyEmissions.Count
-        );
+            " | VisualType: " + Denomination.GetVisualType() +
+            " | Remaining pending pieces: " + PendingMoneyEmissions.Count);
     }
 
-    /// <summary>
-    /// Applies the configured launch impulse to a newly emitted money pickup.
-    /// </summary>
-    private void ApplyEmissionImpulse(MoneyPickup MoneyPickup)
+    private void ApplyEmissionImpulse(MoneyPickup MoneyPickup, MoneyVisualType VisualType, Transform EjectPoint)
     {
         Rigidbody MoneyRigidbody = MoneyPickup.GetCachedRigidbody();
 
-        if (MoneyRigidbody == null)
+        if (MoneyRigidbody == null || EjectPoint == null)
         {
             return;
         }
 
-        Vector3 Impulse = MoneyEjectPoint.forward * ForwardImpulse;
-        Impulse += MoneyEjectPoint.up * UpwardImpulse;
+        float ForwardImpulse;
+        float UpwardImpulse;
+        float RandomImpulse;
+        float RandomTorqueImpulse;
+
+        if (VisualType == MoneyVisualType.Bill)
+        {
+            ForwardImpulse = BillForwardImpulse;
+            UpwardImpulse = BillUpwardImpulse;
+            RandomImpulse = BillRandomImpulse;
+            RandomTorqueImpulse = BillRandomTorqueImpulse;
+        }
+        else
+        {
+            ForwardImpulse = CoinForwardImpulse;
+            UpwardImpulse = CoinUpwardImpulse;
+            RandomImpulse = CoinRandomImpulse;
+            RandomTorqueImpulse = CoinRandomTorqueImpulse;
+        }
+
+        Vector3 Impulse = EjectPoint.forward * ForwardImpulse;
+        Impulse += EjectPoint.up * UpwardImpulse;
         Impulse += Random.insideUnitSphere * RandomImpulse;
 
         MoneyRigidbody.AddForce(Impulse, ForceMode.Impulse);
@@ -532,11 +572,16 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Builds an exact payout composition using the configured fixed denominations.
-    /// Most of the time it returns the optimal composition.
-    /// Sometimes it expands one denomination into several smaller exact pieces for variation.
-    /// </summary>
+    private Transform ResolveEjectPoint(MoneyVisualType VisualType)
+    {
+        if (VisualType == MoneyVisualType.Bill)
+        {
+            return BillEjectPoint != null ? BillEjectPoint : (CoinEjectPoint != null ? CoinEjectPoint : transform);
+        }
+
+        return CoinEjectPoint != null ? CoinEjectPoint : transform;
+    }
+
     private List<MoneyDenomination> BuildExactDenominationComposition(int TargetMinorUnits)
     {
         if (TargetMinorUnits <= 0)
@@ -549,8 +594,8 @@ public sealed class OreSellTrigger : MonoBehaviour
             return null;
         }
 
-        Dictionary<int, List<MoneyDenomination>> DenominationsByMinorUnits = new Dictionary<int, List<MoneyDenomination>>();
-        List<int> UniqueMinorUnitValues = new List<int>();
+        Dictionary<int, List<MoneyDenomination>> DenominationsByMinorUnits = new();
+        List<int> UniqueMinorUnitValues = new();
 
         for (int Index = 0; Index < SortedDenominations.Count; Index++)
         {
@@ -576,7 +621,7 @@ public sealed class OreSellTrigger : MonoBehaviour
             return null;
         }
 
-        List<int> FinalValueComposition = new List<int>(OptimalValueComposition);
+        List<int> FinalValueComposition = new(OptimalValueComposition);
 
         if (AlternativeCompositionChance > 0f && Random.value < AlternativeCompositionChance)
         {
@@ -585,12 +630,11 @@ public sealed class OreSellTrigger : MonoBehaviour
                 Log(
                     "Using alternative payout composition for value " +
                     FromMinorUnits(TargetMinorUnits).ToString("0.00") +
-                    " | Piece count: " + FinalValueComposition.Count
-                );
+                    " | Piece count: " + FinalValueComposition.Count);
             }
         }
 
-        List<MoneyDenomination> Result = new List<MoneyDenomination>();
+        List<MoneyDenomination> Result = new();
 
         for (int Index = 0; Index < FinalValueComposition.Count; Index++)
         {
@@ -614,9 +658,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         return Result;
     }
 
-    /// <summary>
-    /// Builds the optimal exact composition by minimizing total piece count.
-    /// </summary>
     private List<int> BuildOptimalValueComposition(int TargetMinorUnits, List<int> AvailableValues)
     {
         if (TargetMinorUnits <= 0)
@@ -681,7 +722,7 @@ public sealed class OreSellTrigger : MonoBehaviour
             return null;
         }
 
-        List<int> Result = new List<int>();
+        List<int> Result = new();
         int CurrentAmount = TargetMinorUnits;
 
         while (CurrentAmount > 0)
@@ -700,10 +741,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         return Result;
     }
 
-    /// <summary>
-    /// Tries to expand one optimal denomination into several smaller exact denominations.
-    /// This keeps the payout exact while adding controlled visual variation.
-    /// </summary>
     private bool TryApplyAlternativeExpansion(List<int> CompositionValues, List<int> UniqueValues)
     {
         if (CompositionValues == null || CompositionValues.Count == 0)
@@ -711,7 +748,7 @@ public sealed class OreSellTrigger : MonoBehaviour
             return false;
         }
 
-        List<int> CandidateIndices = new List<int>();
+        List<int> CandidateIndices = new();
 
         for (int Index = 0; Index < CompositionValues.Count; Index++)
         {
@@ -733,7 +770,7 @@ public sealed class OreSellTrigger : MonoBehaviour
             int ReplaceIndex = CandidateIndices[CandidateIndex];
             int ValueToExpand = CompositionValues[ReplaceIndex];
 
-            List<int> SmallerValues = new List<int>();
+            List<int> SmallerValues = new();
 
             for (int ValueIndex = 0; ValueIndex < UniqueValues.Count; ValueIndex++)
             {
@@ -765,9 +802,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         return false;
     }
 
-    /// <summary>
-    /// Selects one denomination from a bucket of equal-value prefabs using weights.
-    /// </summary>
     private MoneyDenomination PickWeightedDenomination(List<MoneyDenomination> Bucket)
     {
         if (Bucket == null || Bucket.Count == 0)
@@ -803,10 +837,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         return Bucket[Bucket.Count - 1];
     }
 
-    /// <summary>
-    /// Returns the dynamic emission interval based on the amount of pending money pieces.
-    /// Larger queues emit faster so large payouts do not take too long.
-    /// </summary>
     private float GetCurrentEmissionInterval()
     {
         if (PendingMoneyEmissions.Count <= 0)
@@ -823,9 +853,6 @@ public sealed class OreSellTrigger : MonoBehaviour
             T);
     }
 
-    /// <summary>
-    /// Rebuilds the internal denomination cache sorted from higher to lower value.
-    /// </summary>
     private void CacheSortedDenominations()
     {
         SortedDenominations.Clear();
@@ -843,13 +870,9 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         SortedDenominations.Sort(
-            (Left, Right) => Right.GetGoldValueMinorUnits().CompareTo(Left.GetGoldValueMinorUnits())
-        );
+            (Left, Right) => Right.GetGoldValueMinorUnits().CompareTo(Left.GetGoldValueMinorUnits()));
     }
 
-    /// <summary>
-    /// Shuffles a denomination list in place using Fisher-Yates.
-    /// </summary>
     private void ShuffleDenominationList(List<MoneyDenomination> Denominations)
     {
         if (Denominations == null || Denominations.Count <= 1)
@@ -866,9 +889,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Shuffles an integer list in place using Fisher-Yates.
-    /// </summary>
     private void ShuffleIntList(List<int> Values)
     {
         if (Values == null || Values.Count <= 1)
@@ -885,9 +905,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Logs one ore payload that has entered the machine queue.
-    /// </summary>
     private void LogQueuedOre(OreItemData OreItemData)
     {
         string OreName = OreItemData != null && OreItemData.GetOreDefinition() != null
@@ -898,13 +915,9 @@ public sealed class OreSellTrigger : MonoBehaviour
             "Queued ore sale: " + OreName +
             " | Gold: " + (OreItemData != null ? OreItemData.GetGoldValue().ToString("0.00") : "0.00") +
             " | Research: " + (OreItemData != null ? OreItemData.GetResearchValue().ToString("0.00") : "0.00") +
-            " | Pending ore queue: " + PendingOreSales.Count
-        );
+            " | Pending ore queue: " + PendingOreSales.Count);
     }
 
-    /// <summary>
-    /// Logs one ore payload after the machine has consumed it.
-    /// </summary>
     private void LogProcessedOre(OreItemData OreItemData)
     {
         string OreName = OreItemData != null && OreItemData.GetOreDefinition() != null
@@ -916,29 +929,19 @@ public sealed class OreSellTrigger : MonoBehaviour
             " | Gold queued: " + (OreItemData != null ? OreItemData.GetGoldValue().ToString("0.00") : "0.00") +
             " | Research granted instantly: " +
             (GrantResearchInstantly && OreItemData != null ? OreItemData.GetResearchValue().ToString("0.00") : "0.00") +
-            " | Pending money pieces: " + PendingMoneyEmissions.Count
-        );
+            " | Pending money pieces: " + PendingMoneyEmissions.Count);
     }
 
-    /// <summary>
-    /// Converts a float currency amount to exact minor units using the configured precision.
-    /// </summary>
     private static int ToMinorUnits(float Value)
     {
         return Mathf.Max(0, Mathf.RoundToInt(Value * CurrencyMinorUnitFactor));
     }
 
-    /// <summary>
-    /// Converts integer minor units back to float currency amount.
-    /// </summary>
     private static float FromMinorUnits(int MinorUnits)
     {
         return Mathf.Max(0f, MinorUnits / (float)CurrencyMinorUnitFactor);
     }
 
-    /// <summary>
-    /// Logs machine messages if debug logging is enabled.
-    /// </summary>
     private void Log(string Message)
     {
         if (!DebugLogs)

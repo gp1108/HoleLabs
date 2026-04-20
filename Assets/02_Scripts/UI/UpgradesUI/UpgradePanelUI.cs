@@ -3,29 +3,50 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// Main controller for the upgrade research UI.
-/// It builds all upgrade entries, listens to wallet and upgrade events,
-/// and keeps the full panel synchronized with runtime progression data.
+/// Manual controller for the upgrade UI.
+/// This panel does not generate entries dynamically.
+/// Instead, it discovers manually placed list entries and tree groups,
+/// initializes them and refreshes their state when currency or upgrade data changes.
 /// </summary>
 public sealed class UpgradePanelUI : MonoBehaviour
 {
     [Header("References")]
+    [Tooltip("Central runtime upgrade manager used by this panel.")]
     [SerializeField] private UpgradeManager UpgradeManager;
+
+    [Tooltip("Central wallet used to display current balances.")]
     [SerializeField] private CurrencyWallet CurrencyWallet;
+
+    [Tooltip("Root object toggled on and off when showing or hiding this panel.")]
     [SerializeField] private GameObject PanelRoot;
-    [SerializeField] private Transform EntryContainer;
-    [SerializeField] private UpgradeEntryUI EntryPrefab;
 
     [Header("Currencies")]
+    [Tooltip("Text used to display the current gold balance.")]
     [SerializeField] private TMP_Text GoldAmountText;
+
+    [Tooltip("Text used to display the current research balance.")]
     [SerializeField] private TMP_Text ResearchAmountText;
 
-    [Header("Behaviour")]
-    [SerializeField] private bool RebuildOnAwake = true;
-    [SerializeField] private bool RebuildOnStart = true;
+    [Header("Discovery")]
+    [Tooltip("If true, manual entries and tree groups are discovered during Awake.")]
+    [SerializeField] private bool DiscoverOnAwake = true;
 
-    private readonly List<UpgradeEntryUI> SpawnedEntries = new();
+    [Tooltip("If true, manual entries and tree groups are rediscovered whenever the panel is shown.")]
+    [SerializeField] private bool RediscoverOnShow = true;
 
+    /// <summary>
+    /// Manual list entries currently registered under this panel.
+    /// </summary>
+    private readonly List<UpgradeListEntryUI> RegisteredListEntries = new();
+
+    /// <summary>
+    /// Manual tree groups currently registered under this panel.
+    /// </summary>
+    private readonly List<UpgradeTreeGroupUI> RegisteredTreeGroups = new();
+
+    /// <summary>
+    /// Resolves references, subscribes to runtime events and optionally discovers manual UI elements.
+    /// </summary>
     private void Awake()
     {
         if (UpgradeManager == null)
@@ -45,68 +66,94 @@ public sealed class UpgradePanelUI : MonoBehaviour
 
         SubscribeToEvents();
 
-        if (RebuildOnAwake)
+        if (DiscoverOnAwake)
         {
-            RebuildEntries();
+            DiscoverManualUi();
+            InitializeManualUi();
             RefreshAll();
         }
 
         PanelRoot.SetActive(false);
     }
 
-    private void Start()
-    {
-        if (RebuildOnStart)
-        {
-            RebuildEntries();
-            RefreshAll();
-        }
-    }
-
+    /// <summary>
+    /// Unsubscribes from runtime events when this panel is destroyed.
+    /// </summary>
     private void OnDestroy()
     {
         UnsubscribeFromEvents();
     }
 
-    public void RebuildEntries()
+    /// <summary>
+    /// Shows or hides this panel and refreshes its contents when opened.
+    /// </summary>
+    public void SetVisible(bool IsVisible)
     {
-        ClearEntries();
-
-        if (UpgradeManager == null || EntryContainer == null || EntryPrefab == null)
+        if (PanelRoot == null)
         {
             return;
         }
 
-        IReadOnlyList<UpgradeDefinition> UpgradeDefinitions = UpgradeManager.GetAllUpgradeDefinitions();
+        PanelRoot.SetActive(IsVisible);
 
-        for (int Index = 0; Index < UpgradeDefinitions.Count; Index++)
+        if (!IsVisible)
         {
-            UpgradeDefinition Definition = UpgradeDefinitions[Index];
-
-            if (Definition == null)
-            {
-                continue;
-            }
-
-            UpgradeEntryUI Entry = Instantiate(EntryPrefab, EntryContainer);
-            Entry.Initialize(UpgradeManager, CurrencyWallet, Definition);
-            SpawnedEntries.Add(Entry);
+            return;
         }
+
+        if (RediscoverOnShow)
+        {
+            DiscoverManualUi();
+        }
+
+        InitializeManualUi();
+        RefreshAll();
+        RebuildTreeGroups();
     }
 
+    /// <summary>
+    /// Shows this panel.
+    /// </summary>
+    public void ShowPanel()
+    {
+        SetVisible(true);
+    }
+
+    /// <summary>
+    /// Hides this panel.
+    /// </summary>
+    public void HidePanel()
+    {
+        SetVisible(false);
+    }
+
+    /// <summary>
+    /// Refreshes wallet labels and all registered manual entries.
+    /// </summary>
     public void RefreshAll()
     {
         RefreshCurrencyTexts();
 
-        for (int Index = 0; Index < SpawnedEntries.Count; Index++)
+        for (int Index = 0; Index < RegisteredListEntries.Count; Index++)
         {
-            if (SpawnedEntries[Index] != null)
+            if (RegisteredListEntries[Index] != null)
             {
-                SpawnedEntries[Index].RefreshView();
+                RegisteredListEntries[Index].RefreshView();
+            }
+        }
+
+        for (int Index = 0; Index < RegisteredTreeGroups.Count; Index++)
+        {
+            if (RegisteredTreeGroups[Index] != null)
+            {
+                RegisteredTreeGroups[Index].RefreshAllEntries();
             }
         }
     }
 
+    /// <summary>
+    /// Refreshes the wallet amounts displayed by this panel.
+    /// </summary>
     public void RefreshCurrencyTexts()
     {
         if (CurrencyWallet == null)
@@ -125,32 +172,73 @@ public sealed class UpgradePanelUI : MonoBehaviour
         }
     }
 
-    public void SetVisible(bool IsVisible)
+    /// <summary>
+    /// Discovers all manual list entries and tree groups under this panel, including inactive children.
+    /// </summary>
+    public void DiscoverManualUi()
     {
-        if (PanelRoot == null)
+        RegisteredListEntries.Clear();
+        RegisteredTreeGroups.Clear();
+
+        UpgradeListEntryUI[] ListEntries = GetComponentsInChildren<UpgradeListEntryUI>(true);
+        UpgradeTreeGroupUI[] TreeGroups = GetComponentsInChildren<UpgradeTreeGroupUI>(true);
+
+        for (int Index = 0; Index < ListEntries.Length; Index++)
         {
-            return;
+            if (ListEntries[Index] != null)
+            {
+                RegisteredListEntries.Add(ListEntries[Index]);
+            }
         }
 
-        PanelRoot.SetActive(IsVisible);
-
-        if (IsVisible)
+        for (int Index = 0; Index < TreeGroups.Length; Index++)
         {
-            RebuildEntries();
-            RefreshAll();
+            if (TreeGroups[Index] != null)
+            {
+                RegisteredTreeGroups.Add(TreeGroups[Index]);
+            }
         }
     }
 
-    public void ShowPanel()
+    /// <summary>
+    /// Initializes every discovered manual UI component with the runtime references required to function.
+    /// </summary>
+    public void InitializeManualUi()
     {
-        SetVisible(true);
+        for (int Index = 0; Index < RegisteredListEntries.Count; Index++)
+        {
+            if (RegisteredListEntries[Index] != null)
+            {
+                RegisteredListEntries[Index].Initialize(UpgradeManager);
+            }
+        }
+
+        for (int Index = 0; Index < RegisteredTreeGroups.Count; Index++)
+        {
+            if (RegisteredTreeGroups[Index] != null)
+            {
+                RegisteredTreeGroups[Index].Initialize(UpgradeManager);
+            }
+        }
     }
 
-    public void HidePanel()
+    /// <summary>
+    /// Rebuilds all registered tree groups so their visual connections match the current manual layout.
+    /// </summary>
+    public void RebuildTreeGroups()
     {
-        SetVisible(false);
+        for (int Index = 0; Index < RegisteredTreeGroups.Count; Index++)
+        {
+            if (RegisteredTreeGroups[Index] != null)
+            {
+                RegisteredTreeGroups[Index].RebuildConnections();
+            }
+        }
     }
 
+    /// <summary>
+    /// Subscribes to wallet and upgrade events so the panel stays synchronized at runtime.
+    /// </summary>
     private void SubscribeToEvents()
     {
         if (CurrencyWallet != null)
@@ -164,6 +252,9 @@ public sealed class UpgradePanelUI : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Unsubscribes from wallet and upgrade events.
+    /// </summary>
     private void UnsubscribeFromEvents()
     {
         if (CurrencyWallet != null)
@@ -177,24 +268,17 @@ public sealed class UpgradePanelUI : MonoBehaviour
         }
     }
 
-    private void ClearEntries()
-    {
-        for (int Index = 0; Index < SpawnedEntries.Count; Index++)
-        {
-            if (SpawnedEntries[Index] != null)
-            {
-                Destroy(SpawnedEntries[Index].gameObject);
-            }
-        }
-
-        SpawnedEntries.Clear();
-    }
-
+    /// <summary>
+    /// Refreshes the panel when any currency amount changes.
+    /// </summary>
     private void HandleCurrencyChanged(CurrencyWallet.CurrencyType CurrencyTypeValue, float NewAmount)
     {
         RefreshAll();
     }
 
+    /// <summary>
+    /// Refreshes all manual entries when upgrade state changes.
+    /// </summary>
     private void HandleUpgradeStateChanged()
     {
         RefreshAll();

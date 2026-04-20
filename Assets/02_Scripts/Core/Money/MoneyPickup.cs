@@ -17,6 +17,9 @@ public sealed class MoneyPickup : MonoBehaviour
     [SerializeField] private Rigidbody CachedRigidbody;
     [SerializeField] private Collider[] CachedColliders;
 
+    [Tooltip("Optional explicit sleep controller used to reduce physics cost when money remains still on the floor.")]
+    [SerializeField] private MoneyPickupSleepController SleepController;
+
     private MoneyPickupPool OwnerPool;
     private GameObject SourcePrefab;
 
@@ -30,12 +33,18 @@ public sealed class MoneyPickup : MonoBehaviour
         GetRuntimeRoot().name = "MoneyPickup_" + CurrencyType + "_" + Amount.ToString("0.00");
     }
 
+    /// <summary>
+    /// Binds pool ownership data used when the pickup is later returned.
+    /// </summary>
     public void BindPool(MoneyPickupPool OwnerPoolValue, GameObject SourcePrefabValue)
     {
         OwnerPool = OwnerPoolValue;
         SourcePrefab = SourcePrefabValue;
     }
 
+    /// <summary>
+    /// Prepares the pickup to be reused at the provided world transform.
+    /// </summary>
     public void PrepareForReuse(Vector3 Position, Quaternion Rotation)
     {
         Transform RuntimeRootTransform = GetRuntimeRoot();
@@ -46,8 +55,16 @@ public sealed class MoneyPickup : MonoBehaviour
         ResetPhysicsState();
         SetCollidersEnabled(true);
         RuntimeRootTransform.gameObject.SetActive(true);
+
+        if (SleepController != null)
+        {
+            SleepController.WakeUp();
+        }
     }
 
+    /// <summary>
+    /// Prepares the pickup to be stored back inside the pool.
+    /// </summary>
     public void PrepareForPoolStorage(Transform PoolRoot)
     {
         Transform RuntimeRootTransform = GetRuntimeRoot();
@@ -61,6 +78,9 @@ public sealed class MoneyPickup : MonoBehaviour
         RuntimeRootTransform.gameObject.SetActive(false);
     }
 
+    /// <summary>
+    /// Attempts to return this pickup back to its owner pool.
+    /// </summary>
     public bool ReturnToPool()
     {
         if (OwnerPool == null || SourcePrefab == null)
@@ -72,22 +92,34 @@ public sealed class MoneyPickup : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Gets the configured currency type granted on collection.
+    /// </summary>
     public CurrencyWallet.CurrencyType GetCurrencyType()
     {
         return CurrencyType;
     }
 
+    /// <summary>
+    /// Gets the amount granted on collection.
+    /// </summary>
     public float GetAmount()
     {
         return CurrencyMath.RoundCurrency(Mathf.Max(0f, Amount));
     }
 
+    /// <summary>
+    /// Gets the cached rigidbody used for emission impulses.
+    /// </summary>
     public Rigidbody GetCachedRigidbody()
     {
         EnsureCachedReferences();
         return CachedRigidbody;
     }
 
+    /// <summary>
+    /// Gets the root transform controlled by the pool.
+    /// </summary>
     public Transform GetRuntimeRoot()
     {
         if (RuntimeRoot == null)
@@ -98,6 +130,9 @@ public sealed class MoneyPickup : MonoBehaviour
         return RuntimeRoot;
     }
 
+    /// <summary>
+    /// Resets linear and angular rigidbody velocity before reusing or storing the pickup.
+    /// </summary>
     private void ResetPhysicsState()
     {
         if (CachedRigidbody == null)
@@ -110,6 +145,9 @@ public sealed class MoneyPickup : MonoBehaviour
         CachedRigidbody.Sleep();
     }
 
+    /// <summary>
+    /// Enables or disables every cached collider during pool transitions.
+    /// </summary>
     private void SetCollidersEnabled(bool IsEnabled)
     {
         if (CachedColliders == null)
@@ -128,6 +166,9 @@ public sealed class MoneyPickup : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Caches missing rigidbody, collider and sleep controller references the first time they are needed.
+    /// </summary>
     private void EnsureCachedReferences()
     {
         if (CachedRigidbody == null)
@@ -143,6 +184,16 @@ public sealed class MoneyPickup : MonoBehaviour
         if (CachedColliders == null || CachedColliders.Length == 0)
         {
             CachedColliders = GetComponentsInChildren<Collider>(true);
+        }
+
+        if (SleepController == null)
+        {
+            SleepController = GetComponent<MoneyPickupSleepController>();
+
+            if (SleepController == null)
+            {
+                SleepController = GetComponentInChildren<MoneyPickupSleepController>(true);
+            }
         }
     }
 }

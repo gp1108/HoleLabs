@@ -1,8 +1,11 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// Equipped scanner tool that scans ore veins or dropped ore pickups while the primary input is held.
-/// Losing sight of the target immediately cancels the scan.
+/// Secondary input controls a smooth visual zoom pose of the scanner independently from scanning.
+/// Losing sight of the current scan target immediately cancels the active scan attempt.
+/// Previously scanned targets are cached and can be displayed instantly while their runtime identity remains valid.
 /// </summary>
 public sealed class ScannerItemBehaviour : EquippedItemBehaviour
 {
@@ -13,8 +16,38 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         DroppedOre = 2
     }
 
+    /// <summary>
+    /// Immutable cache key representing one specific scanable runtime identity.
+    /// It is intentionally based on object instance ids and runtime payload identity so pooled ores
+    /// stop matching automatically when reused with a different OreItemData instance.
+    /// </summary>
+    private readonly struct ScanCacheKey
+    {
+        /// <summary>
+        /// Target category used by this cache key.
+        /// </summary>
+        public readonly ScannerTargetType TargetType;
+
+        /// <summary>
+        /// Instance id of the scanned target component.
+        /// </summary>
+        public readonly int TargetInstanceId;
+
+        /// <summary>
+        /// Secondary identity used to invalidate cached entries when runtime data changes.
+        /// </summary>
+        public readonly int DataIdentity;
+
+        public ScanCacheKey(ScannerTargetType TargetTypeValue, int TargetInstanceIdValue, int DataIdentityValue)
+        {
+            TargetType = TargetTypeValue;
+            TargetInstanceId = TargetInstanceIdValue;
+            DataIdentity = DataIdentityValue;
+        }
+    }
+
     [Header("References")]
-    [Tooltip("Camera used to raycast scanner targets. If empty, one will be resolved from the owner.")]
+    [Tooltip("Camera used to raycast scanner targets. When empty or invalid, the scanner resolves the MainCamera automatically.")]
     [SerializeField] private Camera PlayerCamera;
 
     [Tooltip("World-space scanner UI displayed on the equipped scanner.")]
@@ -52,12 +85,42 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     [Tooltip("Feature flag required to show dropped ore weight.")]
     [SerializeField] private string OreWeightUnlockId = "Scanner.Unlock.Weight";
 
+    [Header("Animator")]
+    [Tooltip("Animator used to drive scanner visual states.")]
+    [SerializeField] private Animator ItemAnimator;
+
+    [Tooltip("Animator bool parameter driven while primary input is held.")]
+    [SerializeField] private string PrimaryUseParameterName = "PrimaryUse";
+
+    [Tooltip("Animator bool parameter driven while secondary input is held.")]
+    [SerializeField] private string SecondaryUseParameterName = "SecondaryUse";
+
+    [Tooltip("Animator bool parameter driven while either primary or secondary input is active.")]
+    [SerializeField] private string IsUsingParameterName = "IsUsing";
+
+    [Tooltip("Animator float parameter used to blend between idle and zoom scanner poses.")]
+    [SerializeField] private string ZoomAlphaParameterName = "ZoomAlpha";
+
+    [Header("Zoom")]
+    [Tooltip("Speed used to blend the scanner zoom pose in and out.")]
+    [SerializeField] private float ZoomBlendSpeed = 6f;
+
     [Header("Debug")]
     [Tooltip("Draws the scanner ray while scanning.")]
     [SerializeField] private bool DrawDebugRay = false;
 
     [Tooltip("Logs scanner state changes.")]
     [SerializeField] private bool DebugLogs = false;
+
+    /// <summary>
+    /// Whether the player is currently requesting scanner zoom with secondary input.
+    /// </summary>
+    private bool WantsZoom;
+
+    /// <summary>
+    /// Current normalized zoom blend value applied to the animator.
+    /// </summary>
+    private float CurrentZoomAlpha;
 
     /// <summary>
     /// Current resolved scanner target type.
@@ -85,20 +148,28 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     private bool HasCompletedCurrentScan;
 
     /// <summary>
+    /// Cache of already scanned runtime identities.
+    /// Value is unused because only membership matters.
+    /// </summary>
+    private readonly HashSet<ScanCacheKey> CachedScans = new();
+
+    /// <summary>
     /// Initializes references when the scanner is equipped.
     /// </summary>
     public override void Initialize(HotbarController OwnerHotbar, ItemInstance ItemInstance)
     {
         base.Initialize(OwnerHotbar, ItemInstance);
 
-        if (PlayerCamera == null && this.OwnerHotbar != null)
-        {
-            PlayerCamera = this.OwnerHotbar.GetComponentInChildren<Camera>();
-        }
+        ResolvePlayerCamera(true);
 
         if (UpgradeManager == null)
         {
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
+        }
+
+        if (ItemAnimator == null)
+        {
+            ItemAnimator = GetComponentInChildren<Animator>(true);
         }
 
         if (ScannerDisplayUI != null)
@@ -106,6 +177,10 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
             ScannerDisplayUI.SetVisible(true);
             ScannerDisplayUI.ShowIdle();
         }
+
+        WantsZoom = false;
+        CurrentZoomAlpha = 0f;
+        ApplyAnimatorState();
     }
 
     /// <summary>
@@ -114,12 +189,17 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     public override void OnUnequipped()
     {
         base.OnUnequipped();
+
         ResetCurrentScan();
 
         if (ScannerDisplayUI != null)
         {
             ScannerDisplayUI.SetVisible(false);
         }
+
+        WantsZoom = false;
+        CurrentZoomAlpha = 0f;
+        ApplyAnimatorState();
     }
 
     /// <summary>
@@ -128,34 +208,94 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     public override void ForceStopItemUsage()
     {
         base.ForceStopItemUsage();
+
         ResetCurrentScan();
+
+        WantsZoom = false;
+        CurrentZoomAlpha = 0f;
+        ApplyAnimatorState();
     }
 
     /// <summary>
-    /// Cancels the scan when primary use ends.
+    /// Cancels scanning when primary use ends.
     /// </summary>
     public override void OnPrimaryUseEnded()
     {
         base.OnPrimaryUseEnded();
         ResetCurrentScan();
+        ApplyAnimatorState();
     }
 
     /// <summary>
-    /// Updates scanning while the primary input is held.
+    /// Starts requesting scanner zoom while secondary input is held.
+    /// </summary>
+    public override void OnSecondaryUseStarted()
+    {
+        base.OnSecondaryUseStarted();
+        WantsZoom = true;
+        ApplyAnimatorState();
+    }
+
+    /// <summary>
+    /// Stops requesting scanner zoom when secondary input is released.
+    /// </summary>
+    public override void OnSecondaryUseEnded()
+    {
+        base.OnSecondaryUseEnded();
+        WantsZoom = false;
+        ApplyAnimatorState();
+    }
+
+    /// <summary>
+    /// Updates scanner zoom continuously and scan logic only while primary input is held.
+    /// Zoom is completely independent from scan target validity.
     /// </summary>
     private void Update()
     {
-        if (!IsPrimaryUseActive)
+        ResolvePlayerCamera(false);
+        UpdateZoom();
+
+        if (IsPrimaryUseActive)
+        {
+            UpdateScanning();
+        }
+
+        ApplyAnimatorState();
+    }
+
+    /// <summary>
+    /// Smoothly blends the scanner zoom pose in or out based on secondary input.
+    /// </summary>
+    private void UpdateZoom()
+    {
+        float TargetZoomAlpha = WantsZoom ? 1f : 0f;
+
+        CurrentZoomAlpha = Mathf.MoveTowards(
+            CurrentZoomAlpha,
+            TargetZoomAlpha,
+            ZoomBlendSpeed * Time.deltaTime);
+    }
+
+    /// <summary>
+    /// Pushes current scanner runtime state into the animator.
+    /// </summary>
+    private void ApplyAnimatorState()
+    {
+        if (ItemAnimator == null)
         {
             return;
         }
 
-        UpdateScanning();
+        SetAnimatorBool(PrimaryUseParameterName, IsPrimaryUseActive);
+        SetAnimatorBool(SecondaryUseParameterName, WantsZoom);
+        SetAnimatorBool(IsUsingParameterName, IsPrimaryUseActive || WantsZoom);
+        SetAnimatorFloat(ZoomAlphaParameterName, CurrentZoomAlpha);
     }
 
     /// <summary>
     /// Resolves the currently looked target and advances scan progress.
-    /// If no valid target is found, the scan is cancelled immediately.
+    /// If the looked target was scanned previously and its runtime identity still matches,
+    /// the scanner shows its data instantly instead of scanning again.
     /// </summary>
     private void UpdateScanning()
     {
@@ -170,6 +310,20 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         if (!IsSameTarget(ResolvedTarget))
         {
             BeginNewTargetScan(ResolvedTarget);
+        }
+
+        ScanCacheKey CurrentCacheKey = BuildCacheKey(ResolvedTarget);
+
+        if (IsTargetCached(CurrentCacheKey))
+        {
+            if (!HasCompletedCurrentScan)
+            {
+                HasCompletedCurrentScan = true;
+                ShowResolvedTargetResult(ResolvedTarget);
+                Log("Displayed cached scan result instantly for target: " + ResolvedTarget.GetDisplayTargetLabel());
+            }
+
+            return;
         }
 
         if (HasCompletedCurrentScan)
@@ -189,7 +343,7 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
 
         if (CurrentScanTimer >= ScanDuration)
         {
-            CompleteCurrentScan();
+            CompleteCurrentScan(ResolvedTarget, CurrentCacheKey);
         }
     }
 
@@ -208,20 +362,28 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     }
 
     /// <summary>
-    /// Completes the current scan and pushes the data to the correct UI panel.
+    /// Completes the current scan, caches the target identity and shows the final data.
     /// </summary>
-    private void CompleteCurrentScan()
+    private void CompleteCurrentScan(ResolvedScannerTarget ResolvedTarget, ScanCacheKey CurrentCacheKey)
     {
         HasCompletedCurrentScan = true;
+        CachedScans.Add(CurrentCacheKey);
+        ShowResolvedTargetResult(ResolvedTarget);
+    }
 
-        switch (CurrentTargetType)
+    /// <summary>
+    /// Routes a resolved target to the correct result presenter.
+    /// </summary>
+    private void ShowResolvedTargetResult(ResolvedScannerTarget ResolvedTarget)
+    {
+        switch (ResolvedTarget.TargetType)
         {
             case ScannerTargetType.Vein:
-                ShowVeinScanResult();
+                ShowVeinScanResult(ResolvedTarget.OreVein);
                 break;
 
             case ScannerTargetType.DroppedOre:
-                ShowDroppedOreScanResult();
+                ShowDroppedOreScanResult(ResolvedTarget.OrePickup);
                 break;
 
             default:
@@ -233,15 +395,15 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     /// <summary>
     /// Builds and displays the scan result for an ore vein.
     /// </summary>
-    private void ShowVeinScanResult()
+    private void ShowVeinScanResult(OreVein OreVein)
     {
-        if (CurrentOreVein == null)
+        if (OreVein == null)
         {
             ResetCurrentScan();
             return;
         }
 
-        OreDefinition OreDefinition = CurrentOreVein.GetOreDefinition();
+        OreDefinition OreDefinition = OreVein.GetOreDefinition();
 
         if (OreDefinition == null)
         {
@@ -264,15 +426,15 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     /// <summary>
     /// Builds and displays the scan result for a dropped ore pickup.
     /// </summary>
-    private void ShowDroppedOreScanResult()
+    private void ShowDroppedOreScanResult(OrePickup OrePickup)
     {
-        if (CurrentOrePickup == null)
+        if (OrePickup == null)
         {
             ResetCurrentScan();
             return;
         }
 
-        OreItemData OreItemData = CurrentOrePickup.GetOreItemData();
+        OreItemData OreItemData = OrePickup.GetOreItemData();
 
         if (OreItemData == null || OreItemData.GetOreDefinition() == null)
         {
@@ -308,6 +470,7 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
 
     /// <summary>
     /// Clears all current scan state and returns the UI to idle.
+    /// This does not clear the persistent scan cache.
     /// </summary>
     private void ResetCurrentScan()
     {
@@ -444,6 +607,68 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     }
 
     /// <summary>
+    /// Builds a cache key for the currently resolved target.
+    /// Veins use their current ore definition and range values.
+    /// Dropped ores use both the pickup instance and the exact OreItemData reference.
+    /// </summary>
+    private ScanCacheKey BuildCacheKey(ResolvedScannerTarget ResolvedTarget)
+    {
+        switch (ResolvedTarget.TargetType)
+        {
+            case ScannerTargetType.Vein:
+                {
+                    if (ResolvedTarget.OreVein == null)
+                    {
+                        return default;
+                    }
+
+                    OreDefinition OreDefinition = ResolvedTarget.OreVein.GetOreDefinition();
+                    int DefinitionIdentity = OreDefinition != null ? OreDefinition.GetInstanceID() : 0;
+                    int DropMin = OreDefinition != null ? OreDefinition.GetBaseDropCountMin() : 0;
+                    int DropMax = OreDefinition != null ? OreDefinition.GetBaseDropCountMax() : 0;
+                    int DataIdentity = (DefinitionIdentity * 397) ^ (DropMin * 17) ^ DropMax;
+
+                    return new ScanCacheKey(
+                        ScannerTargetType.Vein,
+                        ResolvedTarget.OreVein.GetInstanceID(),
+                        DataIdentity);
+                }
+
+            case ScannerTargetType.DroppedOre:
+                {
+                    if (ResolvedTarget.OrePickup == null)
+                    {
+                        return default;
+                    }
+
+                    OreItemData OreItemData = ResolvedTarget.OrePickup.GetOreItemData();
+                    int DataIdentity = OreItemData != null ? OreItemData.GetHashCode() : 0;
+
+                    return new ScanCacheKey(
+                        ScannerTargetType.DroppedOre,
+                        ResolvedTarget.OrePickup.GetInstanceID(),
+                        DataIdentity);
+                }
+
+            default:
+                return default;
+        }
+    }
+
+    /// <summary>
+    /// Returns whether the provided target identity is already cached as scanned.
+    /// </summary>
+    private bool IsTargetCached(ScanCacheKey CacheKey)
+    {
+        if (CacheKey.TargetType == ScannerTargetType.None)
+        {
+            return false;
+        }
+
+        return CachedScans.Contains(CacheKey);
+    }
+
+    /// <summary>
     /// Returns the final scan distance after applying upgrades.
     /// </summary>
     private float GetResolvedScanDistance()
@@ -482,6 +707,73 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         }
 
         return UpgradeManager != null && UpgradeManager.IsFeatureUnlocked(FeatureId);
+    }
+
+    /// <summary>
+    /// Resolves the camera that should be used by the scanner.
+    /// MainCamera always has priority over any tools camera.
+    /// </summary>
+    private void ResolvePlayerCamera(bool ForceRefresh)
+    {
+        if (!ForceRefresh && PlayerCamera != null && PlayerCamera.CompareTag("MainCamera"))
+        {
+            return;
+        }
+
+        Camera MainCamera = Camera.main;
+
+        if (MainCamera != null)
+        {
+            PlayerCamera = MainCamera;
+            return;
+        }
+
+        Camera[] AllCameras = FindObjectsByType<Camera>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < AllCameras.Length; Index++)
+        {
+            if (AllCameras[Index] != null && AllCameras[Index].CompareTag("MainCamera"))
+            {
+                PlayerCamera = AllCameras[Index];
+                return;
+            }
+        }
+
+        if (OwnerHotbar != null)
+        {
+            Camera FallbackCamera = OwnerHotbar.GetComponentInChildren<Camera>(true);
+
+            if (FallbackCamera != null)
+            {
+                PlayerCamera = FallbackCamera;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes an animator bool parameter when the parameter name is valid.
+    /// </summary>
+    private void SetAnimatorBool(string ParameterName, bool Value)
+    {
+        if (ItemAnimator == null || string.IsNullOrWhiteSpace(ParameterName))
+        {
+            return;
+        }
+
+        ItemAnimator.SetBool(ParameterName, Value);
+    }
+
+    /// <summary>
+    /// Writes an animator float parameter when the parameter name is valid.
+    /// </summary>
+    private void SetAnimatorFloat(string ParameterName, float Value)
+    {
+        if (ItemAnimator == null || string.IsNullOrWhiteSpace(ParameterName))
+        {
+            return;
+        }
+
+        ItemAnimator.SetFloat(ParameterName, Value);
     }
 
     /// <summary>

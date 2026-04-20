@@ -51,3 +51,18 @@ public enum UpgradeModifierType
     Divide = 3,
     Override = 4
 }
+
+/// <summary>
+/// Describes why a purchase attempt is currently blocked.
+/// This enum is used only for runtime validation feedback and does not replace the existing purchase flow.
+/// </summary>
+public enum UpgradePurchaseBlockReason
+{
+    None = 0,
+    MissingDefinition = 1,
+    MissingCurrencyWallet = 2,
+    AlreadyMaxLevel = 3,
+    MissingLevelCost = 4,
+    MissingPrerequisite = 5,
+    NotEnoughCurrency = 6
+}
