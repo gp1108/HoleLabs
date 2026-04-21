@@ -632,7 +632,7 @@ public sealed class HotbarController : MonoBehaviour
 
         if (IsUseInputCapturedByExternalInteraction())
         {
-            if (!WasItemUseBlockedLastFrame)
+            if (!WasItemUseBlockedLastFrame && CurrentEquippedBehaviour != null)
             {
                 CurrentEquippedBehaviour.ForceStopItemUsage();
                 WasItemUseBlockedLastFrame = true;
@@ -649,31 +649,67 @@ public sealed class HotbarController : MonoBehaviour
         if (IsPrimaryHeldNow && !WasPrimaryHeldLastFrame)
         {
             CurrentEquippedBehaviour.OnPrimaryUseStarted();
+
+            if (CurrentEquippedBehaviour == null)
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
-        if (IsPrimaryHeldNow)
+        if (IsPrimaryHeldNow && CurrentEquippedBehaviour != null)
         {
             CurrentEquippedBehaviour.OnPrimaryUseHeld();
+
+            if (CurrentEquippedBehaviour == null)
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
-        if (!IsPrimaryHeldNow && WasPrimaryHeldLastFrame)
+        if (!IsPrimaryHeldNow && WasPrimaryHeldLastFrame && CurrentEquippedBehaviour != null)
         {
             CurrentEquippedBehaviour.OnPrimaryUseEnded();
+
+            if (CurrentEquippedBehaviour == null)
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
-        if (IsSecondaryHeldNow && !WasSecondaryHeldLastFrame)
+        if (IsSecondaryHeldNow && !WasSecondaryHeldLastFrame && CurrentEquippedBehaviour != null)
         {
             CurrentEquippedBehaviour.OnSecondaryUseStarted();
+
+            if (CurrentEquippedBehaviour == null)
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
-        if (IsSecondaryHeldNow)
+        if (IsSecondaryHeldNow && CurrentEquippedBehaviour != null)
         {
             CurrentEquippedBehaviour.OnSecondaryUseHeld();
+
+            if (CurrentEquippedBehaviour == null)
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
-        if (!IsSecondaryHeldNow && WasSecondaryHeldLastFrame)
+        if (!IsSecondaryHeldNow && WasSecondaryHeldLastFrame && CurrentEquippedBehaviour != null)
         {
             CurrentEquippedBehaviour.OnSecondaryUseEnded();
+
+            if (CurrentEquippedBehaviour == null)
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
         WasPrimaryHeldLastFrame = IsPrimaryHeldNow;

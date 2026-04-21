@@ -149,6 +149,36 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
+    private sealed class DrillPlacementSpotState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private bool IsBlocked;
+        [SerializeField] private bool IsOccupied;
+        [SerializeField] private string DrillItemId;
+        [SerializeField] private float RemainingProductionTimer;
+
+        public DrillPlacementSpotState(
+            string SceneIdValue,
+            bool IsBlockedValue,
+            bool IsOccupiedValue,
+            string DrillItemIdValue,
+            float RemainingProductionTimerValue)
+        {
+            SceneId = SceneIdValue;
+            IsBlocked = IsBlockedValue;
+            IsOccupied = IsOccupiedValue;
+            DrillItemId = DrillItemIdValue;
+            RemainingProductionTimer = RemainingProductionTimerValue;
+        }
+
+        public string GetSceneId() => SceneId;
+        public bool GetIsBlocked() => IsBlocked;
+        public bool GetIsOccupied() => IsOccupied;
+        public string GetDrillItemId() => DrillItemId;
+        public float GetRemainingProductionTimer() => RemainingProductionTimer;
+    }
+
+    [Serializable]
     private sealed class PlayerSaveData
     {
         [SerializeField] private Vector3 Position;
@@ -382,6 +412,10 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<MoneyPickupState> MoneyPickups = new();
         [SerializeField] private List<OrePickupState> OrePickups = new();
         [SerializeField] private List<OreSpawnPointState> OreSpawnPoints = new();
+        [SerializeField] private List<DrillPlacementSpotState> DrillPlacementSpots = new();
+
+        public List<DrillPlacementSpotState> GetDrillPlacementSpots() => DrillPlacementSpots;
+        public void SetDrillPlacementSpots(List<DrillPlacementSpotState> Value) => DrillPlacementSpots = Value ?? new List<DrillPlacementSpotState>();
 
         public PlayerSaveData GetPlayer() => Player;
         public void SetPlayer(PlayerSaveData Value) => Player = Value;
@@ -465,6 +499,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private readonly Dictionary<string, OreDefinition> OreDefinitionsById = new();
     private readonly Dictionary<string, ScenePlacedWorldItemPersistence> SceneWorldItemsById = new();
     private readonly Dictionary<string, OreSpawnPoint> OreSpawnPointsById = new();
+    private readonly Dictionary<string, DrillPlacementSpot> DrillPlacementSpotsById = new();
 
     /// <summary>
     /// Resolves missing scene references and builds lookup caches.
@@ -660,6 +695,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetMoneyPickups(CaptureMoneyPickups());
         Data.SetOrePickups(CaptureOrePickups());
         Data.SetOreSpawnPoints(CaptureOreSpawnPoints());
+        Data.SetDrillPlacementSpots(CaptureDrillPlacementSpots());
 
         return Data;
     }
@@ -703,6 +739,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         RestoreOreSpawnPoints(Data.GetOreSpawnPoints());
+        RestoreDrillPlacementSpots(Data.GetDrillPlacementSpots());
         RestoreSceneWorldItems(Data.GetSceneWorldItems());
 
         if (PlayerController != null && Data.GetPlayer() != null)
@@ -733,6 +770,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         OreDefinitionsById.Clear();
         SceneWorldItemsById.Clear();
         OreSpawnPointsById.Clear();
+        DrillPlacementSpotsById.Clear();
 
         for (int Index = 0; Index < ItemDefinitions.Count; Index++)
         {
@@ -802,6 +840,29 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             OreSpawnPointsById[SaveId.GetId()] = SpawnPoint;
+        }
+
+        DrillPlacementSpot[] DrillSpots = FindObjectsByType<DrillPlacementSpot>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < DrillSpots.Length; Index++)
+        {
+            DrillPlacementSpot Spot = DrillSpots[Index];
+
+            if (Spot == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Spot.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            DrillPlacementSpotsById[SaveId.GetId()] = Spot;
         }
     }
 
@@ -1450,5 +1511,75 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         Debug.Log("[GameSaveDebugController] " + Message, this);
+    }
+
+    /// <summary>
+    /// Captures every drill placement spot runtime state in the scene.
+    /// </summary>
+    private List<DrillPlacementSpotState> CaptureDrillPlacementSpots()
+    {
+        List<DrillPlacementSpotState> Result = new List<DrillPlacementSpotState>();
+
+        foreach (KeyValuePair<string, DrillPlacementSpot> Pair in DrillPlacementSpotsById)
+        {
+            DrillPlacementSpot Spot = Pair.Value;
+
+            if (Spot == null)
+            {
+                continue;
+            }
+
+            ItemDefinition DrillDefinition = Spot.GetCurrentPlacedDrillItemDefinition();
+            string DrillItemId = DrillDefinition != null ? DrillDefinition.GetItemId() : string.Empty;
+
+            Result.Add(new DrillPlacementSpotState(
+                Pair.Key,
+                Spot.GetIsBlocked(),
+                Spot.GetIsOccupied(),
+                DrillItemId,
+                Spot.GetCurrentRemainingProductionTimer()));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores every drill placement spot runtime state from save.
+    /// </summary>
+    private void RestoreDrillPlacementSpots(List<DrillPlacementSpotState> States)
+    {
+        if (States == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < States.Count; Index++)
+        {
+            DrillPlacementSpotState State = States[Index];
+
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!DrillPlacementSpotsById.TryGetValue(State.GetSceneId(), out DrillPlacementSpot Spot) || Spot == null)
+            {
+                continue;
+            }
+
+            ItemDefinition DrillItemDefinition = null;
+
+            if (!string.IsNullOrWhiteSpace(State.GetDrillItemId()))
+            {
+                ItemDefinitionsById.TryGetValue(State.GetDrillItemId(), out DrillItemDefinition);
+            }
+
+            Spot.ApplySavedState(
+                State.GetIsBlocked(),
+                State.GetIsOccupied(),
+                DrillItemDefinition,
+                OreRuntimeService,
+                State.GetRemainingProductionTimer());
+        }
     }
 }
