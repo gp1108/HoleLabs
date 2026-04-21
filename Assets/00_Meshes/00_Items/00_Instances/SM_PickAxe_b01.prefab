@@ -15,6 +15,8 @@ GameObject:
   - component: {fileID: 5793987543417759131}
   - component: {fileID: 8687911766278174016}
   - component: {fileID: 2237905902394475784}
+  - component: {fileID: -4849930247723742564}
+  - component: {fileID: -7061842385260361171}
   m_Layer: 6
   m_Name: SM_PickAxe_b01
   m_TagString: Untagged
@@ -180,3 +182,30 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.1273183, y: 0.085710466, z: 0.8082815}
   m_Center: {x: 0.004965648, y: 0.43021217, z: 0.042558044}
+--- !u!114 &-4849930247723742564
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 779518073925439557}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2c2f214a4af42a842b9b3c1262a230cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ScenePlacedWorldItemPersistence
+  WorldItem: {fileID: 5793987543417759131}
+  CachedRigidbody: {fileID: 8511810390029902910}
+--- !u!114 &-7061842385260361171
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 779518073925439557}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b26a3ae03d2d0b4b825865d3e45a2a6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SceneSaveId
+  Id: eaa2bfb9175547f9b0aacb6ed098fdfc

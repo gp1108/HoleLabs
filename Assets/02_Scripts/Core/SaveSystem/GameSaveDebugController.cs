@@ -1,52 +1,373 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine.SceneManagement;
 using UnityEngine;
 
 /// <summary>
 /// Debug-only save/load entry point for the current gameplay scene.
-/// Press F5 to save and F4 to load the fixed debug slot.
-/// This implementation uses Easy Save 3 as the persistence backend while keeping
-/// gameplay reconstruction explicit and stable.
+/// This implementation stores only pure data and avoids saving Unity object references
+/// inside the Easy Save payload.
 /// </summary>
 public sealed class GameSaveDebugController : MonoBehaviour
 {
     private const string SaveFileName = "save_debug.es3";
     private const string SaveRootKey = "debug_save_root";
+    private static bool HasPendingLoadRequest;
+    private static string PendingLoadFileName;
+    private static string PendingLoadRootKey;
 
-    [Header("References")]
-    [Tooltip("Player controller restored from save.")]
-    [SerializeField] private PlayerController PlayerController;
+    [Serializable]
+    private sealed class ItemInstanceData
+    {
+        [SerializeField] private string ItemId;
+        [SerializeField] private int Amount;
+        [SerializeField] private int UpgradeLevel;
+        [SerializeField] private float Durability;
 
-    [Tooltip("Hotbar runtime state restored from save.")]
-    [SerializeField] private HotbarController HotbarController;
+        public static ItemInstanceData FromRuntime(ItemInstance RuntimeItem)
+        {
+            if (RuntimeItem == null || RuntimeItem.GetDefinition() == null)
+            {
+                return null;
+            }
 
-    [Tooltip("Wallet restored from save.")]
-    [SerializeField] private CurrencyWallet CurrencyWallet;
+            return new ItemInstanceData
+            {
+                ItemId = RuntimeItem.GetDefinition().GetItemId(),
+                Amount = RuntimeItem.GetAmount(),
+                UpgradeLevel = RuntimeItem.GetUpgradeLevel(),
+                Durability = RuntimeItem.GetDurability()
+            };
+        }
 
-    [Tooltip("Upgrade manager restored from save.")]
-    [SerializeField] private UpgradeManager UpgradeManager;
+        public ItemInstance ToRuntime(Dictionary<string, ItemDefinition> DefinitionsById)
+        {
+            if (DefinitionsById == null || string.IsNullOrWhiteSpace(ItemId))
+            {
+                return null;
+            }
 
-    [Tooltip("Authoritative elevator motor restored from save.")]
-    [SerializeField] private ElevatorPhysicalMotor ElevatorPhysicalMotor;
+            if (!DefinitionsById.TryGetValue(ItemId, out ItemDefinition Definition) || Definition == null)
+            {
+                return null;
+            }
 
-    [Tooltip("Vertical lever visual state restored from save.")]
-    [SerializeField] private SnapLever VerticalSnapLever;
+            return new ItemInstance(Definition, Amount, UpgradeLevel, Durability);
+        }
+    }
 
-    [Tooltip("Rotation lever visual state restored from save.")]
-    [SerializeField] private SnapLever RotationSnapLever;
+    [Serializable]
+    private sealed class OrePropertyValueData
+    {
+        [SerializeField] private OrePropertyType PropertyType;
+        [SerializeField] private float Value;
 
-    [Tooltip("Runtime ore service used to recreate ore pickups and veins.")]
-    [SerializeField] private OreRuntimeService OreRuntimeService;
+        public OrePropertyType GetPropertyType() => PropertyType;
+        public float GetValue() => Value;
 
-    [Tooltip("Ore pickup pool reused when restoring ore pickups.")]
-    [SerializeField] private OrePickupPool OrePickupPool;
+        public OrePropertyValueData(OrePropertyType PropertyTypeValue, float ValueValue)
+        {
+            PropertyType = PropertyTypeValue;
+            Value = ValueValue;
+        }
+    }
 
-    [Tooltip("Money pickup pool reused when restoring money pickups.")]
-    [SerializeField] private MoneyPickupPool MoneyPickupPool;
+    [Serializable]
+    private sealed class OreItemDataSaveData
+    {
+        [SerializeField] private string OreId;
+        [SerializeField] private float GoldValue;
+        [SerializeField] private float ResearchValue;
+        [SerializeField] private float WeightValue;
+        [SerializeField] private List<OrePropertyValueData> Properties = new();
 
-    [Header("Debug")]
-    [Tooltip("Logs save and load operations.")]
-    [SerializeField] private bool DebugLogs = true;
+        public static OreItemDataSaveData FromRuntime(OreItemData RuntimeData)
+        {
+            if (RuntimeData == null || RuntimeData.GetOreDefinition() == null)
+            {
+                return null;
+            }
+
+            OreItemDataSaveData Result = new OreItemDataSaveData
+            {
+                OreId = RuntimeData.GetOreDefinition().GetOreId(),
+                GoldValue = RuntimeData.GetGoldValue(),
+                ResearchValue = RuntimeData.GetResearchValue(),
+                WeightValue = RuntimeData.GetWeightValue()
+            };
+
+            IReadOnlyList<OreItemData.OrePropertyValue> RuntimeProperties = RuntimeData.GetProperties();
+
+            for (int Index = 0; Index < RuntimeProperties.Count; Index++)
+            {
+                OreItemData.OrePropertyValue Property = RuntimeProperties[Index];
+
+                if (Property == null)
+                {
+                    continue;
+                }
+
+                Result.Properties.Add(new OrePropertyValueData(
+                    Property.GetPropertyType(),
+                    Property.GetValue()));
+            }
+
+            return Result;
+        }
+
+        public OreItemData ToRuntime(Dictionary<string, OreDefinition> DefinitionsById)
+        {
+            if (DefinitionsById == null || string.IsNullOrWhiteSpace(OreId))
+            {
+                return null;
+            }
+
+            if (!DefinitionsById.TryGetValue(OreId, out OreDefinition Definition) || Definition == null)
+            {
+                return null;
+            }
+
+            OreItemData Result = new OreItemData(Definition);
+            Result.SetGoldValue(GoldValue);
+            Result.SetResearchValue(ResearchValue);
+            Result.SetWeightValue(WeightValue);
+
+            for (int Index = 0; Index < Properties.Count; Index++)
+            {
+                OrePropertyValueData Property = Properties[Index];
+
+                if (Property == null)
+                {
+                    continue;
+                }
+
+                Result.SetProperty(Property.GetPropertyType(), Property.GetValue());
+            }
+
+            return Result;
+        }
+    }
+
+    [Serializable]
+    private sealed class PlayerSaveData
+    {
+        [SerializeField] private Vector3 Position;
+        [SerializeField] private bool IsCrouching;
+
+        public PlayerSaveData(Vector3 PositionValue, bool IsCrouchingValue)
+        {
+            Position = PositionValue;
+            IsCrouching = IsCrouchingValue;
+        }
+
+        public Vector3 GetPosition() => Position;
+        public bool GetIsCrouching() => IsCrouching;
+    }
+
+    [Serializable]
+    private sealed class WalletSaveData
+    {
+        [SerializeField] private float Gold;
+        [SerializeField] private float Research;
+
+        public WalletSaveData(float GoldValue, float ResearchValue)
+        {
+            Gold = GoldValue;
+            Research = ResearchValue;
+        }
+
+        public float GetGold() => Gold;
+        public float GetResearch() => Research;
+    }
+
+    [Serializable]
+    private sealed class HotbarSaveData
+    {
+        [SerializeField] private List<ItemInstanceData> Slots = new();
+        [SerializeField] private int SelectedIndex;
+
+        public List<ItemInstanceData> GetSlots() => Slots;
+        public int GetSelectedIndex() => SelectedIndex;
+
+        public static HotbarSaveData FromRuntime(HotbarController HotbarController)
+        {
+            HotbarSaveData Result = new HotbarSaveData();
+
+            if (HotbarController == null)
+            {
+                return Result;
+            }
+
+            int SlotCount = HotbarController.GetSlotCount();
+
+            for (int Index = 0; Index < SlotCount; Index++)
+            {
+                Result.Slots.Add(ItemInstanceData.FromRuntime(HotbarController.GetItemAtSlot(Index)));
+            }
+
+            Result.SelectedIndex = HotbarController.GetSelectedIndex();
+            return Result;
+        }
+
+        public List<ItemInstance> ToRuntime(Dictionary<string, ItemDefinition> DefinitionsById)
+        {
+            List<ItemInstance> Result = new List<ItemInstance>(Slots.Count);
+
+            for (int Index = 0; Index < Slots.Count; Index++)
+            {
+                Result.Add(Slots[Index] != null ? Slots[Index].ToRuntime(DefinitionsById) : null);
+            }
+
+            return Result;
+        }
+    }
+
+    [Serializable]
+    private sealed class ElevatorSaveData
+    {
+        [SerializeField] private float CurrentDistance;
+        [SerializeField] private Quaternion Rotation;
+        [SerializeField] private int VerticalLeverIndex;
+        [SerializeField] private int RotationLeverIndex;
+
+        public ElevatorSaveData(float CurrentDistanceValue, Quaternion RotationValue, int VerticalLeverIndexValue, int RotationLeverIndexValue)
+        {
+            CurrentDistance = CurrentDistanceValue;
+            Rotation = RotationValue;
+            VerticalLeverIndex = VerticalLeverIndexValue;
+            RotationLeverIndex = RotationLeverIndexValue;
+        }
+
+        public float GetCurrentDistance() => CurrentDistance;
+        public Quaternion GetRotation() => Rotation;
+        public int GetVerticalLeverIndex() => VerticalLeverIndex;
+        public int GetRotationLeverIndex() => RotationLeverIndex;
+    }
+
+    [Serializable]
+    private sealed class SceneWorldItemState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private bool IsPresent;
+        [SerializeField] private ItemInstanceData ItemData;
+        [SerializeField] private Vector3 Position;
+        [SerializeField] private Quaternion Rotation;
+
+        public SceneWorldItemState(string SceneIdValue, bool IsPresentValue, ItemInstanceData ItemDataValue, Vector3 PositionValue, Quaternion RotationValue)
+        {
+            SceneId = SceneIdValue;
+            IsPresent = IsPresentValue;
+            ItemData = ItemDataValue;
+            Position = PositionValue;
+            Rotation = RotationValue;
+        }
+
+        public string GetSceneId() => SceneId;
+        public bool GetIsPresent() => IsPresent;
+        public ItemInstanceData GetItemData() => ItemData;
+        public Vector3 GetPosition() => Position;
+        public Quaternion GetRotation() => Rotation;
+    }
+
+    [Serializable]
+    private sealed class RuntimeWorldItemState
+    {
+        [SerializeField] private ItemInstanceData ItemData;
+        [SerializeField] private Vector3 Position;
+        [SerializeField] private Quaternion Rotation;
+
+        public RuntimeWorldItemState(ItemInstanceData ItemDataValue, Vector3 PositionValue, Quaternion RotationValue)
+        {
+            ItemData = ItemDataValue;
+            Position = PositionValue;
+            Rotation = RotationValue;
+        }
+
+        public ItemInstanceData GetItemData() => ItemData;
+        public Vector3 GetPosition() => Position;
+        public Quaternion GetRotation() => Rotation;
+    }
+
+    [Serializable]
+    private sealed class MoneyPickupState
+    {
+        [SerializeField] private string MoneyId;
+        [SerializeField] private CurrencyWallet.CurrencyType CurrencyType;
+        [SerializeField] private float Amount;
+        [SerializeField] private Vector3 Position;
+        [SerializeField] private Quaternion Rotation;
+
+        public MoneyPickupState(string MoneyIdValue, CurrencyWallet.CurrencyType CurrencyTypeValue, float AmountValue, Vector3 PositionValue, Quaternion RotationValue)
+        {
+            MoneyId = MoneyIdValue;
+            CurrencyType = CurrencyTypeValue;
+            Amount = AmountValue;
+            Position = PositionValue;
+            Rotation = RotationValue;
+        }
+
+        public string GetMoneyId() => MoneyId;
+        public CurrencyWallet.CurrencyType GetCurrencyType() => CurrencyType;
+        public float GetAmount() => Amount;
+        public Vector3 GetPosition() => Position;
+        public Quaternion GetRotation() => Rotation;
+    }
+
+    [Serializable]
+    private sealed class OrePickupState
+    {
+        [SerializeField] private string SourcePrefabName;
+        [SerializeField] private OreItemDataSaveData OreData;
+        [SerializeField] private Vector3 Position;
+        [SerializeField] private Quaternion Rotation;
+
+        public OrePickupState(string SourcePrefabNameValue, OreItemDataSaveData OreDataValue, Vector3 PositionValue, Quaternion RotationValue)
+        {
+            SourcePrefabName = SourcePrefabNameValue;
+            OreData = OreDataValue;
+            Position = PositionValue;
+            Rotation = RotationValue;
+        }
+
+        public string GetSourcePrefabName() => SourcePrefabName;
+        public OreItemDataSaveData GetOreData() => OreData;
+        public Vector3 GetPosition() => Position;
+        public Quaternion GetRotation() => Rotation;
+    }
+
+    [Serializable]
+    private sealed class OreSpawnPointState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private bool IsActive;
+        [SerializeField] private string OreId;
+        [SerializeField] private bool IsGrowing;
+        [SerializeField] private int HitsRemaining;
+        [SerializeField] private float RespawnTimerRemaining;
+
+        public OreSpawnPointState(
+            string SceneIdValue,
+            bool IsActiveValue,
+            string OreIdValue,
+            bool IsGrowingValue,
+            int HitsRemainingValue,
+            float RespawnTimerRemainingValue)
+        {
+            SceneId = SceneIdValue;
+            IsActive = IsActiveValue;
+            OreId = OreIdValue;
+            IsGrowing = IsGrowingValue;
+            HitsRemaining = HitsRemainingValue;
+            RespawnTimerRemaining = RespawnTimerRemainingValue;
+        }
+
+        public string GetSceneId() => SceneId;
+        public bool GetIsActive() => IsActive;
+        public string GetOreId() => OreId;
+        public bool GetIsGrowing() => IsGrowing;
+        public int GetHitsRemaining() => HitsRemaining;
+        public float GetRespawnTimerRemaining() => RespawnTimerRemaining;
+    }
 
     [Serializable]
     private sealed class SaveData
@@ -91,205 +412,62 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         public List<OreSpawnPointState> GetOreSpawnPoints() => OreSpawnPoints;
         public void SetOreSpawnPoints(List<OreSpawnPointState> Value) => OreSpawnPoints = Value ?? new List<OreSpawnPointState>();
+
+
     }
 
-    [Serializable]
-    private sealed class PlayerSaveData
-    {
-        [SerializeField] private Vector3 Position;
-        [SerializeField] private bool IsCrouching;
+    [Header("References")]
+    [Tooltip("Player controller restored from save.")]
+    [SerializeField] private PlayerController PlayerController;
 
-        public PlayerSaveData(Vector3 PositionValue, bool IsCrouchingValue)
-        {
-            Position = PositionValue;
-            IsCrouching = IsCrouchingValue;
-        }
+    [Tooltip("Hotbar runtime state restored from save.")]
+    [SerializeField] private HotbarController HotbarController;
 
-        public Vector3 GetPosition() => Position;
-        public bool GetIsCrouching() => IsCrouching;
-    }
+    [Tooltip("Wallet restored from save.")]
+    [SerializeField] private CurrencyWallet CurrencyWallet;
 
-    [Serializable]
-    private sealed class WalletSaveData
-    {
-        [SerializeField] private float Gold;
-        [SerializeField] private float Research;
+    [Tooltip("Upgrade manager restored from save.")]
+    [SerializeField] private UpgradeManager UpgradeManager;
 
-        public WalletSaveData(float GoldValue, float ResearchValue)
-        {
-            Gold = GoldValue;
-            Research = ResearchValue;
-        }
+    [Tooltip("Authoritative elevator motor restored from save.")]
+    [SerializeField] private ElevatorPhysicalMotor ElevatorPhysicalMotor;
 
-        public float GetGold() => Gold;
-        public float GetResearch() => Research;
-    }
+    [Tooltip("Vertical lever visual state restored from save.")]
+    [SerializeField] private SnapLever VerticalSnapLever;
 
-    [Serializable]
-    private sealed class HotbarSaveData
-    {
-        [SerializeField] private List<ItemInstance> Slots = new();
-        [SerializeField] private int SelectedIndex;
+    [Tooltip("Rotation lever visual state restored from save.")]
+    [SerializeField] private SnapLever RotationSnapLever;
 
-        public HotbarSaveData(List<ItemInstance> SlotsValue, int SelectedIndexValue)
-        {
-            Slots = SlotsValue ?? new List<ItemInstance>();
-            SelectedIndex = SelectedIndexValue;
-        }
+    [Tooltip("Runtime ore service used to recreate ore pickups and veins.")]
+    [SerializeField] private OreRuntimeService OreRuntimeService;
 
-        public List<ItemInstance> GetSlots() => Slots;
-        public int GetSelectedIndex() => SelectedIndex;
-    }
+    [Tooltip("Ore pickup pool reused when restoring ore pickups.")]
+    [SerializeField] private OrePickupPool OrePickupPool;
 
-    [Serializable]
-    private sealed class ElevatorSaveData
-    {
-        [SerializeField] private float CurrentDistance;
-        [SerializeField] private Quaternion Rotation;
-        [SerializeField] private int VerticalLeverIndex;
-        [SerializeField] private int RotationLeverIndex;
+    [Tooltip("Money pickup pool reused when restoring money pickups.")]
+    [SerializeField] private MoneyPickupPool MoneyPickupPool;
 
-        public ElevatorSaveData(float CurrentDistanceValue, Quaternion RotationValue, int VerticalLeverIndexValue, int RotationLeverIndexValue)
-        {
-            CurrentDistance = CurrentDistanceValue;
-            Rotation = RotationValue;
-            VerticalLeverIndex = VerticalLeverIndexValue;
-            RotationLeverIndex = RotationLeverIndexValue;
-        }
+    [Header("Definition Lookup")]
+    [Tooltip("All item definitions available in this gameplay scene.")]
+    [SerializeField] private List<ItemDefinition> ItemDefinitions = new();
 
-        public float GetCurrentDistance() => CurrentDistance;
-        public Quaternion GetRotation() => Rotation;
-        public int GetVerticalLeverIndex() => VerticalLeverIndex;
-        public int GetRotationLeverIndex() => RotationLeverIndex;
-    }
+    [Tooltip("All ore definitions available in this gameplay scene.")]
+    [SerializeField] private List<OreDefinition> OreDefinitions = new();
 
-    [Serializable]
-    private sealed class SceneWorldItemState
-    {
-        [SerializeField] private ScenePlacedWorldItemPersistence SceneItem;
-        [SerializeField] private bool IsPresent;
-        [SerializeField] private ItemInstance ItemInstance;
-        [SerializeField] private Vector3 Position;
-        [SerializeField] private Quaternion Rotation;
+    [Tooltip("Authoritative sell trigger used to resolve money denomination prefabs from saved money ids.")]
+    [SerializeField] private OreSellTrigger OreSellTrigger;
 
-        public SceneWorldItemState(ScenePlacedWorldItemPersistence SceneItemValue, bool IsPresentValue, ItemInstance ItemInstanceValue, Vector3 PositionValue, Quaternion RotationValue)
-        {
-            SceneItem = SceneItemValue;
-            IsPresent = IsPresentValue;
-            ItemInstance = ItemInstanceValue;
-            Position = PositionValue;
-            Rotation = RotationValue;
-        }
+    [Header("Debug")]
+    [Tooltip("Logs save and load operations.")]
+    [SerializeField] private bool DebugLogs = true;
 
-        public ScenePlacedWorldItemPersistence GetSceneItem() => SceneItem;
-        public bool GetIsPresent() => IsPresent;
-        public ItemInstance GetItemInstance() => ItemInstance;
-        public Vector3 GetPosition() => Position;
-        public Quaternion GetRotation() => Rotation;
-    }
-
-    [Serializable]
-    private sealed class RuntimeWorldItemState
-    {
-        [SerializeField] private ItemInstance ItemInstance;
-        [SerializeField] private Vector3 Position;
-        [SerializeField] private Quaternion Rotation;
-
-        public RuntimeWorldItemState(ItemInstance ItemInstanceValue, Vector3 PositionValue, Quaternion RotationValue)
-        {
-            ItemInstance = ItemInstanceValue;
-            Position = PositionValue;
-            Rotation = RotationValue;
-        }
-
-        public ItemInstance GetItemInstance() => ItemInstance;
-        public Vector3 GetPosition() => Position;
-        public Quaternion GetRotation() => Rotation;
-    }
-
-    [Serializable]
-    private sealed class MoneyPickupState
-    {
-        [SerializeField] private GameObject SourcePrefab;
-        [SerializeField] private CurrencyWallet.CurrencyType CurrencyType;
-        [SerializeField] private float Amount;
-        [SerializeField] private Vector3 Position;
-        [SerializeField] private Quaternion Rotation;
-
-        public MoneyPickupState(GameObject SourcePrefabValue, CurrencyWallet.CurrencyType CurrencyTypeValue, float AmountValue, Vector3 PositionValue, Quaternion RotationValue)
-        {
-            SourcePrefab = SourcePrefabValue;
-            CurrencyType = CurrencyTypeValue;
-            Amount = AmountValue;
-            Position = PositionValue;
-            Rotation = RotationValue;
-        }
-
-        public GameObject GetSourcePrefab() => SourcePrefab;
-        public CurrencyWallet.CurrencyType GetCurrencyType() => CurrencyType;
-        public float GetAmount() => Amount;
-        public Vector3 GetPosition() => Position;
-        public Quaternion GetRotation() => Rotation;
-    }
-
-    [Serializable]
-    private sealed class OrePickupState
-    {
-        [SerializeField] private GameObject SourcePrefab;
-        [SerializeField] private OreItemData OreItemData;
-        [SerializeField] private Vector3 Position;
-        [SerializeField] private Quaternion Rotation;
-
-        public OrePickupState(GameObject SourcePrefabValue, OreItemData OreItemDataValue, Vector3 PositionValue, Quaternion RotationValue)
-        {
-            SourcePrefab = SourcePrefabValue;
-            OreItemData = OreItemDataValue;
-            Position = PositionValue;
-            Rotation = RotationValue;
-        }
-
-        public GameObject GetSourcePrefab() => SourcePrefab;
-        public OreItemData GetOreItemData() => OreItemData;
-        public Vector3 GetPosition() => Position;
-        public Quaternion GetRotation() => Rotation;
-    }
-
-    [Serializable]
-    private sealed class OreSpawnPointState
-    {
-        [SerializeField] private OreSpawnPoint SpawnPoint;
-        [SerializeField] private bool IsActive;
-        [SerializeField] private OreDefinition OreDefinition;
-        [SerializeField] private bool IsGrowing;
-        [SerializeField] private int HitsRemaining;
-        [SerializeField] private float RespawnTimerRemaining;
-
-        public OreSpawnPointState(
-            OreSpawnPoint SpawnPointValue,
-            bool IsActiveValue,
-            OreDefinition OreDefinitionValue,
-            bool IsGrowingValue,
-            int HitsRemainingValue,
-            float RespawnTimerRemainingValue)
-        {
-            SpawnPoint = SpawnPointValue;
-            IsActive = IsActiveValue;
-            OreDefinition = OreDefinitionValue;
-            IsGrowing = IsGrowingValue;
-            HitsRemaining = HitsRemainingValue;
-            RespawnTimerRemaining = RespawnTimerRemainingValue;
-        }
-
-        public OreSpawnPoint GetSpawnPoint() => SpawnPoint;
-        public bool GetIsActive() => IsActive;
-        public OreDefinition GetOreDefinition() => OreDefinition;
-        public bool GetIsGrowing() => IsGrowing;
-        public int GetHitsRemaining() => HitsRemaining;
-        public float GetRespawnTimerRemaining() => RespawnTimerRemaining;
-    }
+    private readonly Dictionary<string, ItemDefinition> ItemDefinitionsById = new();
+    private readonly Dictionary<string, OreDefinition> OreDefinitionsById = new();
+    private readonly Dictionary<string, ScenePlacedWorldItemPersistence> SceneWorldItemsById = new();
+    private readonly Dictionary<string, OreSpawnPoint> OreSpawnPointsById = new();
 
     /// <summary>
-    /// Resolves missing scene references.
+    /// Resolves missing scene references and builds lookup caches.
     /// </summary>
     private void Awake()
     {
@@ -332,6 +510,58 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             MoneyPickupPool = FindFirstObjectByType<MoneyPickupPool>();
         }
+
+        if (OreSellTrigger == null)
+        {
+            OreSellTrigger = FindFirstObjectByType<OreSellTrigger>();
+        }
+
+        RebuildLookupCaches();
+    }
+
+    /// <summary>
+    /// Applies a pending deferred load after the scene has been recreated from a clean state.
+    /// This avoids restoring save data on top of a live runtime scene.
+    /// </summary>
+    private void Start()
+    {
+        if (!HasPendingLoadRequest)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(PendingLoadFileName) || string.IsNullOrWhiteSpace(PendingLoadRootKey))
+        {
+            HasPendingLoadRequest = false;
+            PendingLoadFileName = string.Empty;
+            PendingLoadRootKey = string.Empty;
+            return;
+        }
+
+        if (!ES3.KeyExists(PendingLoadRootKey, PendingLoadFileName))
+        {
+            HasPendingLoadRequest = false;
+            PendingLoadFileName = string.Empty;
+            PendingLoadRootKey = string.Empty;
+            return;
+        }
+
+        SaveData Data = ES3.Load<SaveData>(PendingLoadRootKey, filePath: PendingLoadFileName);
+
+        HasPendingLoadRequest = false;
+        PendingLoadFileName = string.Empty;
+        PendingLoadRootKey = string.Empty;
+
+        if (Data == null)
+        {
+            Log("Deferred load failed because loaded save data was null.");
+            return;
+        }
+
+        ApplySaveData(Data);
+        Physics.SyncTransforms();
+
+        Log("Deferred load applied after clean scene reload.");
     }
 
     /// <summary>
@@ -339,6 +569,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private void Update()
     {
+        //@TODO:QUITAR ESTAS TECLAS PARA QUE NO SALTEN ERROR
         if (Input.GetKeyDown(KeyCode.F5))
         {
             SaveGame();
@@ -356,13 +587,16 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [ContextMenu("Save Debug Game")]
     public void SaveGame()
     {
-        SaveData SaveData = BuildSaveData();
-        ES3.Save(SaveRootKey, SaveData, SaveFileName);
+        NormalizeTransientCarryStatesForSaveLoad();
+        Physics.SyncTransforms();
+        SaveData Data = BuildSaveData();
+        ES3.Save(SaveRootKey, Data, SaveFileName);
         Log("Saved debug slot to file: " + SaveFileName);
     }
 
     /// <summary>
-    /// Loads the fixed debug slot and restores the gameplay state.
+    /// Requests a clean scene reload and applies the saved snapshot only after the new scene boots.
+    /// This avoids restoring save data on top of a dirty live runtime world.
     /// </summary>
     [ContextMenu("Load Debug Game")]
     public void LoadGame()
@@ -373,22 +607,12 @@ public sealed class GameSaveDebugController : MonoBehaviour
             return;
         }
 
-        SaveData SaveData = ES3.Load<SaveData>(SaveRootKey, filePath: SaveFileName);
+        HasPendingLoadRequest = true;
+        PendingLoadFileName = SaveFileName;
+        PendingLoadRootKey = SaveRootKey;
 
-        if (SaveData == null)
-        {
-            Log("Loaded save data was null.");
-            return;
-        }
-
-        ClearRuntimeWorldItems();
-        ClearRuntimeMoneyPickups();
-        ClearRuntimeOrePickups();
-
-        ApplySaveData(SaveData);
-        Physics.SyncTransforms();
-
-        Log("Loaded debug slot from file: " + SaveFileName);
+        Scene ActiveScene = SceneManager.GetActiveScene();
+        SceneManager.LoadScene(ActiveScene.name);
     }
 
     /// <summary>
@@ -396,32 +620,30 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private SaveData BuildSaveData()
     {
-        SaveData SaveData = new SaveData();
+        SaveData Data = new SaveData();
 
         if (PlayerController != null)
         {
-            SaveData.SetPlayer(new PlayerSaveData(
-                PlayerController.GetWorldPosition(),
+            Data.SetPlayer(new PlayerSaveData(
+                PlayerController.transform.position,
                 PlayerController.IsCrouching));
         }
 
         if (CurrencyWallet != null)
         {
-            SaveData.SetWallet(new WalletSaveData(
+            Data.SetWallet(new WalletSaveData(
                 CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Gold),
                 CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research)));
         }
 
         if (HotbarController != null)
         {
-            SaveData.SetHotbar(new HotbarSaveData(
-                HotbarController.CreateSlotSaveSnapshot(),
-                HotbarController.GetSelectedIndex()));
+            Data.SetHotbar(HotbarSaveData.FromRuntime(HotbarController));
         }
 
         if (ElevatorPhysicalMotor != null)
         {
-            SaveData.SetElevator(new ElevatorSaveData(
+            Data.SetElevator(new ElevatorSaveData(
                 ElevatorPhysicalMotor.GetCurrentDistance(),
                 ElevatorPhysicalMotor.transform.rotation,
                 VerticalSnapLever != null ? VerticalSnapLever.CurrentSnapIndex : 0,
@@ -430,92 +652,197 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         if (UpgradeManager != null)
         {
-            SaveData.SetUpgradeEntries(UpgradeManager.CreateSaveEntries());
+            Data.SetUpgradeEntries(UpgradeManager.CreateSaveEntries());
         }
 
-        SaveData.SetSceneWorldItems(CaptureSceneWorldItems());
-        SaveData.SetRuntimeWorldItems(CaptureRuntimeWorldItems());
-        SaveData.SetMoneyPickups(CaptureMoneyPickups());
-        SaveData.SetOrePickups(CaptureOrePickups());
-        SaveData.SetOreSpawnPoints(CaptureOreSpawnPointStates());
+        Data.SetSceneWorldItems(CaptureSceneWorldItems());
+        Data.SetRuntimeWorldItems(CaptureRuntimeWorldItems());
+        Data.SetMoneyPickups(CaptureMoneyPickups());
+        Data.SetOrePickups(CaptureOrePickups());
+        Data.SetOreSpawnPoints(CaptureOreSpawnPoints());
 
-        return SaveData;
+        return Data;
     }
 
     /// <summary>
     /// Applies a previously loaded gameplay save.
     /// </summary>
-    private void ApplySaveData(SaveData SaveData)
+    private void ApplySaveData(SaveData Data)
     {
-        if (SaveData == null)
+        if (Data == null)
         {
             return;
         }
 
-        if (CurrencyWallet != null && SaveData.GetWallet() != null)
+        if (CurrencyWallet != null && Data.GetWallet() != null)
         {
-            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Gold, SaveData.GetWallet().GetGold());
-            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Research, SaveData.GetWallet().GetResearch());
+            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Gold, Data.GetWallet().GetGold());
+            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Research, Data.GetWallet().GetResearch());
         }
 
         if (UpgradeManager != null)
         {
-            UpgradeManager.ApplySaveEntries(SaveData.GetUpgradeEntries());
+            UpgradeManager.ApplySaveEntries(Data.GetUpgradeEntries());
         }
 
-        if (ElevatorPhysicalMotor != null && SaveData.GetElevator() != null)
+        if (ElevatorPhysicalMotor != null && Data.GetElevator() != null)
         {
             ElevatorPhysicalMotor.ApplySavedPose(
-                SaveData.GetElevator().GetCurrentDistance(),
-                SaveData.GetElevator().GetRotation());
+                Data.GetElevator().GetCurrentDistance(),
+                Data.GetElevator().GetRotation());
         }
 
-        if (VerticalSnapLever != null && SaveData.GetElevator() != null)
+        if (VerticalSnapLever != null && Data.GetElevator() != null)
         {
-            VerticalSnapLever.SetSnapIndexWithoutNotify(SaveData.GetElevator().GetVerticalLeverIndex());
+            VerticalSnapLever.SetSnapIndexWithoutNotify(Data.GetElevator().GetVerticalLeverIndex());
         }
 
-        if (RotationSnapLever != null && SaveData.GetElevator() != null)
+        if (RotationSnapLever != null && Data.GetElevator() != null)
         {
-            RotationSnapLever.SetSnapIndexWithoutNotify(SaveData.GetElevator().GetRotationLeverIndex());
+            RotationSnapLever.SetSnapIndexWithoutNotify(Data.GetElevator().GetRotationLeverIndex());
         }
 
-        RestoreOreSpawnPoints(SaveData.GetOreSpawnPoints());
-        RestoreSceneWorldItems(SaveData.GetSceneWorldItems());
+        RestoreOreSpawnPoints(Data.GetOreSpawnPoints());
+        RestoreSceneWorldItems(Data.GetSceneWorldItems());
 
-        if (PlayerController != null && SaveData.GetPlayer() != null)
+        if (PlayerController != null && Data.GetPlayer() != null)
         {
             PlayerController.ApplySavedState(
-                SaveData.GetPlayer().GetPosition(),
-                SaveData.GetPlayer().GetIsCrouching());
+                Data.GetPlayer().GetPosition(),
+                Data.GetPlayer().GetIsCrouching());
         }
 
-        if (HotbarController != null && SaveData.GetHotbar() != null)
+        if (HotbarController != null && Data.GetHotbar() != null)
         {
             HotbarController.ApplySaveState(
-                SaveData.GetHotbar().GetSlots(),
-                SaveData.GetHotbar().GetSelectedIndex());
+                Data.GetHotbar().ToRuntime(ItemDefinitionsById),
+                Data.GetHotbar().GetSelectedIndex());
         }
 
-        RestoreRuntimeWorldItems(SaveData.GetRuntimeWorldItems());
-        RestoreMoneyPickups(SaveData.GetMoneyPickups());
-        RestoreOrePickups(SaveData.GetOrePickups());
+        RestoreRuntimeWorldItems(Data.GetRuntimeWorldItems());
+        RestoreMoneyPickups(Data.GetMoneyPickups());
+        RestoreOrePickups(Data.GetOrePickups());
     }
 
     /// <summary>
-    /// Captures every scene-placed world item persistence wrapper.
+    /// Rebuilds definition and scene object lookup caches.
+    /// </summary>
+    private void RebuildLookupCaches()
+    {
+        ItemDefinitionsById.Clear();
+        OreDefinitionsById.Clear();
+        SceneWorldItemsById.Clear();
+        OreSpawnPointsById.Clear();
+
+        for (int Index = 0; Index < ItemDefinitions.Count; Index++)
+        {
+            ItemDefinition Definition = ItemDefinitions[Index];
+
+            if (Definition == null || string.IsNullOrWhiteSpace(Definition.GetItemId()))
+            {
+                continue;
+            }
+
+            ItemDefinitionsById[Definition.GetItemId()] = Definition;
+        }
+
+        for (int Index = 0; Index < OreDefinitions.Count; Index++)
+        {
+            OreDefinition Definition = OreDefinitions[Index];
+
+            if (Definition == null || string.IsNullOrWhiteSpace(Definition.GetOreId()))
+            {
+                continue;
+            }
+
+            OreDefinitionsById[Definition.GetOreId()] = Definition;
+        }
+
+        ScenePlacedWorldItemPersistence[] SceneWorldItems = FindObjectsByType<ScenePlacedWorldItemPersistence>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < SceneWorldItems.Length; Index++)
+        {
+            ScenePlacedWorldItemPersistence SceneItem = SceneWorldItems[Index];
+
+            if (SceneItem == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = SceneItem.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            SceneWorldItemsById[SaveId.GetId()] = SceneItem;
+        }
+
+        OreSpawnPoint[] SpawnPoints = FindObjectsByType<OreSpawnPoint>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < SpawnPoints.Length; Index++)
+        {
+            OreSpawnPoint SpawnPoint = SpawnPoints[Index];
+
+            if (SpawnPoint == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = SpawnPoint.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            OreSpawnPointsById[SaveId.GetId()] = SpawnPoint;
+        }
+    }
+
+    /// <summary>
+    /// Forces transient interaction-driven carry states to end before save or load.
+    /// Save data should only capture stable world state, never live hold or magnet runtime state.
+    /// </summary>
+    private void NormalizeTransientCarryStatesForSaveLoad()
+    {
+        PlayerInteractionController InteractionController = FindFirstObjectByType<PlayerInteractionController>();
+
+        if (InteractionController != null)
+        {
+            InteractionController.ForceReleaseHeldCarryableForSave();
+        }
+
+        MagnetItemBehaviour[] MagnetBehaviours = FindObjectsByType<MagnetItemBehaviour>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < MagnetBehaviours.Length; Index++)
+        {
+            if (MagnetBehaviours[Index] == null)
+            {
+                continue;
+            }
+
+            MagnetBehaviours[Index].ForceStopMagnetForSave();
+        }
+    }
+
+    /// <summary>
+    /// Captures every scene-placed world item state.
     /// </summary>
     private List<SceneWorldItemState> CaptureSceneWorldItems()
     {
         List<SceneWorldItemState> Result = new List<SceneWorldItemState>();
 
-        ScenePlacedWorldItemPersistence[] SceneItems = FindObjectsByType<ScenePlacedWorldItemPersistence>(
-            FindObjectsInactive.Include,
-            FindObjectsSortMode.None);
-
-        for (int Index = 0; Index < SceneItems.Length; Index++)
+        foreach (KeyValuePair<string, ScenePlacedWorldItemPersistence> Pair in SceneWorldItemsById)
         {
-            ScenePlacedWorldItemPersistence SceneItem = SceneItems[Index];
+            ScenePlacedWorldItemPersistence SceneItem = Pair.Value;
 
             if (SceneItem == null)
             {
@@ -525,25 +852,30 @@ public sealed class GameSaveDebugController : MonoBehaviour
             bool IsPresent = SceneItem.GetIsPresent();
             WorldItem WorldItem = SceneItem.GetWorldItem();
 
-            ItemInstance ItemInstance = null;
+            ItemInstanceData ItemData = null;
             Vector3 Position = SceneItem.transform.position;
             Quaternion Rotation = SceneItem.transform.rotation;
 
             if (IsPresent && WorldItem != null)
             {
-                ItemInstance = WorldItem.CreateItemInstance();
+                ItemData = ItemInstanceData.FromRuntime(WorldItem.CreateItemInstance());
                 Position = WorldItem.GetWorldPosition();
                 Rotation = WorldItem.GetWorldRotation();
             }
 
-            Result.Add(new SceneWorldItemState(SceneItem, IsPresent, ItemInstance, Position, Rotation));
+            Result.Add(new SceneWorldItemState(
+                Pair.Key,
+                IsPresent,
+                ItemData,
+                Position,
+                Rotation));
         }
 
         return Result;
     }
 
     /// <summary>
-    /// Captures every active runtime world item not placed directly in the scene.
+    /// Captures every runtime world item not owned by a scene persistence wrapper.
     /// </summary>
     private List<RuntimeWorldItemState> CaptureRuntimeWorldItems()
     {
@@ -565,15 +897,15 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            ItemInstance ItemInstance = WorldItem.CreateItemInstance();
+            ItemInstanceData ItemData = ItemInstanceData.FromRuntime(WorldItem.CreateItemInstance());
 
-            if (ItemInstance == null)
+            if (ItemData == null)
             {
                 continue;
             }
 
             Result.Add(new RuntimeWorldItemState(
-                ItemInstance,
+                ItemData,
                 WorldItem.GetWorldPosition(),
                 WorldItem.GetWorldRotation()));
         }
@@ -588,30 +920,30 @@ public sealed class GameSaveDebugController : MonoBehaviour
     {
         List<MoneyPickupState> Result = new List<MoneyPickupState>();
 
-        MoneyPickup[] MoneyPickups = FindObjectsByType<MoneyPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        MoneyPickup[] Pickups = FindObjectsByType<MoneyPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 
-        for (int Index = 0; Index < MoneyPickups.Length; Index++)
+        for (int Index = 0; Index < Pickups.Length; Index++)
         {
-            MoneyPickup MoneyPickup = MoneyPickups[Index];
+            MoneyPickup Pickup = Pickups[Index];
 
-            if (MoneyPickup == null || !MoneyPickup.gameObject.activeInHierarchy)
+            if (Pickup == null || !Pickup.gameObject.activeInHierarchy)
             {
                 continue;
             }
 
-            GameObject SourcePrefab = MoneyPickup.GetSourcePrefab();
+            string MoneyId = Pickup.GetSaveMoneyId();
 
-            if (SourcePrefab == null)
+            if (string.IsNullOrWhiteSpace(MoneyId))
             {
                 continue;
             }
 
             Result.Add(new MoneyPickupState(
-                SourcePrefab,
-                MoneyPickup.GetCurrencyType(),
-                MoneyPickup.GetAmount(),
-                MoneyPickup.GetRuntimeRoot().position,
-                MoneyPickup.GetRuntimeRoot().rotation));
+                MoneyId,
+                Pickup.GetCurrencyType(),
+                Pickup.GetAmount(),
+                Pickup.GetRuntimeRoot().position,
+                Pickup.GetRuntimeRoot().rotation));
         }
 
         return Result;
@@ -624,49 +956,45 @@ public sealed class GameSaveDebugController : MonoBehaviour
     {
         List<OrePickupState> Result = new List<OrePickupState>();
 
-        OrePickup[] OrePickups = FindObjectsByType<OrePickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        OrePickup[] Pickups = FindObjectsByType<OrePickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 
-        for (int Index = 0; Index < OrePickups.Length; Index++)
+        for (int Index = 0; Index < Pickups.Length; Index++)
         {
-            OrePickup OrePickup = OrePickups[Index];
+            OrePickup Pickup = Pickups[Index];
 
-            if (OrePickup == null || !OrePickup.gameObject.activeInHierarchy)
+            if (Pickup == null || !Pickup.gameObject.activeInHierarchy)
             {
                 continue;
             }
 
-            GameObject SourcePrefab = OrePickup.GetSourcePrefab();
-            OreItemData OreItemData = OrePickup.GetOreItemData();
+            string SourcePrefabName = Pickup.GetSourcePrefabName();
+            OreItemDataSaveData OreData = OreItemDataSaveData.FromRuntime(Pickup.GetOreItemData());
 
-            if (SourcePrefab == null || OreItemData == null)
+            if (string.IsNullOrWhiteSpace(SourcePrefabName) || OreData == null)
             {
                 continue;
             }
 
             Result.Add(new OrePickupState(
-                SourcePrefab,
-                OreItemData,
-                OrePickup.GetRuntimeRoot().position,
-                OrePickup.GetRuntimeRoot().rotation));
+                SourcePrefabName,
+                OreData,
+                Pickup.GetRuntimeRoot().position,
+                Pickup.GetRuntimeRoot().rotation));
         }
 
         return Result;
     }
 
     /// <summary>
-    /// Captures every ore spawn point and its current runtime vein state.
+    /// Captures every ore spawn point state in the scene.
     /// </summary>
-    private List<OreSpawnPointState> CaptureOreSpawnPointStates()
+    private List<OreSpawnPointState> CaptureOreSpawnPoints()
     {
         List<OreSpawnPointState> Result = new List<OreSpawnPointState>();
 
-        OreSpawnPoint[] SpawnPoints = FindObjectsByType<OreSpawnPoint>(
-            FindObjectsInactive.Include,
-            FindObjectsSortMode.None);
-
-        for (int Index = 0; Index < SpawnPoints.Length; Index++)
+        foreach (KeyValuePair<string, OreSpawnPoint> Pair in OreSpawnPointsById)
         {
-            OreSpawnPoint SpawnPoint = SpawnPoints[Index];
+            OreSpawnPoint SpawnPoint = Pair.Value;
 
             if (SpawnPoint == null)
             {
@@ -675,23 +1003,22 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
             OreVein CurrentVein = SpawnPoint.GetCurrentVein();
 
-            if (!SpawnPoint.GetIsActive() || CurrentVein == null)
+            if (!SpawnPoint.GetIsActive() || CurrentVein == null || CurrentVein.GetOreDefinition() == null)
             {
                 Result.Add(new OreSpawnPointState(
-                    SpawnPoint,
+                    Pair.Key,
                     false,
-                    null,
+                    string.Empty,
                     false,
                     0,
                     0f));
-
                 continue;
             }
 
             Result.Add(new OreSpawnPointState(
-                SpawnPoint,
+                Pair.Key,
                 true,
-                CurrentVein.GetOreDefinition(),
+                CurrentVein.GetOreDefinition().GetOreId(),
                 CurrentVein.GetIsGrowing(),
                 CurrentVein.GetCurrentHitsRemaining(),
                 CurrentVein.GetCurrentRespawnTimer()));
@@ -714,26 +1041,38 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             SceneWorldItemState State = States[Index];
 
-            if (State == null || State.GetSceneItem() == null)
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!SceneWorldItemsById.TryGetValue(State.GetSceneId(), out ScenePlacedWorldItemPersistence SceneItem) || SceneItem == null)
             {
                 continue;
             }
 
             if (!State.GetIsPresent())
             {
-                State.GetSceneItem().SetPresent(false);
+                SceneItem.SetPresent(false);
                 continue;
             }
 
-            State.GetSceneItem().ApplySavedState(
-                State.GetItemInstance(),
-                State.GetPosition(),
-                State.GetRotation());
+            ItemInstance RuntimeItem = State.GetItemData() != null
+                ? State.GetItemData().ToRuntime(ItemDefinitionsById)
+                : null;
+
+            if (RuntimeItem == null)
+            {
+                SceneItem.SetPresent(false);
+                continue;
+            }
+
+            SceneItem.ApplySavedState(RuntimeItem, State.GetPosition(), State.GetRotation());
         }
     }
 
     /// <summary>
-    /// Restores runtime world items by respawning them from their saved item instances.
+    /// Restores runtime world items by respawning them from saved item data.
     /// </summary>
     private void RestoreRuntimeWorldItems(List<RuntimeWorldItemState> States)
     {
@@ -746,13 +1085,20 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             RuntimeWorldItemState State = States[Index];
 
-            if (State == null || State.GetItemInstance() == null)
+            if (State == null || State.GetItemData() == null)
+            {
+                continue;
+            }
+
+            ItemInstance RuntimeItem = State.GetItemData().ToRuntime(ItemDefinitionsById);
+
+            if (RuntimeItem == null)
             {
                 continue;
             }
 
             HotbarController.SpawnWorldItem(
-                State.GetItemInstance(),
+                RuntimeItem,
                 State.GetPosition(),
                 State.GetRotation(),
                 Vector3.zero,
@@ -762,7 +1108,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
-    /// Restores money pickups in a stable, non-moving state.
+    /// Restores money pickups in a stable non-moving state.
     /// </summary>
     private void RestoreMoneyPickups(List<MoneyPickupState> States)
     {
@@ -775,56 +1121,67 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             MoneyPickupState State = States[Index];
 
-            if (State == null || State.GetSourcePrefab() == null)
+            if (State == null || string.IsNullOrWhiteSpace(State.GetMoneyId()))
             {
                 continue;
             }
 
-            MoneyPickup MoneyPickup = null;
+            GameObject Prefab = OreSellTrigger != null
+                ? OreSellTrigger.GetMoneyPrefabByDenominationId(State.GetMoneyId())
+                : null;
+
+            if (Prefab == null)
+            {
+                continue;
+            }
+
+            MoneyPickup Pickup = null;
 
             if (MoneyPickupPool != null)
             {
-                MoneyPickup = MoneyPickupPool.GetPickup(
-                    State.GetSourcePrefab(),
-                    State.GetPosition(),
-                    State.GetRotation());
+                Pickup = MoneyPickupPool.GetPickup(Prefab, State.GetPosition(), State.GetRotation());
             }
 
-            if (MoneyPickup == null)
+            if (Pickup == null)
             {
-                GameObject Instance = Instantiate(State.GetSourcePrefab(), State.GetPosition(), State.GetRotation());
-                MoneyPickup = Instance.GetComponent<MoneyPickup>();
+                GameObject Instance = Instantiate(Prefab, State.GetPosition(), State.GetRotation());
+                Pickup = Instance.GetComponent<MoneyPickup>();
 
-                if (MoneyPickup == null)
+                if (Pickup == null)
                 {
-                    MoneyPickup = Instance.GetComponentInChildren<MoneyPickup>(true);
+                    Pickup = Instance.GetComponentInChildren<MoneyPickup>(true);
                 }
 
-                if (MoneyPickup != null)
+                if (Pickup != null)
                 {
-                    MoneyPickup.BindPool(null, State.GetSourcePrefab());
+                    Pickup.BindPool(null, Prefab);
                 }
             }
 
-            if (MoneyPickup == null)
+            if (Pickup == null)
             {
                 continue;
             }
 
-            MoneyPickup.Initialize(State.GetAmount(), State.GetCurrencyType());
+            Pickup.Initialize(State.GetAmount(), State.GetCurrencyType());
+            Pickup.SetSaveMoneyId(State.GetMoneyId());
 
-            Rigidbody RigidbodyComponent = MoneyPickup.GetCachedRigidbody();
+            Rigidbody RigidbodyComponent = Pickup.GetCachedRigidbody();
             if (RigidbodyComponent != null)
             {
-                RigidbodyComponent.linearVelocity = Vector3.zero;
-                RigidbodyComponent.angularVelocity = Vector3.zero;
+                if (!RigidbodyComponent.isKinematic)
+                {
+                    RigidbodyComponent.linearVelocity = Vector3.zero;
+                    RigidbodyComponent.angularVelocity = Vector3.zero;
+                }
+
                 RigidbodyComponent.Sleep();
             }
         }
     }
 
     /// <summary>
-    /// Restores ore pickups in a stable, non-moving state.
+    /// Restores ore pickups in a stable non-moving state.
     /// </summary>
     private void RestoreOrePickups(List<OrePickupState> States)
     {
@@ -837,73 +1194,84 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             OrePickupState State = States[Index];
 
-            if (State == null || State.GetSourcePrefab() == null || State.GetOreItemData() == null)
+            if (State == null || State.GetOreData() == null)
             {
                 continue;
             }
 
-            OrePickup OrePickup = null;
+            GameObject Prefab = ResolveOrePickupPrefabByName(State.GetSourcePrefabName());
+
+            if (Prefab == null)
+            {
+                continue;
+            }
+
+            OreItemData RuntimeOreData = State.GetOreData().ToRuntime(OreDefinitionsById);
+
+            if (RuntimeOreData == null)
+            {
+                continue;
+            }
+
+            OrePickup Pickup = null;
 
             if (OrePickupPool != null)
             {
-                OrePickup = OrePickupPool.GetPickup(
-                    State.GetSourcePrefab(),
-                    State.GetPosition(),
-                    State.GetRotation());
+                Pickup = OrePickupPool.GetPickup(Prefab, State.GetPosition(), State.GetRotation());
             }
 
-            if (OrePickup == null)
+            if (Pickup == null)
             {
-                GameObject Instance = Instantiate(State.GetSourcePrefab(), State.GetPosition(), State.GetRotation());
-                OrePickup = Instance.GetComponent<OrePickup>();
+                GameObject Instance = Instantiate(Prefab, State.GetPosition(), State.GetRotation());
+                Pickup = Instance.GetComponent<OrePickup>();
 
-                if (OrePickup == null)
+                if (Pickup == null)
                 {
-                    OrePickup = Instance.GetComponentInChildren<OrePickup>(true);
+                    Pickup = Instance.GetComponentInChildren<OrePickup>(true);
                 }
 
-                if (OrePickup != null)
+                if (Pickup != null)
                 {
-                    OrePickup.BindPool(null, State.GetSourcePrefab());
+                    Pickup.BindPool(null, Prefab);
                 }
             }
 
-            if (OrePickup == null)
+            if (Pickup == null)
             {
                 continue;
             }
 
-            OrePickup.Initialize(State.GetOreItemData());
+            Pickup.Initialize(RuntimeOreData);
 
-            Rigidbody RigidbodyComponent = OrePickup.GetComponent<Rigidbody>();
+            Rigidbody RigidbodyComponent = Pickup.GetComponent<Rigidbody>();
             if (RigidbodyComponent == null)
             {
-                RigidbodyComponent = OrePickup.GetComponentInChildren<Rigidbody>(true);
+                RigidbodyComponent = Pickup.GetComponentInChildren<Rigidbody>(true);
             }
 
             if (RigidbodyComponent != null)
             {
-                RigidbodyComponent.linearVelocity = Vector3.zero;
-                RigidbodyComponent.angularVelocity = Vector3.zero;
+                if (!RigidbodyComponent.isKinematic)
+                {
+                    RigidbodyComponent.linearVelocity = Vector3.zero;
+                    RigidbodyComponent.angularVelocity = Vector3.zero;
+                }
+
                 RigidbodyComponent.Sleep();
             }
         }
     }
 
     /// <summary>
-    /// Restores the complete state of every ore spawn point in the scene.
+    /// Restores every ore spawn point in the scene from saved state.
     /// </summary>
     private void RestoreOreSpawnPoints(List<OreSpawnPointState> States)
     {
-        OreSpawnPoint[] AllSpawnPoints = FindObjectsByType<OreSpawnPoint>(
-            FindObjectsInactive.Include,
-            FindObjectsSortMode.None);
-
-        for (int Index = 0; Index < AllSpawnPoints.Length; Index++)
+        foreach (KeyValuePair<string, OreSpawnPoint> Pair in OreSpawnPointsById)
         {
-            if (AllSpawnPoints[Index] != null)
+            if (Pair.Value != null)
             {
-                AllSpawnPoints[Index].ClearPoint();
+                Pair.Value.ClearPoint();
             }
         }
 
@@ -916,25 +1284,36 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             OreSpawnPointState State = States[Index];
 
-            if (State == null || State.GetSpawnPoint() == null)
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
             {
                 continue;
             }
 
-            if (!State.GetIsActive() || State.GetOreDefinition() == null)
+            if (!OreSpawnPointsById.TryGetValue(State.GetSceneId(), out OreSpawnPoint SpawnPoint) || SpawnPoint == null)
             {
-                State.GetSpawnPoint().ClearPoint();
                 continue;
             }
 
-            bool WasSpawned = State.GetSpawnPoint().SpawnVein(State.GetOreDefinition(), OreRuntimeService);
+            if (!State.GetIsActive() || string.IsNullOrWhiteSpace(State.GetOreId()))
+            {
+                SpawnPoint.ClearPoint();
+                continue;
+            }
+
+            if (!OreDefinitionsById.TryGetValue(State.GetOreId(), out OreDefinition Definition) || Definition == null)
+            {
+                SpawnPoint.ClearPoint();
+                continue;
+            }
+
+            bool WasSpawned = SpawnPoint.SpawnVein(Definition, OreRuntimeService);
 
             if (!WasSpawned)
             {
                 continue;
             }
 
-            OreVein CurrentVein = State.GetSpawnPoint().GetCurrentVein();
+            OreVein CurrentVein = SpawnPoint.GetCurrentVein();
 
             if (CurrentVein != null)
             {
@@ -968,7 +1347,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            WorldItem.gameObject.SetActive(false);
             Destroy(WorldItem.gameObject);
         }
     }
@@ -978,21 +1356,20 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private void ClearRuntimeMoneyPickups()
     {
-        MoneyPickup[] MoneyPickups = FindObjectsByType<MoneyPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        MoneyPickup[] Pickups = FindObjectsByType<MoneyPickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 
-        for (int Index = 0; Index < MoneyPickups.Length; Index++)
+        for (int Index = 0; Index < Pickups.Length; Index++)
         {
-            MoneyPickup MoneyPickup = MoneyPickups[Index];
+            MoneyPickup Pickup = Pickups[Index];
 
-            if (MoneyPickup == null)
+            if (Pickup == null)
             {
                 continue;
             }
 
-            if (!MoneyPickup.ReturnToPool())
+            if (!Pickup.ReturnToPool())
             {
-                MoneyPickup.GetRuntimeRoot().gameObject.SetActive(false);
-                Destroy(MoneyPickup.GetRuntimeRoot().gameObject);
+                Destroy(Pickup.GetRuntimeRoot().gameObject);
             }
         }
     }
@@ -1002,23 +1379,64 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private void ClearRuntimeOrePickups()
     {
-        OrePickup[] OrePickups = FindObjectsByType<OrePickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        OrePickup[] Pickups = FindObjectsByType<OrePickup>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
 
-        for (int Index = 0; Index < OrePickups.Length; Index++)
+        for (int Index = 0; Index < Pickups.Length; Index++)
         {
-            OrePickup OrePickup = OrePickups[Index];
+            OrePickup Pickup = Pickups[Index];
 
-            if (OrePickup == null)
+            if (Pickup == null)
             {
                 continue;
             }
 
-            if (!OrePickup.ReturnToPool())
+            if (!Pickup.ReturnToPool())
             {
-                OrePickup.GetRuntimeRoot().gameObject.SetActive(false);
-                Destroy(OrePickup.GetRuntimeRoot().gameObject);
+                Destroy(Pickup.GetRuntimeRoot().gameObject);
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves an ore pickup visual prefab from its runtime source prefab name.
+    /// </summary>
+    private GameObject ResolveOrePickupPrefabByName(string PrefabName)
+    {
+        if (string.IsNullOrWhiteSpace(PrefabName))
+        {
+            return null;
+        }
+
+        foreach (KeyValuePair<string, OreDefinition> Pair in OreDefinitionsById)
+        {
+            OreDefinition Definition = Pair.Value;
+
+            if (Definition == null)
+            {
+                continue;
+            }
+
+            GameObject LegacyPrefab = Definition.GetDroppedOrePrefab();
+
+            if (LegacyPrefab != null && LegacyPrefab.name == PrefabName)
+            {
+                return LegacyPrefab;
+            }
+
+            IReadOnlyList<GameObject> VisualPrefabs = Definition.GetDroppedOreVisualPrefabs();
+
+            for (int Index = 0; Index < VisualPrefabs.Count; Index++)
+            {
+                GameObject VisualPrefab = VisualPrefabs[Index];
+
+                if (VisualPrefab != null && VisualPrefab.name == PrefabName)
+                {
+                    return VisualPrefab;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

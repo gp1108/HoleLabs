@@ -480,6 +480,21 @@ public sealed class PlayerInteractionController : MonoBehaviour
     }
 
     /// <summary>
+    /// Forces any currently held carryable to return to its stable dynamic state.
+    /// This is used by save/load so transient hold state is never serialized.
+    /// </summary>
+    public void ForceReleaseHeldCarryableForSave()
+    {
+        if (CurrentHeldCarryable == null)
+        {
+            return;
+        }
+
+        CurrentHeldCarryable.EndHold();
+        CurrentHeldCarryable = null;
+    }
+
+    /// <summary>
     /// Refreshes the player collider cache from the full hierarchy when no manual list is provided.
     /// </summary>
     private void RefreshPlayerColliderCache()

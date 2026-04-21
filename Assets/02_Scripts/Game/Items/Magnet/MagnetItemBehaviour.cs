@@ -52,6 +52,15 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     private readonly List<PhysicsCarryable> ActiveCarryables = new List<PhysicsCarryable>();
 
     /// <summary>
+    /// Forces the magnet to stop and releases every currently attached carryable.
+    /// This is used by save/load so transient magnet state is never serialized.
+    /// </summary>
+    public void ForceStopMagnetForSave()
+    {
+        StopMagnetPull();
+    }
+
+    /// <summary>
     /// Initializes the magnet and resolves missing camera references.
     /// </summary>
     public override void Initialize(HotbarController OwnerHotbar, ItemInstance ItemInstance)

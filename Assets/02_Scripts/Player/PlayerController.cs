@@ -462,11 +462,19 @@ public sealed class PlayerController : MonoBehaviour
     /// <summary>
     /// Applies full platform carry to the character controller, including the displacement of the
     /// player support point caused by platform rotation and the visual yaw rotation of the player.
+    /// The carrier reference is validated defensively because save/load and scene teardown can invalidate it.
     /// </summary>
     private void ApplyPlatformCarry()
     {
         if (CurrentPlatform == null)
         {
+            LastPlatformUpwardSpeed = 0f;
+            return;
+        }
+
+        if (CurrentPlatform is not Component PlatformComponent || PlatformComponent == null || !PlatformComponent.gameObject.activeInHierarchy)
+        {
+            CurrentPlatform = null;
             LastPlatformUpwardSpeed = 0f;
             return;
         }

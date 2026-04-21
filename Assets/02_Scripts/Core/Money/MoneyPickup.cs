@@ -23,6 +23,26 @@ public sealed class MoneyPickup : MonoBehaviour
     private MoneyPickupPool OwnerPool;
     private GameObject SourcePrefab;
 
+    [Tooltip("Stable logical id used by the save system to recreate the correct money visual prefab.")]
+    [SerializeField] private string SaveMoneyId;
+
+    /// <summary>
+    /// Assigns the logical money id used by the save system to recreate this pickup later.
+    /// </summary>
+    /// <param name="MoneyId">Stable denomination id.</param>
+    public void SetSaveMoneyId(string MoneyId)
+    {
+        SaveMoneyId = MoneyId;
+    }
+
+    /// <summary>
+    /// Gets the logical money id used by the save system to recreate this pickup later.
+    /// </summary>
+    public string GetSaveMoneyId()
+    {
+        return SaveMoneyId;
+    }
+
     /// <summary>
     /// Gets the prefab originally used to create this pickup.
     /// This is used by the save system to recreate the same visual object.
@@ -82,6 +102,7 @@ public sealed class MoneyPickup : MonoBehaviour
         ResetPhysicsState();
         SetCollidersEnabled(false);
         Amount = 0f;
+        SaveMoneyId = string.Empty;
         RuntimeRootTransform.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "MoneyPickup_Pooled";
         RuntimeRootTransform.SetParent(PoolRoot, false);
         RuntimeRootTransform.gameObject.SetActive(false);
@@ -140,7 +161,8 @@ public sealed class MoneyPickup : MonoBehaviour
     }
 
     /// <summary>
-    /// Resets linear and angular rigidbody velocity before reusing or storing the pickup.
+    /// Resets rigidbody motion before reusing or storing the pickup.
+    /// Kinematic rigidbodies cannot accept velocity writes, so only dynamic bodies are zeroed explicitly.
     /// </summary>
     private void ResetPhysicsState()
     {
@@ -149,8 +171,12 @@ public sealed class MoneyPickup : MonoBehaviour
             return;
         }
 
-        CachedRigidbody.linearVelocity = Vector3.zero;
-        CachedRigidbody.angularVelocity = Vector3.zero;
+        if (!CachedRigidbody.isKinematic)
+        {
+            CachedRigidbody.linearVelocity = Vector3.zero;
+            CachedRigidbody.angularVelocity = Vector3.zero;
+        }
+
         CachedRigidbody.Sleep();
     }
 

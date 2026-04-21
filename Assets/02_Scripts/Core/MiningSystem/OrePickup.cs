@@ -35,6 +35,14 @@ public sealed class OrePickup : MonoBehaviour
     }
 
     /// <summary>
+    /// Gets the source prefab name used to recreate the same ore pickup visual during load.
+    /// </summary>
+    public string GetSourcePrefabName()
+    {
+        return SourcePrefab != null ? SourcePrefab.name : string.Empty;
+    }
+
+    /// <summary>
     /// Initializes this pickup with runtime ore data.
     /// </summary>
     public void Initialize(OreItemData oreItemData)
@@ -83,8 +91,11 @@ public sealed class OrePickup : MonoBehaviour
         SetCollidersEnabled(false);
         OreItemData = null;
         runtimeRoot.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "OrePickup_Pooled";
+
+        SetContainedCarryablesDisableResetSuppressed(true);
         runtimeRoot.SetParent(poolRoot, false);
         runtimeRoot.gameObject.SetActive(false);
+        SetContainedCarryablesDisableResetSuppressed(false);
     }
 
     /// <summary>
@@ -123,7 +134,8 @@ public sealed class OrePickup : MonoBehaviour
     }
 
     /// <summary>
-    /// Resets linear and angular rigidbody velocity before reusing or storing the pickup.
+    /// Resets rigidbody motion before reusing or storing the pickup.
+    /// Kinematic rigidbodies cannot accept velocity writes, so only dynamic bodies are zeroed explicitly.
     /// </summary>
     private void ResetPhysicsState()
     {
@@ -132,9 +144,32 @@ public sealed class OrePickup : MonoBehaviour
             return;
         }
 
-        CachedRigidbody.linearVelocity = Vector3.zero;
-        CachedRigidbody.angularVelocity = Vector3.zero;
+        if (!CachedRigidbody.isKinematic)
+        {
+            CachedRigidbody.linearVelocity = Vector3.zero;
+            CachedRigidbody.angularVelocity = Vector3.zero;
+        }
+
         CachedRigidbody.Sleep();
+    }
+
+    /// <summary>
+    /// Suppresses or restores disable reset on every physics carryable in this pickup hierarchy.
+    /// </summary>
+    /// <param name="IsSuppressed">True to suppress disable reset, false to restore it.</param>
+    private void SetContainedCarryablesDisableResetSuppressed(bool IsSuppressed)
+    {
+        PhysicsCarryable[] Carryables = GetComponentsInChildren<PhysicsCarryable>(true);
+
+        for (int Index = 0; Index < Carryables.Length; Index++)
+        {
+            if (Carryables[Index] == null)
+            {
+                continue;
+            }
+
+            Carryables[Index].SetDisableResetSuppressed(IsSuppressed);
+        }
     }
 
     /// <summary>
