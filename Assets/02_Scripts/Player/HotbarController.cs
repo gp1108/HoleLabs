@@ -438,6 +438,74 @@ public sealed class HotbarController : MonoBehaviour
         return RemovedItem;
     }
 
+
+
+/// <summary>
+/// Tries to consume an amount from the currently selected hotbar stack.
+/// This is intended for build systems or tools that spend material directly from the equipped slot.
+/// </summary>
+/// <param name="AmountToConsume">Amount that should be removed from the selected slot.</param>
+/// <returns>True when the requested amount was consumed successfully.</returns>
+public bool TryConsumeSelectedItemAmount(int AmountToConsume)
+{
+    return TryConsumeSelectedItemAmount(AmountToConsume, null);
+}
+
+/// <summary>
+/// Tries to consume an amount from the currently selected hotbar stack while also validating the expected definition.
+/// When the remaining amount reaches zero, the selected slot is cleared and the equipped item is refreshed automatically.
+/// </summary>
+/// <param name="AmountToConsume">Amount that should be removed from the selected slot.</param>
+/// <param name="RequiredDefinition">Optional required definition that must still match the selected slot.</param>
+/// <returns>True when the requested amount was consumed successfully.</returns>
+public bool TryConsumeSelectedItemAmount(int AmountToConsume, ItemDefinition RequiredDefinition)
+{
+    EnsureSlotListSize(SlotCount);
+
+    if (AmountToConsume <= 0)
+    {
+        return true;
+    }
+
+    if (!IsValidSlotIndex(SelectedIndex))
+    {
+        return false;
+    }
+
+    ItemInstance SelectedItem = Slots[SelectedIndex];
+
+    if (SelectedItem == null || SelectedItem.GetDefinition() == null)
+    {
+        return false;
+    }
+
+    if (RequiredDefinition != null && SelectedItem.GetDefinition() != RequiredDefinition)
+    {
+        return false;
+    }
+
+    int CurrentAmount = SelectedItem.GetAmount();
+    if (CurrentAmount < AmountToConsume)
+    {
+        return false;
+    }
+
+    int RemainingAmount = CurrentAmount - AmountToConsume;
+    if (RemainingAmount > 0)
+    {
+        SelectedItem.SetAmount(RemainingAmount);
+        NotifySlotChanged(SelectedIndex);
+        Log("Consumed " + AmountToConsume + " item(s) from selected slot. Remaining amount: " + RemainingAmount);
+        return true;
+    }
+
+    Slots[SelectedIndex] = null;
+    RefreshEquippedItem();
+    NotifySlotChanged(SelectedIndex);
+    Log("Consumed the full selected item stack.");
+    return true;
+}
+
     /// <summary>
     /// Drops the selected item into the world using the configured drop helpers.
     /// </summary>
@@ -632,7 +700,7 @@ public sealed class HotbarController : MonoBehaviour
 
         if (IsUseInputCapturedByExternalInteraction())
         {
-            if (!WasItemUseBlockedLastFrame && CurrentEquippedBehaviour != null)
+            if (!WasItemUseBlockedLastFrame)
             {
                 CurrentEquippedBehaviour.ForceStopItemUsage();
                 WasItemUseBlockedLastFrame = true;
@@ -649,67 +717,31 @@ public sealed class HotbarController : MonoBehaviour
         if (IsPrimaryHeldNow && !WasPrimaryHeldLastFrame)
         {
             CurrentEquippedBehaviour.OnPrimaryUseStarted();
-
-            if (CurrentEquippedBehaviour == null)
-            {
-                ResetUseTracking();
-                return;
-            }
         }
 
-        if (IsPrimaryHeldNow && CurrentEquippedBehaviour != null)
+        if (IsPrimaryHeldNow)
         {
             CurrentEquippedBehaviour.OnPrimaryUseHeld();
-
-            if (CurrentEquippedBehaviour == null)
-            {
-                ResetUseTracking();
-                return;
-            }
         }
 
-        if (!IsPrimaryHeldNow && WasPrimaryHeldLastFrame && CurrentEquippedBehaviour != null)
+        if (!IsPrimaryHeldNow && WasPrimaryHeldLastFrame)
         {
             CurrentEquippedBehaviour.OnPrimaryUseEnded();
-
-            if (CurrentEquippedBehaviour == null)
-            {
-                ResetUseTracking();
-                return;
-            }
         }
 
-        if (IsSecondaryHeldNow && !WasSecondaryHeldLastFrame && CurrentEquippedBehaviour != null)
+        if (IsSecondaryHeldNow && !WasSecondaryHeldLastFrame)
         {
             CurrentEquippedBehaviour.OnSecondaryUseStarted();
-
-            if (CurrentEquippedBehaviour == null)
-            {
-                ResetUseTracking();
-                return;
-            }
         }
 
-        if (IsSecondaryHeldNow && CurrentEquippedBehaviour != null)
+        if (IsSecondaryHeldNow)
         {
             CurrentEquippedBehaviour.OnSecondaryUseHeld();
-
-            if (CurrentEquippedBehaviour == null)
-            {
-                ResetUseTracking();
-                return;
-            }
         }
 
-        if (!IsSecondaryHeldNow && WasSecondaryHeldLastFrame && CurrentEquippedBehaviour != null)
+        if (!IsSecondaryHeldNow && WasSecondaryHeldLastFrame)
         {
             CurrentEquippedBehaviour.OnSecondaryUseEnded();
-
-            if (CurrentEquippedBehaviour == null)
-            {
-                ResetUseTracking();
-                return;
-            }
         }
 
         WasPrimaryHeldLastFrame = IsPrimaryHeldNow;

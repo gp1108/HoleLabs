@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6f16d5d617c78b64abfb68a9cfc61cac, type: 3}
+  m_Name: PipeBuildSettings
+  m_EditorClassIdentifier: Assembly-CSharp::PipeBuildSettings
+  PipeRadius: 0.25
+  WallGap: 0.03
+  MaxNodeSelectionDistance: 1.5
+  ElevatorRadius: 2
+  ElevatorSafetyMargin: 0.5
+  MinimumRequiredDrop: 0.1
+  MaxLocalUpStep: 0.18
+  AscentPenaltyPerMeter: 20
+  VerticalSampleSpacing: 0.75
+  AngularSamplesPerRing: 48
+  MaxCaveRadius: 25
+  EdgeValidationStep: 0.35
+  MaxAllowedWallOffsetError: 0.25
+  VisualSegmentLength: 0.65
+  VisualSegmentOverlap: 0.025
+  DefaultTransportSpeed: 2.5
