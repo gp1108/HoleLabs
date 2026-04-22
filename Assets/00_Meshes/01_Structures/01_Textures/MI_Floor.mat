@@ -107,7 +107,7 @@ Material:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _Prueba: {r: 1, g: 1, b: 1, a: 0}
     - _R_Control: {r: 3.61, g: 0, b: 0, a: 0}
-    - _Tint: {r: 0.6415094, g: 0.6415094, b: 0.6415094, a: 1}
+    - _Tint: {r: 0.7075472, g: 0.7075472, b: 0.7075472, a: 1}
     - _UV_Offset: {r: 0, g: 0, b: 0, a: 0}
     - _UV_Tiling: {r: 0, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
