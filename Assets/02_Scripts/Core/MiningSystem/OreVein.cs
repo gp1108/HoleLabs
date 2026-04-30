@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using MoreMountains.Feedbacks;
 using UnityEngine;
 
 /// <summary>
@@ -19,6 +20,22 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
     [Tooltip("Optional explicit world point used as the preferred ore drop origin. If empty, this transform is used.")]
     [SerializeField] private Transform DropOrigin;
+
+    [Header("Feel Feedbacks")]
+    [Tooltip("Feel player triggered every time this vein accepts a mining hit.")]
+    [SerializeField] private MMF_Player HitFeedbacks;
+
+    [Tooltip("Feel player triggered when this vein breaks after the final mining hit.")]
+    [SerializeField] private MMF_Player BreakFeedbacks;
+
+    [Tooltip("Intensity passed to the hit feedback player.")]
+    [SerializeField] private float HitFeedbackIntensity = 1f;
+
+    [Tooltip("Intensity passed to the break feedback player.")]
+    [SerializeField] private float BreakFeedbackIntensity = 1f;
+
+    [Tooltip("If true, the regular hit feedback also plays on the final hit that breaks the vein.")]
+    [SerializeField] private bool PlayHitFeedbackOnBreakingHit = true;
 
     [Header("Regrowth")]
     [Tooltip("Minimum scale used while the ore is regrowing.")]
@@ -261,9 +278,17 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         LastMiningHitContext = HitContext;
         CurrentHitsRemaining--;
+
+        bool IsBreakingHit = CurrentHitsRemaining <= 0;
+
+        if (PlayHitFeedbackOnBreakingHit || !IsBreakingHit)
+        {
+            PlayHitFeedback(HitContext);
+        }
+
         Log("Ore vein hit. Remaining hits: " + CurrentHitsRemaining);
 
-        if (CurrentHitsRemaining <= 0)
+        if (IsBreakingHit)
         {
             BreakVein();
         }
@@ -285,6 +310,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// </summary>
     private void BreakVein()
     {
+        PlayBreakFeedback(LastMiningHitContext);
+
         int DropCount = OreRuntimeService.ResolveDropCount(OreDefinition);
         List<Vector3> ReservedSpawnPositions = new List<Vector3>(DropCount);
 
@@ -551,6 +578,36 @@ public sealed class OreVein : MonoBehaviour, IMineable
         float ClampedProgress = Mathf.Clamp01(NormalizedProgress);
         float ScaleMultiplier = Mathf.Lerp(MinimumGrowthScale, 1f, ClampedProgress);
         VisualRoot.localScale = Vector3.one * ScaleMultiplier;
+    }
+
+    /// <summary>
+    /// Plays the configured Feel hit feedback at the mining impact position.
+    /// </summary>
+    /// <param name="HitContext">Context that contains source and optional impact data.</param>
+    private void PlayHitFeedback(MiningHitContext HitContext)
+    {
+        if (HitFeedbacks == null)
+        {
+            return;
+        }
+
+        Vector3 FeedbackPosition = HitContext.GetFeedbackPosition(transform.position);
+        HitFeedbacks.PlayFeedbacks(FeedbackPosition, Mathf.Max(0f, HitFeedbackIntensity));
+    }
+
+    /// <summary>
+    /// Plays the configured Feel break feedback at the mining impact position.
+    /// </summary>
+    /// <param name="HitContext">Context that contains source and optional impact data.</param>
+    private void PlayBreakFeedback(MiningHitContext HitContext)
+    {
+        if (BreakFeedbacks == null)
+        {
+            return;
+        }
+
+        Vector3 FeedbackPosition = HitContext.GetFeedbackPosition(transform.position);
+        BreakFeedbacks.PlayFeedbacks(FeedbackPosition, Mathf.Max(0f, BreakFeedbackIntensity));
     }
 
     /// <summary>

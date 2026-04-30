@@ -2,8 +2,8 @@ using UnityEngine;
 
 /// <summary>
 /// Equipped pickaxe behaviour built on top of the animation-event item action system.
-/// The mining hit now happens only when the animation clip explicitly sends the impact event,
-/// which keeps the visible swing and the gameplay hit perfectly synchronized.
+/// The mining hit happens only when the animation clip explicitly sends the impact event,
+/// keeping the visible swing, gameplay hit and feedback dispatch synchronized.
 /// </summary>
 public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
 {
@@ -28,6 +28,8 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     /// <summary>
     /// Initializes the pickaxe and resolves missing owner references.
     /// </summary>
+    /// <param name="OwnerHotbar">Hotbar that owns this equipped item.</param>
+    /// <param name="ItemInstance">Runtime item instance attached to this behaviour.</param>
     public override void Initialize(HotbarController OwnerHotbar, ItemInstance ItemInstance)
     {
         base.Initialize(OwnerHotbar, ItemInstance);
@@ -72,7 +74,9 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
 
         MiningHitContext HitContext = new MiningHitContext(
             MiningHitContext.HitSourceType.Player,
-            this.OwnerHotbar != null ? this.OwnerHotbar.gameObject : gameObject);
+            this.OwnerHotbar != null ? this.OwnerHotbar.gameObject : gameObject,
+            HitInfo.point,
+            HitInfo.normal);
 
         bool WasMined = Mineable.TryMine(MiningPower, HitContext);
 
@@ -85,6 +89,8 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     /// <summary>
     /// Resolves a mineable target from the current raycast hit.
     /// </summary>
+    /// <param name="HitInfo">Raycast hit returned by the mining ray.</param>
+    /// <returns>Mineable target if found, otherwise null.</returns>
     private IMineable ResolveMineable(RaycastHit HitInfo)
     {
         if (HitInfo.collider == null)
