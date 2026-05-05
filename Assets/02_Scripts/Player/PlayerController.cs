@@ -2,13 +2,29 @@ using UnityEngine;
 
 /// <summary>
 /// First person CharacterController motor with stable crouch obstruction checks, save/load crouch restore,
-/// ceiling hit cancellation and explicit moving platform carry support.
+/// ceiling hit cancellation, frame-rate independent mouse look and explicit moving platform carry support.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(PlayerInputReader))]
 public sealed class PlayerController : MonoBehaviour
 {
+    /// <summary>
+    /// Defines how the cached look input must be converted into rotation degrees.
+    /// </summary>
+    private enum LookInputTimingMode
+    {
+        /// <summary>
+        /// Use this for mouse delta input. Mouse deltas are already frame-relative and must not be multiplied by Time.deltaTime.
+        /// </summary>
+        FrameDelta,
+
+        /// <summary>
+        /// Use this for gamepad stick input. Stick values are continuous input and must be multiplied by Time.deltaTime.
+        /// </summary>
+        TimeScaled
+    }
+
     [Header("References")]
     [Tooltip("Transform rotated on yaw. Usually the visual root that contains the camera pivot.")]
     [SerializeField] private Transform ViewRoot;
@@ -29,10 +45,10 @@ public sealed class PlayerController : MonoBehaviour
     [SerializeField] private PlayerInputReader PlayerInputReader;
 
     [Header("Look")]
-    [Tooltip("Horizontal look sensitivity.")]
+    [Tooltip("Horizontal look sensitivity. In FrameDelta mode, the value is normalized against the reference frame rate so existing 60 FPS sensitivity is preserved.")]
     [SerializeField] private float LookSensitivityX = 1.5f;
 
-    [Tooltip("Vertical look sensitivity.")]
+    [Tooltip("Vertical look sensitivity. In FrameDelta mode, the value is normalized against the reference frame rate so existing 60 FPS sensitivity is preserved.")]
     [SerializeField] private float LookSensitivityY = 1.5f;
 
     [Tooltip("Minimum vertical camera angle.")]
@@ -40,6 +56,13 @@ public sealed class PlayerController : MonoBehaviour
 
     [Tooltip("Maximum vertical camera angle.")]
     [SerializeField] private float MaxPitch = 85f;
+
+    [Header("Look Timing")]
+    [Tooltip("How look input is converted into rotation. Use FrameDelta for mouse delta and TimeScaled for gamepad stick input.")]
+    [SerializeField] private LookInputTimingMode LookTiming = LookInputTimingMode.FrameDelta;
+
+    [Tooltip("Reference frame rate used by FrameDelta look mode to preserve the previous 60 FPS sensitivity while removing frame-rate dependency.")]
+    [SerializeField] private float FrameDeltaReferenceFrameRate = 60f;
 
     [Header("Movement")]
     [Tooltip("Walking speed in meters per second.")]
@@ -346,7 +369,8 @@ public sealed class PlayerController : MonoBehaviour
     }
 
     /// <summary>
-    /// Rotates yaw and pitch from the cached look input.
+    /// Rotates yaw and pitch from the cached look input using the configured timing mode.
+    /// Mouse delta input must be frame-based, while gamepad stick input must be time-scaled.
     /// </summary>
     private void UpdateLook()
     {
@@ -356,9 +380,26 @@ public sealed class PlayerController : MonoBehaviour
         }
 
         Vector2 LookInput = PlayerInputReader.Look;
-        ViewRoot.Rotate(0f, LookInput.x * LookSensitivityX * Time.deltaTime, 0f, Space.World);
-        PitchDegrees = Mathf.Clamp(PitchDegrees - LookInput.y * LookSensitivityY * Time.deltaTime, MinPitch, MaxPitch);
+        float LookMultiplier = GetLookMultiplier();
+
+        ViewRoot.Rotate(0f, LookInput.x * LookSensitivityX * LookMultiplier, 0f, Space.World);
+        PitchDegrees = Mathf.Clamp(PitchDegrees - LookInput.y * LookSensitivityY * LookMultiplier, MinPitch, MaxPitch);
         CameraPivot.localRotation = Quaternion.Euler(PitchDegrees, 0f, 0f);
+    }
+
+    /// <summary>
+    /// Gets the multiplier used to convert look input into degrees for the current timing mode.
+    /// FrameDelta mode preserves the old 60 FPS feel without making sensitivity depend on the current frame rate.
+    /// </summary>
+    /// <returns>Look input multiplier.</returns>
+    private float GetLookMultiplier()
+    {
+        if (LookTiming == LookInputTimingMode.TimeScaled)
+        {
+            return Time.deltaTime;
+        }
+
+        return 1f / Mathf.Max(1f, FrameDeltaReferenceFrameRate);
     }
 
     /// <summary>
