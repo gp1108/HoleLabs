@@ -112,6 +112,37 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     private Vector3 LastSimulatedPosition;
 
     /// <summary>
+    /// Gets the current elevator travel distance used by the motor.
+    /// </summary>
+    public float GetCurrentDistance()
+    {
+        return CurrentDistance;
+    }
+
+    /// <summary>
+    /// Restores the elevator to a saved pose and forces it into a paused state.
+    /// </summary>
+    /// <param name="SavedDistance">Saved travel distance from the top anchor.</param>
+    /// <param name="SavedRotation">Saved world rotation.</param>
+    public void ApplySavedPose(float SavedDistance, Quaternion SavedRotation)
+    {
+        RuntimeMaxDistance = GetResolvedMaxDistance();
+        CurrentDistance = Mathf.Clamp(SavedDistance, MinDistance, RuntimeMaxDistance);
+
+        StopAll();
+
+        Vector3 TargetPosition = GetTargetPosition();
+
+        RigidbodyComponent.position = TargetPosition;
+        RigidbodyComponent.rotation = SavedRotation;
+        transform.SetPositionAndRotation(TargetPosition, SavedRotation);
+
+        Velocity = Vector3.zero;
+        DeltaPosition = Vector3.zero;
+        LastSimulatedPosition = TargetPosition;
+    }
+
+    /// <summary>
     /// Configures the rigidbody and initializes pose.
     /// </summary>
     private void Awake()

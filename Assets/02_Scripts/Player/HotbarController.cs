@@ -111,6 +111,63 @@ public sealed class HotbarController : MonoBehaviour
     /// </summary>
     public event Action OnHotbarStructureChanged;
 
+
+    /// <summary>
+    /// Creates a deep-cloned snapshot of the current hotbar slots for saving.
+    /// </summary>
+    public List<ItemInstance> CreateSlotSaveSnapshot()
+    {
+        EnsureSlotListSize(SlotCount);
+
+        List<ItemInstance> Result = new List<ItemInstance>(Slots.Count);
+
+        for (int Index = 0; Index < Slots.Count; Index++)
+        {
+            Result.Add(Slots[Index] != null ? Slots[Index].Clone() : null);
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores the hotbar runtime state from save data.
+    /// This fully replaces the current slot content and re-equips the selected slot.
+    /// </summary>
+    /// <param name="SavedSlots">Saved slot content.</param>
+    /// <param name="SavedSelectedIndex">Saved selected slot index.</param>
+    public void ApplySaveState(List<ItemInstance> SavedSlots, int SavedSelectedIndex)
+    {
+        ForceStopCurrentItemUsage();
+        ResetUseTracking();
+        UnequipCurrentItem();
+
+        int DesiredSize = SavedSlots != null && SavedSlots.Count > 0
+            ? SavedSlots.Count
+            : Mathf.Max(1, SlotCount);
+
+        EnsureSlotListSize(DesiredSize);
+
+        for (int Index = 0; Index < Slots.Count; Index++)
+        {
+            if (SavedSlots != null && Index < SavedSlots.Count && SavedSlots[Index] != null)
+            {
+                Slots[Index] = SavedSlots[Index].Clone();
+            }
+            else
+            {
+                Slots[Index] = null;
+            }
+
+            NotifySlotChanged(Index);
+        }
+
+        SelectedIndex = Mathf.Clamp(SavedSelectedIndex, 0, Slots.Count - 1);
+
+        RefreshEquippedItem();
+        OnHotbarStructureChanged?.Invoke();
+        OnSelectedSlotChanged?.Invoke(SelectedIndex);
+    }
+
     /// <summary>
     /// Gets the currently selected slot index.
     /// </summary>

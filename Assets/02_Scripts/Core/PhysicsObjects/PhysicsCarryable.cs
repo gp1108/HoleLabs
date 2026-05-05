@@ -200,6 +200,23 @@ public sealed class PhysicsCarryable : MonoBehaviour
     /// <summary>
     /// Caches references and default rigidbody values.
     /// </summary>
+    /// 
+
+    /// <summary>
+    /// True while gameplay reset must be skipped during a technical disable caused by pooling or storage.
+    /// </summary>
+    private bool IsDisableResetSuppressed;
+
+    /// <summary>
+    /// Allows pooling systems to suppress gameplay reset during a technical disable.
+    /// </summary>
+    /// <param name="IsSuppressed">True to suppress disable reset, false to restore normal behaviour.</param>
+    public void SetDisableResetSuppressed(bool IsSuppressed)
+    {
+        IsDisableResetSuppressed = IsSuppressed;
+    }
+
+
     private void Awake()
     {
         RigidbodyComponent = GetComponent<Rigidbody>();
@@ -256,10 +273,15 @@ public sealed class PhysicsCarryable : MonoBehaviour
     }
 
     /// <summary>
-    /// Fully restores the carryable when disabled.
+    /// Fully restores the carryable when disabled unless the disable was triggered by technical pooling/storage.
     /// </summary>
     private void OnDisable()
     {
+        if (IsDisableResetSuppressed)
+        {
+            return;
+        }
+
         ForceResetImmediate();
     }
 
@@ -572,6 +594,7 @@ public sealed class PhysicsCarryable : MonoBehaviour
 
     /// <summary>
     /// Fully restores the object to a safe default state immediately.
+    /// This method avoids hierarchy changes when the object is already inactive or its parent chain is tearing down.
     /// </summary>
     private void ForceResetImmediate()
     {
@@ -580,7 +603,11 @@ public sealed class PhysicsCarryable : MonoBehaviour
 
         if (PhysicsMode == CarryablePhysicsMode.ExternalKinematic)
         {
-            transform.SetParent(PreviousParentBeforeExternalCarry, true);
+            if (gameObject.activeInHierarchy && (PreviousParentBeforeExternalCarry == null || PreviousParentBeforeExternalCarry.gameObject.activeInHierarchy))
+            {
+                transform.SetParent(PreviousParentBeforeExternalCarry, true);
+            }
+
             RigidbodyComponent.isKinematic = false;
             PhysicsMode = CarryablePhysicsMode.Dynamic;
         }

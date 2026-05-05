@@ -16,6 +16,8 @@ GameObject:
   - component: {fileID: 1327330422039333175}
   - component: {fileID: 5002018752496156906}
   - component: {fileID: 8663445350423540580}
+  - component: {fileID: 7821387106150306602}
+  - component: {fileID: -664196837548831081}
   m_Layer: 6
   m_Name: SM_HandMagnet_b01
   m_TagString: Untagged
@@ -202,3 +204,30 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.10728855, y: 0.08495435, z: 0.33638936}
   m_Center: {x: -0.0018874779, y: 0.07083678, z: 0.14718102}
+--- !u!114 &7821387106150306602
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8032385564765958399}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2c2f214a4af42a842b9b3c1262a230cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ScenePlacedWorldItemPersistence
+  WorldItem: {fileID: 8601301581036100867}
+  CachedRigidbody: {fileID: 326515293891280070}
+--- !u!114 &-664196837548831081
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8032385564765958399}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b26a3ae03d2d0b4b825865d3e45a2a6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SceneSaveId
+  Id: d6add96108234ad6879193589df9f404

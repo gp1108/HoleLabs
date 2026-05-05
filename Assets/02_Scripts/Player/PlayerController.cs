@@ -1,8 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Simplified first person CharacterController motor that keeps only the useful public API
-/// and replaces the old moving platform logic with explicit platform delta carry.
+/// First person CharacterController motor with stable crouch obstruction checks, save/load crouch restore,
+/// ceiling hit cancellation and explicit moving platform carry support.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(CharacterController))]
@@ -60,6 +60,9 @@ public sealed class PlayerController : MonoBehaviour
     [Tooltip("Small downward force used while grounded.")]
     [SerializeField] private float GroundedForce = -2f;
 
+    [Tooltip("Vertical velocity forced after hitting a ceiling. Use 0 or a small negative value.")]
+    [SerializeField] private float CeilingHitVerticalVelocity = -0.25f;
+
     [Tooltip("Buffered time window that still accepts a recent jump press.")]
     [SerializeField] private float JumpBufferTime = 0.12f;
 
@@ -70,7 +73,7 @@ public sealed class PlayerController : MonoBehaviour
     [SerializeField] private float PlatformGraceTime = 0.12f;
 
     [Header("Crouch")]
-    [Tooltip("If true, crouch toggles on press.")]
+    [Tooltip("If true, crouch toggles on press. If false, crouch is hold-based but restored save crouch persists until the next crouch press.")]
     [SerializeField] private bool ToggleCrouch = true;
 
     [Tooltip("CharacterController height while standing.")]
@@ -83,15 +86,36 @@ public sealed class PlayerController : MonoBehaviour
     [SerializeField] private float CrouchTransitionSpeed = 12f;
 
     [Tooltip("Local Y offset applied to the camera pivot while crouching.")]
-    [SerializeField] private float CrouchCameraOffset = -0.35f;
+    [SerializeField] private float CrouchCameraOffset = -0.45f;
 
     [Tooltip("Standing local Y used by the camera pivot. Use a negative value to keep the current scene value.")]
-    [SerializeField] private float StandingCameraPivotLocalY = 1.8f;
+    [SerializeField] private float StandingCameraPivotLocalY = 1.55f;
+
+    [Header("Crouch Obstruction")]
+    [Tooltip("Layers that can block the player from standing up. Exclude player-only and interaction-only layers.")]
+    [SerializeField] private LayerMask StandUpBlockerLayers = ~0;
+
+    [Tooltip("Trigger interaction mode used by the stand-up obstruction probe.")]
+    [SerializeField] private QueryTriggerInteraction StandUpTriggerInteraction = QueryTriggerInteraction.Ignore;
+
+    [Tooltip("Small reduction applied to the stand-up probe radius to avoid false positives from skin contact.")]
+    [SerializeField] private float StandUpProbeRadiusShrink = 0.02f;
+
+    [Tooltip("Small vertical clearance removed from the stand-up probe to avoid touching floor and ceiling by numerical noise.")]
+    [SerializeField] private float StandUpProbeVerticalShrink = 0.03f;
+
+    [Tooltip("Maximum number of colliders that can be inspected by the stand-up obstruction probe.")]
+    [SerializeField] private int StandUpProbeBufferSize = 16;
 
     /// <summary>
     /// Whether camera look is temporarily blocked by an external interaction such as lever dragging.
     /// </summary>
     private bool IsExternalLookBlocked;
+
+    /// <summary>
+    /// Whether movement input is temporarily blocked by an external modal state.
+    /// </summary>
+    private bool IsExternalMovementBlocked;
 
     /// <summary>
     /// Current raw movement input.
@@ -109,9 +133,14 @@ public sealed class PlayerController : MonoBehaviour
     public bool IsGrounded => CharacterController != null && CharacterController.isGrounded;
 
     /// <summary>
-    /// Whether the player is currently crouching.
+    /// Whether the player is currently crouching, either by input, save restore or forced head clearance.
     /// </summary>
     public bool IsCrouching { get; private set; }
+
+    /// <summary>
+    /// Whether the current crouch is forced because the stand-up probe is blocked.
+    /// </summary>
+    public bool IsCrouchForced { get; private set; }
 
     /// <summary>
     /// Public camera accessor kept for tool compatibility.
@@ -139,9 +168,15 @@ public sealed class PlayerController : MonoBehaviour
     private bool JumpRequested;
 
     /// <summary>
-    /// Whether the player currently wants to crouch.
+    /// Whether the player currently wants to crouch through toggle mode or save restore.
     /// </summary>
     private bool WantsToCrouch;
+
+    /// <summary>
+    /// Whether crouch was restored from save while using hold crouch mode.
+    /// This keeps the player crouched after load until the next crouch press releases the restore lock.
+    /// </summary>
+    private bool SavedHoldCrouchLock;
 
     /// <summary>
     /// Cached standing local position of the camera pivot.
@@ -174,23 +209,26 @@ public sealed class PlayerController : MonoBehaviour
     private float LastPlatformUpwardSpeed;
 
     /// <summary>
-    /// Caches references and initializes the standing controller state.
+    /// Runtime allocation-free collider buffer used by the stand-up obstruction probe.
     /// </summary>
+    private Collider[] StandUpProbeHits;
+
+    /// <summary>
+    /// Gets the current player world position.
+    /// </summary>
+    public Vector3 GetWorldPosition()
+    {
+        return transform.position;
+    }
 
     /// <summary>
     /// Allows external systems to temporarily block or restore camera look processing.
     /// </summary>
-    /// <param name="IsBlocked">True to block camera look, false to restore it.</param>
-
-    /// <summary>
-    /// Whether movement input is temporarily blocked by an external modal state.
-    /// </summary>
-    private bool IsExternalMovementBlocked;
+    /// <param name="IsBlocked">True to block look input, false to restore it.</param>
     public void SetExternalLookBlocked(bool IsBlocked)
     {
         IsExternalLookBlocked = IsBlocked;
     }
-
 
     /// <summary>
     /// Allows external systems to temporarily block or restore movement processing.
@@ -200,6 +238,46 @@ public sealed class PlayerController : MonoBehaviour
     {
         IsExternalMovementBlocked = IsBlocked;
     }
+
+    /// <summary>
+    /// Restores the saved player pose and crouch state in a stable way.
+    /// The controller is temporarily disabled so repositioning does not fight CharacterController collision resolution.
+    /// </summary>
+    /// <param name="Position">Saved world position.</param>
+    /// <param name="SavedIsCrouching">Saved crouch state.</param>
+    public void ApplySavedState(Vector3 Position, bool SavedIsCrouching)
+    {
+        if (CharacterController == null)
+        {
+            return;
+        }
+
+        bool WasEnabled = CharacterController.enabled;
+        CharacterController.enabled = false;
+        transform.position = Position;
+        CharacterController.enabled = WasEnabled;
+
+        WantsToCrouch = SavedIsCrouching;
+        SavedHoldCrouchLock = SavedIsCrouching;
+        IsCrouching = SavedIsCrouching;
+        IsCrouchForced = false;
+
+        ApplyControllerHeight(SavedIsCrouching ? CrouchingHeight : StandingHeight);
+        ApplyCameraPivotHeight(SavedIsCrouching, true);
+
+        VerticalVelocity = 0f;
+        Velocity = Vector3.zero;
+        JumpRequested = false;
+        JumpBufferTimer = 0f;
+        GroundGraceTimer = 0f;
+        PlatformGraceTimer = 0f;
+        LastPlatformUpwardSpeed = 0f;
+        CurrentPlatform = null;
+    }
+
+    /// <summary>
+    /// Caches required references and initializes the controller dimensions.
+    /// </summary>
     private void Awake()
     {
         if (CharacterController == null) CharacterController = GetComponent<CharacterController>();
@@ -209,6 +287,7 @@ public sealed class PlayerController : MonoBehaviour
         if (CameraPivot == null && PlayerCameraComponent != null) CameraPivot = PlayerCameraComponent.transform.parent;
         if (CameraPivot == null) CameraPivot = ViewRoot;
 
+        StandUpProbeHits = new Collider[Mathf.Max(4, StandUpProbeBufferSize)];
         CameraPivotStandingLocalPosition = CameraPivot.localPosition;
 
         if (StandingCameraPivotLocalY >= 0f)
@@ -250,14 +329,12 @@ public sealed class PlayerController : MonoBehaviour
     }
 
     /// <summary>
-    /// Updates look, platform carry, crouch and movement.
+    /// Updates look, platform carry, crouch, movement and support release in deterministic order.
     /// </summary>
     private void Update()
     {
         UpdateLook();
-
         ApplyPlatformCarry();
-
         UpdateJumpSupport();
         UpdateCrouch();
         UpdateMovement();
@@ -285,18 +362,42 @@ public sealed class PlayerController : MonoBehaviour
     }
 
     /// <summary>
-    /// Updates crouch state, capsule height and camera pivot height.
+    /// Updates crouch state, forced head clearance, capsule height and camera pivot height.
     /// </summary>
     private void UpdateCrouch()
     {
-        IsCrouching = ToggleCrouch ? WantsToCrouch : PlayerInputReader.IsCrouchHeld;
+        bool InputCrouchWanted = GetInputCrouchWanted();
+        bool WantsStandingHeight = !InputCrouchWanted;
+        bool CanStand = !WantsStandingHeight || CanUseHeight(StandingHeight);
+
+        IsCrouchForced = WantsStandingHeight && !CanStand;
+        IsCrouching = InputCrouchWanted || IsCrouchForced;
 
         float TargetHeight = IsCrouching ? CrouchingHeight : StandingHeight;
         float NewHeight = Mathf.MoveTowards(CharacterController.height, TargetHeight, CrouchTransitionSpeed * Time.deltaTime);
-        ApplyControllerHeight(NewHeight);
 
-        Vector3 TargetPivot = CameraPivotStandingLocalPosition + Vector3.up * (IsCrouching ? CrouchCameraOffset : 0f);
-        CameraPivot.localPosition = Vector3.MoveTowards(CameraPivot.localPosition, TargetPivot, CrouchTransitionSpeed * Time.deltaTime);
+        if (NewHeight > CharacterController.height && !CanUseHeight(NewHeight))
+        {
+            NewHeight = CharacterController.height;
+            IsCrouchForced = true;
+            IsCrouching = true;
+        }
+
+        ApplyControllerHeight(NewHeight);
+        ApplyCameraPivotHeight(IsCrouching, false);
+    }
+
+    /// <summary>
+    /// Returns whether the player currently wants crouch from input, toggle state or save restore state.
+    /// </summary>
+    private bool GetInputCrouchWanted()
+    {
+        if (ToggleCrouch)
+        {
+            return WantsToCrouch;
+        }
+
+        return PlayerInputReader.IsCrouchHeld || SavedHoldCrouchLock;
     }
 
     /// <summary>
@@ -335,9 +436,7 @@ public sealed class PlayerController : MonoBehaviour
     }
 
     /// <summary>
-    /// Moves the controller using cached input plus minimal jump and gravity logic.
-    /// When movement is externally blocked, horizontal locomotion and jump requests are ignored,
-    /// but gravity and platform carry still remain stable.
+    /// Moves the controller using cached input plus jump, gravity and ceiling-hit cancellation logic.
     /// </summary>
     private void UpdateMovement()
     {
@@ -368,8 +467,16 @@ public sealed class PlayerController : MonoBehaviour
         Vector3 HorizontalMotion = MoveDirection.normalized * SelectedMoveSpeed;
         Vector3 Motion = HorizontalMotion + Vector3.up * VerticalVelocity;
 
-        CharacterController.Move(Motion * Time.deltaTime);
-        Velocity = Motion;
+        CollisionFlags CollisionFlags = CharacterController.Move(Motion * Time.deltaTime);
+
+        if ((CollisionFlags & CollisionFlags.Above) != 0 && VerticalVelocity > CeilingHitVerticalVelocity)
+        {
+            VerticalVelocity = CeilingHitVerticalVelocity;
+            JumpRequested = false;
+            JumpBufferTimer = 0f;
+        }
+
+        Velocity = HorizontalMotion + Vector3.up * VerticalVelocity;
     }
 
     /// <summary>
@@ -401,16 +508,17 @@ public sealed class PlayerController : MonoBehaviour
     }
 
     /// <summary>
-    /// Toggles crouch when toggle mode is enabled.
+    /// Handles crouch press for toggle mode and clears the save-restored hold crouch lock in hold mode.
     /// </summary>
     private void OnCrouchPerformed()
     {
-        if (!ToggleCrouch)
+        if (ToggleCrouch)
         {
+            WantsToCrouch = !WantsToCrouch;
             return;
         }
 
-        WantsToCrouch = !WantsToCrouch;
+        SavedHoldCrouchLock = false;
     }
 
     /// <summary>
@@ -419,10 +527,80 @@ public sealed class PlayerController : MonoBehaviour
     /// <param name="NewHeight">Target controller height.</param>
     private void ApplyControllerHeight(float NewHeight)
     {
+        NewHeight = Mathf.Max(NewHeight, CharacterController.radius * 2f);
         CharacterController.height = NewHeight;
         CharacterController.center = new Vector3(0f, NewHeight * 0.5f, 0f);
     }
 
+    /// <summary>
+    /// Moves the camera pivot toward the current crouch or standing view height.
+    /// </summary>
+    /// <param name="UseCrouchHeight">True to use crouch camera height, false to use standing camera height.</param>
+    /// <param name="ApplyInstantly">True to snap immediately instead of interpolating.</param>
+    private void ApplyCameraPivotHeight(bool UseCrouchHeight, bool ApplyInstantly)
+    {
+        Vector3 TargetPivot = CameraPivotStandingLocalPosition + Vector3.up * (UseCrouchHeight ? CrouchCameraOffset : 0f);
+
+        if (ApplyInstantly)
+        {
+            CameraPivot.localPosition = TargetPivot;
+            return;
+        }
+
+        CameraPivot.localPosition = Vector3.MoveTowards(CameraPivot.localPosition, TargetPivot, CrouchTransitionSpeed * Time.deltaTime);
+    }
+
+    /// <summary>
+    /// Checks whether the character capsule can occupy the requested height without intersecting blocking geometry.
+    /// Own player colliders are ignored so the probe cannot self-block.
+    /// </summary>
+    /// <param name="RequestedHeight">Capsule height to validate.</param>
+    /// <returns>True when the requested height is clear.</returns>
+    private bool CanUseHeight(float RequestedHeight)
+    {
+        if (StandUpProbeHits == null || StandUpProbeHits.Length != Mathf.Max(4, StandUpProbeBufferSize))
+        {
+            StandUpProbeHits = new Collider[Mathf.Max(4, StandUpProbeBufferSize)];
+        }
+
+        float SafeRadius = Mathf.Max(0.01f, CharacterController.radius - Mathf.Max(0f, StandUpProbeRadiusShrink));
+        float SafeHeight = Mathf.Max(SafeRadius * 2f, RequestedHeight - Mathf.Max(0f, StandUpProbeVerticalShrink));
+        Vector3 Bottom = transform.position + Vector3.up * SafeRadius;
+        Vector3 Top = transform.position + Vector3.up * (SafeHeight - SafeRadius);
+
+        int HitCount = Physics.OverlapCapsuleNonAlloc(
+            Bottom,
+            Top,
+            SafeRadius,
+            StandUpProbeHits,
+            StandUpBlockerLayers,
+            StandUpTriggerInteraction);
+
+        for (int Index = 0; Index < HitCount; Index++)
+        {
+            Collider HitCollider = StandUpProbeHits[Index];
+            StandUpProbeHits[Index] = null;
+
+            if (HitCollider == null)
+            {
+                continue;
+            }
+
+            if (HitCollider == CharacterController)
+            {
+                continue;
+            }
+
+            if (HitCollider.transform == transform || HitCollider.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Applies full platform carry to the character controller, including the displacement of the
@@ -432,6 +610,13 @@ public sealed class PlayerController : MonoBehaviour
     {
         if (CurrentPlatform == null)
         {
+            LastPlatformUpwardSpeed = 0f;
+            return;
+        }
+
+        if (CurrentPlatform is not Component PlatformComponent || PlatformComponent == null || !PlatformComponent.gameObject.activeInHierarchy)
+        {
+            CurrentPlatform = null;
             LastPlatformUpwardSpeed = 0f;
             return;
         }
@@ -447,7 +632,6 @@ public sealed class PlayerController : MonoBehaviour
         ApplyPlatformRotation(CurrentPlatform.DeltaRotation);
         LastPlatformUpwardSpeed = Mathf.Max(0f, PlatformPointDelta.y / Mathf.Max(Time.deltaTime, 0.0001f));
     }
-
 
     /// <summary>
     /// Applies the carrier yaw rotation to the player view root so the player orientation rotates

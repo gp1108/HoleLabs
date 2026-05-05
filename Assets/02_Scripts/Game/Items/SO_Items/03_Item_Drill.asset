@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 16572f81317e202449edc153865672cb, type: 3}
+  m_Name: 03_Item_Drill
+  m_EditorClassIdentifier: Assembly-CSharp::ItemDefinition
+  ItemId: Drill
+  DisplayName: Drill
+  Icon: {fileID: 10917, guid: 0000000000000000f000000000000000, type: 0}
+  WorldPrefab: {fileID: 4799420530152893621, guid: 484b76217c71b7d458ad3593e4f29ede, type: 3}
+  EquippedPrefab: {fileID: 2169661944782389618, guid: 6056f6583ac3af64daba2c2f2236900a, type: 3}
+  IsStackable: 0
+  MaxStackSize: 1
+  DefaultDurability: -1
+  AutoEquipWhenSelected: 1

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -168,6 +169,40 @@ public sealed class OreSellTrigger : MonoBehaviour
 
     public int PendingSaleCount => PendingOreSales.Count;
     public int PendingMoneyEmissionCount => PendingMoneyEmissions.Count;
+
+    /// <summary>
+    /// Resolves the money prefab associated with a denomination id.
+    /// This is used by the save system so physical money can be restored
+    /// from the same authoritative denomination configuration used by the seller.
+    /// </summary>
+    /// <param name="DenominationId">Stable denomination id configured in the inspector.</param>
+    /// <returns>Matching money prefab, or null if the id is unknown.</returns>
+    public GameObject GetMoneyPrefabByDenominationId(string DenominationId)
+    {
+        if (string.IsNullOrWhiteSpace(DenominationId))
+        {
+            return null;
+        }
+
+        for (int Index = 0; Index < MoneyDenominations.Count; Index++)
+        {
+            MoneyDenomination Denomination = MoneyDenominations[Index];
+
+            if (Denomination == null)
+            {
+                continue;
+            }
+
+            if (!string.Equals(Denomination.GetId(), DenominationId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return Denomination.GetPrefab();
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Validates required references and caches the sorted denomination list.
@@ -513,6 +548,11 @@ public sealed class OreSellTrigger : MonoBehaviour
             {
                 MoneyPickup = Instance.GetComponentInChildren<MoneyPickup>(true);
             }
+
+            if (MoneyPickup != null)
+            {
+                MoneyPickup.BindPool(null, Denomination.GetPrefab());
+            }
         }
 
         if (MoneyPickup == null)
@@ -522,6 +562,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         MoneyPickup.Initialize(Denomination.GetGoldValue(), CurrencyWallet.CurrencyType.Gold);
+        MoneyPickup.SetSaveMoneyId(Denomination.GetId());
         ApplyEmissionImpulse(MoneyPickup, Denomination.GetVisualType(), EjectPoint);
 
         Log(
@@ -562,13 +603,13 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         Vector3 Impulse = EjectPoint.forward * ForwardImpulse;
         Impulse += EjectPoint.up * UpwardImpulse;
-        Impulse += Random.insideUnitSphere * RandomImpulse;
+        Impulse += UnityEngine.Random.insideUnitSphere * RandomImpulse;
 
         MoneyRigidbody.AddForce(Impulse, ForceMode.Impulse);
 
         if (RandomTorqueImpulse > 0f)
         {
-            MoneyRigidbody.AddTorque(Random.insideUnitSphere * RandomTorqueImpulse, ForceMode.Impulse);
+            MoneyRigidbody.AddTorque(UnityEngine.Random.insideUnitSphere * RandomTorqueImpulse, ForceMode.Impulse);
         }
     }
 
@@ -623,7 +664,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         List<int> FinalValueComposition = new(OptimalValueComposition);
 
-        if (AlternativeCompositionChance > 0f && Random.value < AlternativeCompositionChance)
+        if (AlternativeCompositionChance > 0f && UnityEngine.Random.value < AlternativeCompositionChance)
         {
             if (TryApplyAlternativeExpansion(FinalValueComposition, UniqueMinorUnitValues))
             {
@@ -821,7 +862,7 @@ public sealed class OreSellTrigger : MonoBehaviour
             return Bucket[0];
         }
 
-        int Roll = Random.Range(0, TotalWeight);
+        int Roll = UnityEngine.Random.Range(0, TotalWeight);
         int CumulativeWeight = 0;
 
         for (int Index = 0; Index < Bucket.Count; Index++)
@@ -882,7 +923,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         for (int Index = Denominations.Count - 1; Index > 0; Index--)
         {
-            int SwapIndex = Random.Range(0, Index + 1);
+            int SwapIndex = UnityEngine.Random.Range(0, Index + 1);
             MoneyDenomination Cached = Denominations[Index];
             Denominations[Index] = Denominations[SwapIndex];
             Denominations[SwapIndex] = Cached;
@@ -898,7 +939,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         for (int Index = Values.Count - 1; Index > 0; Index--)
         {
-            int SwapIndex = Random.Range(0, Index + 1);
+            int SwapIndex = UnityEngine.Random.Range(0, Index + 1);
             int Cached = Values[Index];
             Values[Index] = Values[SwapIndex];
             Values[SwapIndex] = Cached;
