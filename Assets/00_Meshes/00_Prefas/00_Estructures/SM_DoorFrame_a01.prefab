@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 4679561490140180415}
   - component: {fileID: 954119003978668754}
   - component: {fileID: 1730225223261036740}
+  - component: {fileID: 6949262988590905045}
   m_Layer: 0
   m_Name: SM_DoorFrame_a01
   m_TagString: Untagged
@@ -26,13 +27,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8541061905090915613}
   serializedVersion: 2
-  m_LocalRotation: {x: 1.0165751e-15, y: 1, z: -0.000000021855694, w: 0.00000004371139}
+  m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
   m_LocalPosition: {x: 18.7365, y: 0, z: 12.16472}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!33 &954119003978668754
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -66,8 +67,8 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -2293238839597214331, guid: dc48bd3dbff2d49429fc93f7758aa26e, type: 3}
-  - {fileID: 1829584327699034879, guid: dc48bd3dbff2d49429fc93f7758aa26e, type: 3}
+  - {fileID: 2100000, guid: f7aedc7ea3e97aa42bcc44afb683eebe, type: 2}
+  - {fileID: 2100000, guid: 42f4f8d8014946440ade0ef0a2831d5f, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -91,3 +92,25 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!64 &6949262988590905045
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8541061905090915613}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 0
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 9059674711224707860, guid: dc48bd3dbff2d49429fc93f7758aa26e, type: 3}

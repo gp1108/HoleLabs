@@ -66,7 +66,7 @@ Material:
     - _R_Control: 1.09
     - _UV_Rotation: 0
     m_Colors:
-    - _Tint: {r: 0.6132076, g: 0.6132076, b: 0.6132076, a: 1}
+    - _Tint: {r: 0.745283, g: 0.745283, b: 0.745283, a: 1}
     - _UV_Offset: {r: 0, g: 0, b: 0, a: 0}
     - _UV_Tiling: {r: 0, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
