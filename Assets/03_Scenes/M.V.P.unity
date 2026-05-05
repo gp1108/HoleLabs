@@ -18379,10 +18379,12 @@ MonoBehaviour:
   ViewModelContainerTransform: {fileID: 1641735265239713162}
   CharacterController: {fileID: 9164750670804751443}
   PlayerInputReader: {fileID: 9164750670804751444}
-  LookSensitivityX: 25
-  LookSensitivityY: 25
+  LookSensitivityX: 3.5
+  LookSensitivityY: 3.5
   MinPitch: -85
   MaxPitch: 85
+  LookTiming: 0
+  FrameDeltaReferenceFrameRate: 60
   WalkSpeed: 5
   SprintSpeed: 7.5
   CrouchSpeed: 2.75
@@ -19935,10 +19937,10 @@ MonoBehaviour:
   CollectDistance: 4
   CollectionLayers:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 448
   TriggerInteraction: 2
   DebugLogs: 0
-  DrawDebugRay: 0
+  DrawDebugRay: 1
 --- !u!114 &9164750670804751446
 MonoBehaviour:
   m_ObjectHideFlags: 0
