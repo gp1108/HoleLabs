@@ -439,7 +439,7 @@ MonoBehaviour:
         Space: 0
         RandomizeRemap: 0
         MovementMode: 0
-        AnimatePositionDuration: 0.1
+        AnimatePositionDuration: 0.05
         AnimatePositionSpeed: 1
         AnimatePositionTween:
           MMTweenDefinitionType: 1
@@ -744,8 +744,8 @@ MonoBehaviour:
         ExtraBoundRenderers: []
         Mode: 0
         PropertyName: _Tint
-        FlickerDuration: 0.6
-        FlickerPeriod: 0.6
+        FlickerDuration: 0.05
+        FlickerPeriod: 0.05
         FlickerColor: {r: 1, g: 0.9402515, b: 0.9402515, a: 1}
         MaterialIndexes: 
         UseMaterialPropertyBlocks: 0
