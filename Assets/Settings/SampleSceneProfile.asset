@@ -112,7 +112,7 @@ MonoBehaviour:
   active: 1
   intensity:
     m_OverrideState: 1
-    m_Value: 0.123
+    m_Value: 0.05
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -190,7 +190,7 @@ MonoBehaviour:
   active: 1
   distance:
     m_OverrideState: 1
-    m_Value: 0.15
+    m_Value: 0.022
   cropToFit:
     m_OverrideState: 1
     m_Value: 1
@@ -234,10 +234,10 @@ MonoBehaviour:
   active: 1
   intensity:
     m_OverrideState: 1
-    m_Value: 0.01
+    m_Value: 0.4
   tintColor:
     m_OverrideState: 1
-    m_Value: {r: 0.49056602, g: 0.49056602, b: 0.49056602, a: 1}
+    m_Value: {r: 1, g: 1, b: 1, a: 1}
   bloomMip:
     m_OverrideState: 0
     m_Value: 1
