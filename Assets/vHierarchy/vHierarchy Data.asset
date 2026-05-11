@@ -60,4 +60,6 @@ MonoBehaviour:
   - _go: {fileID: 0}
     globalId:
       globalObjectIdString: GlobalObjectId_V1-2-99c9720ab356a0642a771bea13969a05-1358518319-0
-  bookmarkedScenePaths: []
+  bookmarkedScenePaths:
+  - Assets/03_Scenes/M.V.P.unity
+  - Assets/03_Scenes/M.V.P_Assets.unity
