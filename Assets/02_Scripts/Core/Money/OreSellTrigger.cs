@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 
 /// <summary>
@@ -81,6 +82,8 @@ public sealed class OreSellTrigger : MonoBehaviour
     private sealed class PendingMoneyEmission
     {
         public MoneyDenomination Denomination;
+        public int GoldMinorUnits;
+        public int BatchId;
     }
 
     [Header("References")]
@@ -97,9 +100,25 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("World point and orientation used to eject bills.")]
     [SerializeField] private Transform BillEjectPoint;
 
+    [Header("Machine Animation")]
+    [Tooltip("Animators that should run only while the selling machine has valid ore pickups waiting to be consumed.")]
+    [SerializeField] private Animator[] ProcessingAnimators = new Animator[0];
+
+    [Tooltip("Playback speed applied to every processing animator while the machine is active.")]
+    [SerializeField] private float ProcessingAnimationSpeed = 1f;
+
+    [Tooltip("Normalized distance from the end of the current animation loop where the animator is allowed to pause cleanly when immediate stopping is disabled.")]
+    [SerializeField][Range(0.001f, 0.1f)] private float AnimationLoopPauseWindow = 0.02f;
+
+    [Tooltip("If true, processing animations snap to a stable rest pose as soon as there are no valid ore pickups waiting to be consumed.")]
+    [SerializeField] private bool StopAnimationsImmediatelyWhenNoOre = true;
+
     [Header("Ore Processing")]
-    [Tooltip("Time in seconds between each consumed ore while the machine has pending minerals.")]
+    [Tooltip("Time in seconds between each ore consumption tick while the machine has pending minerals.")]
     [SerializeField] private float OreConsumeInterval = 0.5f;
+
+    [Tooltip("Maximum amount of valid ore pickups consumed on each ore consumption tick.")]
+    [SerializeField] private int OresConsumedPerTick = 1;
 
     [Header("Dynamic Emission")]
     [Tooltip("Slowest possible interval used when the pending money queue is small.")]
@@ -151,6 +170,31 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("If true, emitted denomination order is shuffled slightly for visual variation.")]
     [SerializeField] private bool ShuffleEmissionOrder = true;
 
+    [Header("Batch Display")]
+    [Tooltip("Optional root object that is shown while the current batch display has valid values and hidden when the display is cleared.")]
+    [SerializeField] private GameObject BatchDisplayRoot;
+
+    [Tooltip("Text that displays the total gold value processed during the current batch.")]
+    [SerializeField] private TextMeshProUGUI BatchTotalValueText;
+
+    [Tooltip("Text that displays the gold value already emitted as physical money during the current batch.")]
+    [SerializeField] private TextMeshProUGUI BatchPaidValueText;
+
+    [Tooltip("Text that displays the gold value still pending to be emitted during the current batch.")]
+    [SerializeField] private TextMeshProUGUI BatchRemainingValueText;
+
+    [Tooltip("Seconds without processing another ore pickup required before a later ore starts a new batch.")]
+    [SerializeField] private float BatchInactivityThreshold = 3f;
+
+    [Tooltip("Seconds waited after the current batch has been fully paid before clearing the display.")]
+    [SerializeField] private float BatchClearDelay = 1.5f;
+
+    [Tooltip("Suffix appended to formatted batch currency values.")]
+    [SerializeField] private string CurrencySuffix = "€";
+
+    [Tooltip("If true, the batch display root is hidden when there is no active batch to show.")]
+    [SerializeField] private bool HideBatchDisplayWhenEmpty = true;
+
     [Header("Debug")]
     [Tooltip("Logs sales, processed ore, denomination decomposition and money emissions.")]
     [SerializeField] private bool DebugLogs = false;
@@ -164,8 +208,24 @@ public sealed class OreSellTrigger : MonoBehaviour
     /// </summary>
     private readonly HashSet<OrePickup> OrePickupsInsideTrigger = new();
 
+    /// <summary>
+    /// Counts how many colliders from the same ore pickup are currently inside the trigger.
+    /// This prevents one child collider exit from removing a pickup that is still visually inside.
+    /// </summary>
+    private readonly Dictionary<OrePickup, int> OrePickupTriggerOverlapCounts = new();
+
     private float OreConsumeTimer;
     private float MoneyEmissionTimer;
+    private int CurrentBatchId;
+    private bool HasActiveBatch;
+    private int CurrentBatchTotalMinorUnits;
+    private int CurrentBatchPaidMinorUnits;
+    private float LastBatchOreProcessedTime = -1f;
+    private float BatchCompletedTime = -1f;
+    private bool IsProcessingAnimationActive;
+    private bool IsProcessingAnimationStopRequested;
+    private bool[] ProcessingAnimatorPausedStates = new bool[0];
+    private float[] ProcessingAnimatorPauseTargets = new float[0];
 
     public int PendingSaleCount => PendingOreSales.Count;
     public int PendingMoneyEmissionCount => PendingMoneyEmissions.Count;
@@ -220,6 +280,9 @@ public sealed class OreSellTrigger : MonoBehaviour
         {
             BillEjectPoint = CoinEjectPoint != null ? CoinEjectPoint : transform;
         }
+
+        InitializeProcessingAnimationState();
+        RefreshBatchDisplay();
     }
 
     /// <summary>
@@ -229,6 +292,278 @@ public sealed class OreSellTrigger : MonoBehaviour
     {
         UpdateOreConsumption();
         UpdateMoneyEmission();
+        UpdateProcessingAnimationState();
+        UpdateBatchDisplayLifecycle();
+    }
+
+    /// <summary>
+    /// Initializes animation helper arrays and forces every configured processing animator into a safe paused state.
+    /// </summary>
+    private void InitializeProcessingAnimationState()
+    {
+        int AnimatorCount = ProcessingAnimators != null ? ProcessingAnimators.Length : 0;
+        ProcessingAnimatorPausedStates = new bool[AnimatorCount];
+        ProcessingAnimatorPauseTargets = new float[AnimatorCount];
+
+        for (int Index = 0; Index < AnimatorCount; Index++)
+        {
+            ProcessingAnimatorPausedStates[Index] = true;
+            ProcessingAnimatorPauseTargets[Index] = 0f;
+
+            if (ProcessingAnimators[Index] == null)
+            {
+                continue;
+            }
+
+            PauseProcessingAnimatorAtRestPose(ProcessingAnimators[Index]);
+        }
+    }
+
+    /// <summary>
+    /// Starts, keeps alive or cleanly stops the configured processing animations according to machine activity.
+    /// </summary>
+    private void UpdateProcessingAnimationState()
+    {
+        if (ShouldProcessingAnimationRun())
+        {
+            StartProcessingAnimations();
+            return;
+        }
+
+        if (StopAnimationsImmediatelyWhenNoOre)
+        {
+            StopProcessingAnimationsImmediately();
+            return;
+        }
+
+        RequestProcessingAnimationStop();
+        UpdateRequestedProcessingAnimationStop();
+    }
+
+    /// <summary>
+    /// Returns whether the machine still has valid ore pickups waiting to be consumed.
+    /// Pending money emissions intentionally do not keep the processing animations alive.
+    /// </summary>
+    private bool ShouldProcessingAnimationRun()
+    {
+        return GetValidQueuedOrePickupCount() > 0;
+    }
+
+    /// <summary>
+    /// Resumes every configured processing animator immediately when the machine becomes active.
+    /// </summary>
+    private void StartProcessingAnimations()
+    {
+        EnsureProcessingAnimationArrays();
+
+        IsProcessingAnimationActive = true;
+        IsProcessingAnimationStopRequested = false;
+
+        int AnimatorCount = ProcessingAnimators != null ? ProcessingAnimators.Length : 0;
+
+        for (int Index = 0; Index < AnimatorCount; Index++)
+        {
+            Animator ProcessingAnimator = ProcessingAnimators[Index];
+
+            ProcessingAnimatorPausedStates[Index] = false;
+            ProcessingAnimatorPauseTargets[Index] = 0f;
+
+            if (ProcessingAnimator == null)
+            {
+                continue;
+            }
+
+            ProcessingAnimator.speed = Mathf.Max(0.01f, ProcessingAnimationSpeed);
+        }
+    }
+
+    /// <summary>
+    /// Stops every configured processing animator immediately by snapping it to a stable rest pose.
+    /// </summary>
+    private void StopProcessingAnimationsImmediately()
+    {
+        if (!IsProcessingAnimationActive && !IsProcessingAnimationStopRequested)
+        {
+            return;
+        }
+
+        EnsureProcessingAnimationArrays();
+
+        IsProcessingAnimationActive = false;
+        IsProcessingAnimationStopRequested = false;
+
+        int AnimatorCount = ProcessingAnimators != null ? ProcessingAnimators.Length : 0;
+
+        for (int Index = 0; Index < AnimatorCount; Index++)
+        {
+            ProcessingAnimatorPausedStates[Index] = true;
+            ProcessingAnimatorPauseTargets[Index] = 0f;
+            PauseProcessingAnimatorAtRestPose(ProcessingAnimators[Index]);
+        }
+    }
+
+    /// <summary>
+    /// Requests a clean animation stop at the next loop boundary without freezing clips mid-pose.
+    /// </summary>
+    private void RequestProcessingAnimationStop()
+    {
+        if (!IsProcessingAnimationActive || IsProcessingAnimationStopRequested)
+        {
+            return;
+        }
+
+        EnsureProcessingAnimationArrays();
+        IsProcessingAnimationStopRequested = true;
+
+        int AnimatorCount = ProcessingAnimators != null ? ProcessingAnimators.Length : 0;
+
+        for (int Index = 0; Index < AnimatorCount; Index++)
+        {
+            ProcessingAnimatorPausedStates[Index] = false;
+            ProcessingAnimatorPauseTargets[Index] = ResolveProcessingAnimatorPauseTarget(ProcessingAnimators[Index]);
+        }
+    }
+
+    /// <summary>
+    /// Advances active animators until each one reaches its safe pause target.
+    /// </summary>
+    private void UpdateRequestedProcessingAnimationStop()
+    {
+        if (!IsProcessingAnimationStopRequested)
+        {
+            return;
+        }
+
+        bool AllAnimatorsPaused = true;
+
+        int AnimatorCount = ProcessingAnimators != null ? ProcessingAnimators.Length : 0;
+
+        for (int Index = 0; Index < AnimatorCount; Index++)
+        {
+            if (ProcessingAnimatorPausedStates[Index])
+            {
+                continue;
+            }
+
+            Animator ProcessingAnimator = ProcessingAnimators[Index];
+
+            if (ProcessingAnimator == null || IsProcessingAnimatorAtPauseTarget(ProcessingAnimator, ProcessingAnimatorPauseTargets[Index]))
+            {
+                PauseProcessingAnimatorAtRestPose(ProcessingAnimator);
+                ProcessingAnimatorPausedStates[Index] = true;
+            }
+
+            if (!ProcessingAnimatorPausedStates[Index])
+            {
+                AllAnimatorsPaused = false;
+            }
+        }
+
+        if (!AllAnimatorsPaused)
+        {
+            return;
+        }
+
+        IsProcessingAnimationActive = false;
+        IsProcessingAnimationStopRequested = false;
+    }
+
+    /// <summary>
+    /// Calculates the normalized animation time where an animator may be paused cleanly.
+    /// </summary>
+    /// <param name="ProcessingAnimator">Animator that is being evaluated.</param>
+    /// <returns>Normalized time target used to pause the animator.</returns>
+    private float ResolveProcessingAnimatorPauseTarget(Animator ProcessingAnimator)
+    {
+        if (ProcessingAnimator == null || ProcessingAnimator.layerCount == 0 || ProcessingAnimator.IsInTransition(0))
+        {
+            return 0f;
+        }
+
+        AnimatorStateInfo StateInfo = ProcessingAnimator.GetCurrentAnimatorStateInfo(0);
+        float PauseWindow = Mathf.Clamp(AnimationLoopPauseWindow, 0.001f, 0.1f);
+
+        if (!StateInfo.loop)
+        {
+            return Mathf.Max(StateInfo.normalizedTime, 1f - PauseWindow);
+        }
+
+        float CurrentNormalizedTime = Mathf.Max(0f, StateInfo.normalizedTime);
+        float CurrentLoopEndTarget = Mathf.Floor(CurrentNormalizedTime) + 1f - PauseWindow;
+
+        return CurrentNormalizedTime >= CurrentLoopEndTarget
+            ? CurrentNormalizedTime
+            : CurrentLoopEndTarget;
+    }
+
+    /// <summary>
+    /// Returns whether the animator has reached the normalized time where it may be paused safely.
+    /// </summary>
+    /// <param name="ProcessingAnimator">Animator that is being evaluated.</param>
+    /// <param name="PauseTarget">Normalized time target generated when the stop was requested.</param>
+    /// <returns>True when the animator can be paused without freezing mid-loop.</returns>
+    private bool IsProcessingAnimatorAtPauseTarget(Animator ProcessingAnimator, float PauseTarget)
+    {
+        if (ProcessingAnimator == null || ProcessingAnimator.layerCount == 0)
+        {
+            return true;
+        }
+
+        if (ProcessingAnimator.IsInTransition(0))
+        {
+            return false;
+        }
+
+        AnimatorStateInfo StateInfo = ProcessingAnimator.GetCurrentAnimatorStateInfo(0);
+
+        if (!StateInfo.loop)
+        {
+            return StateInfo.normalizedTime >= PauseTarget;
+        }
+
+        return StateInfo.normalizedTime >= PauseTarget;
+    }
+
+    /// <summary>
+    /// Pauses an animator on the first frame of its current state so the next resume starts from a stable pose.
+    /// </summary>
+    /// <param name="ProcessingAnimator">Animator that should be paused.</param>
+    private void PauseProcessingAnimatorAtRestPose(Animator ProcessingAnimator)
+    {
+        if (ProcessingAnimator == null || ProcessingAnimator.layerCount == 0)
+        {
+            return;
+        }
+
+        if (!ProcessingAnimator.isActiveAndEnabled)
+        {
+            ProcessingAnimator.speed = 0f;
+            return;
+        }
+
+        AnimatorStateInfo StateInfo = ProcessingAnimator.GetCurrentAnimatorStateInfo(0);
+        ProcessingAnimator.Play(StateInfo.fullPathHash, 0, 0f);
+        ProcessingAnimator.Update(0f);
+        ProcessingAnimator.speed = 0f;
+    }
+
+    /// <summary>
+    /// Keeps animation helper arrays synchronized with the inspector animator list.
+    /// </summary>
+    private void EnsureProcessingAnimationArrays()
+    {
+        int AnimatorCount = ProcessingAnimators != null ? ProcessingAnimators.Length : 0;
+
+        if (ProcessingAnimatorPausedStates != null &&
+            ProcessingAnimatorPauseTargets != null &&
+            ProcessingAnimatorPausedStates.Length == AnimatorCount &&
+            ProcessingAnimatorPauseTargets.Length == AnimatorCount)
+        {
+            return;
+        }
+
+        ProcessingAnimatorPausedStates = new bool[AnimatorCount];
+        ProcessingAnimatorPauseTargets = new float[AnimatorCount];
     }
 
     private void OnTriggerEnter(Collider Other)
@@ -250,7 +585,7 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-        OrePickupsInsideTrigger.Add(OrePickup);
+        RegisterOrePickupTriggerEnter(OrePickup);
         TryQueueSalePickup(OrePickup);
     }
 
@@ -273,10 +608,184 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
+        RegisterOrePickupTriggerExit(OrePickup);
+    }
+
+    /// <summary>
+    /// Registers that one collider from an ore pickup has entered the trigger volume.
+    /// </summary>
+    /// <param name="OrePickup">Ore pickup owning the collider that entered.</param>
+    private void RegisterOrePickupTriggerEnter(OrePickup OrePickup)
+    {
+        if (OrePickup == null)
+        {
+            return;
+        }
+
+        if (!OrePickupTriggerOverlapCounts.TryGetValue(OrePickup, out int OverlapCount))
+        {
+            OverlapCount = 0;
+        }
+
+        OrePickupTriggerOverlapCounts[OrePickup] = OverlapCount + 1;
+        OrePickupsInsideTrigger.Add(OrePickup);
+    }
+
+    /// <summary>
+    /// Registers that one collider from an ore pickup has left the trigger volume.
+    /// The pickup is removed only when all of its colliders are outside.
+    /// </summary>
+    /// <param name="OrePickup">Ore pickup owning the collider that exited.</param>
+    private void RegisterOrePickupTriggerExit(OrePickup OrePickup)
+    {
+        if (OrePickup == null)
+        {
+            return;
+        }
+
+        if (!OrePickupTriggerOverlapCounts.TryGetValue(OrePickup, out int OverlapCount))
+        {
+            RemoveOrePickupFromActiveQueues(OrePickup, "left the trigger without a registered overlap count");
+            return;
+        }
+
+        OverlapCount--;
+
+        if (OverlapCount > 0)
+        {
+            OrePickupTriggerOverlapCounts[OrePickup] = OverlapCount;
+            return;
+        }
+
+        OrePickupTriggerOverlapCounts.Remove(OrePickup);
+        RemoveOrePickupFromActiveQueues(OrePickup, "left the trigger");
+    }
+
+    /// <summary>
+    /// Removes one ore pickup from the active trigger and sale tracking collections.
+    /// </summary>
+    /// <param name="OrePickup">Ore pickup to remove.</param>
+    /// <param name="Reason">Diagnostic reason used by debug logs.</param>
+    private void RemoveOrePickupFromActiveQueues(OrePickup OrePickup, string Reason)
+    {
+        if (OrePickup == null)
+        {
+            return;
+        }
+
         OrePickupsInsideTrigger.Remove(OrePickup);
         QueuedOrePickups.Remove(OrePickup);
 
-        Log("Removed ore pickup from active sale queue because it left the trigger: " + OrePickup.name);
+        Log("Removed ore pickup from active sale queue because it " + Reason + ": " + OrePickup.name);
+    }
+
+    /// <summary>
+    /// Returns the amount of queued ore pickups that still exist, are active and remain inside the trigger.
+    /// Invalid references are pruned before the count is returned.
+    /// </summary>
+    /// <returns>Amount of valid ore pickups waiting to be consumed.</returns>
+    private int GetValidQueuedOrePickupCount()
+    {
+        PruneInvalidQueuedOrePickups();
+        return QueuedOrePickups.Count;
+    }
+
+    /// <summary>
+    /// Removes stale ore pickup references that can no longer be consumed visually or physically.
+    /// </summary>
+    private void PruneInvalidQueuedOrePickups()
+    {
+        if (QueuedOrePickups.Count == 0)
+        {
+            return;
+        }
+
+        List<OrePickup> InvalidOrePickups = null;
+
+        foreach (OrePickup QueuedOrePickup in QueuedOrePickups)
+        {
+            if (IsQueuedOrePickupStillValid(QueuedOrePickup))
+            {
+                continue;
+            }
+
+            if (InvalidOrePickups == null)
+            {
+                InvalidOrePickups = new List<OrePickup>();
+            }
+
+            InvalidOrePickups.Add(QueuedOrePickup);
+        }
+
+        if (InvalidOrePickups == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < InvalidOrePickups.Count; Index++)
+        {
+            OrePickup InvalidOrePickup = InvalidOrePickups[Index];
+
+            if (InvalidOrePickup != null)
+            {
+                OrePickupsInsideTrigger.Remove(InvalidOrePickup);
+                OrePickupTriggerOverlapCounts.Remove(InvalidOrePickup);
+            }
+
+            QueuedOrePickups.Remove(InvalidOrePickup);
+        }
+    }
+
+    /// <summary>
+    /// Returns whether a queued ore pickup can still be consumed by the machine.
+    /// </summary>
+    /// <param name="OrePickup">Ore pickup being evaluated.</param>
+    /// <returns>True when the pickup is still valid, active and inside the trigger.</returns>
+    private bool IsQueuedOrePickupStillValid(OrePickup OrePickup)
+    {
+        if (OrePickup == null)
+        {
+            return false;
+        }
+
+        Transform RuntimeRoot = OrePickup.GetRuntimeRoot();
+
+        if (RuntimeRoot == null || !RuntimeRoot.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        if (!OrePickupsInsideTrigger.Contains(OrePickup))
+        {
+            return false;
+        }
+
+        return OrePickup.GetOreItemData() != null;
+    }
+
+    /// <summary>
+    /// Drains invalid pending sale entries so old queue entries cannot keep internal counters alive forever.
+    /// </summary>
+    private void DrainInvalidPendingOreSales()
+    {
+        if (PendingOreSales.Count == 0)
+        {
+            return;
+        }
+
+        int EntriesToInspect = PendingOreSales.Count;
+
+        for (int Index = 0; Index < EntriesToInspect; Index++)
+        {
+            PendingOreSale PendingOreSale = PendingOreSales.Dequeue();
+
+            if (PendingOreSale == null || !IsQueuedOrePickupStillValid(PendingOreSale.OrePickup))
+            {
+                continue;
+            }
+
+            PendingOreSales.Enqueue(PendingOreSale);
+        }
     }
 
     public bool TryQueueSaleFromCollider(Collider Other)
@@ -348,6 +857,12 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
+        if (GetValidQueuedOrePickupCount() == 0)
+        {
+            DrainInvalidPendingOreSales();
+            return;
+        }
+
         OreConsumeTimer -= Time.deltaTime;
 
         if (OreConsumeTimer > 0f)
@@ -356,7 +871,25 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         OreConsumeTimer = Mathf.Max(0.01f, OreConsumeInterval);
-        ConsumeNextQueuedOre();
+        ConsumeQueuedOreTick();
+    }
+
+    /// <summary>
+    /// Consumes up to the configured amount of valid ore pickups during one processing tick.
+    /// </summary>
+    private void ConsumeQueuedOreTick()
+    {
+        int MaxOreConsumedThisTick = Mathf.Max(1, OresConsumedPerTick);
+
+        for (int Index = 0; Index < MaxOreConsumedThisTick; Index++)
+        {
+            if (GetValidQueuedOrePickupCount() == 0)
+            {
+                return;
+            }
+
+            ConsumeNextQueuedOre();
+        }
     }
 
     private void UpdateMoneyEmission()
@@ -427,6 +960,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         {
             QueuedOrePickups.Remove(OrePickup);
             OrePickupsInsideTrigger.Remove(OrePickup);
+            OrePickupTriggerOverlapCounts.Remove(OrePickup);
 
             if (!OrePickup.ReturnToPool())
             {
@@ -441,13 +975,17 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         float GoldValue = Mathf.Max(0f, OreItemData.GetGoldValue());
+        int GoldMinorUnits = ToMinorUnits(GoldValue);
 
-        if (GoldValue > 0f)
+        if (GoldMinorUnits > 0)
         {
-            bool CouldBuildExactPayout = TryEnqueueExactMoneyPayout(GoldValue);
+            int BatchId = RegisterBatchProcessedValue(GoldMinorUnits);
+            bool CouldBuildExactPayout = TryEnqueueExactMoneyPayout(GoldValue, BatchId);
 
             if (!CouldBuildExactPayout)
             {
+                RollbackBatchProcessedValue(GoldMinorUnits, BatchId);
+
                 Log(
                     "Failed to build exact payout for ore value " + GoldValue.ToString("0.00") +
                     ". Check configured denominations. At least one denomination combination is missing.");
@@ -467,7 +1005,13 @@ public sealed class OreSellTrigger : MonoBehaviour
         LogProcessedOre(OreItemData);
     }
 
-    private bool TryEnqueueExactMoneyPayout(float GoldValue)
+    /// <summary>
+    /// Converts a processed gold value into exact physical money emissions assigned to the provided batch.
+    /// </summary>
+    /// <param name="GoldValue">Gold value that must be emitted physically.</param>
+    /// <param name="BatchId">Batch identifier that owns the emitted money pieces.</param>
+    /// <returns>True when an exact payout composition was queued.</returns>
+    private bool TryEnqueueExactMoneyPayout(float GoldValue, int BatchId)
     {
         int TargetMinorUnits = ToMinorUnits(GoldValue);
 
@@ -490,9 +1034,13 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         for (int Index = 0; Index < Result.Count; Index++)
         {
+            MoneyDenomination Denomination = Result[Index];
+
             PendingMoneyEmissions.Enqueue(new PendingMoneyEmission
             {
-                Denomination = Result[Index]
+                Denomination = Denomination,
+                GoldMinorUnits = Denomination != null ? Denomination.GetGoldValueMinorUnits() : 0,
+                BatchId = BatchId
             });
         }
 
@@ -517,15 +1065,25 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-        EmitMoneyDenomination(PendingMoneyEmission.Denomination);
+        bool WasEmitted = EmitMoneyDenomination(PendingMoneyEmission.Denomination);
+
+        if (WasEmitted)
+        {
+            RegisterBatchPaidValue(PendingMoneyEmission.GoldMinorUnits, PendingMoneyEmission.BatchId);
+        }
     }
 
-    private void EmitMoneyDenomination(MoneyDenomination Denomination)
+    /// <summary>
+    /// Emits one physical money pickup for the provided denomination.
+    /// </summary>
+    /// <param name="Denomination">Denomination that should be emitted.</param>
+    /// <returns>True when a money pickup was created and initialized.</returns>
+    private bool EmitMoneyDenomination(MoneyDenomination Denomination)
     {
         if (Denomination == null || Denomination.GetPrefab() == null)
         {
             Log("Skipped money emission because the denomination or its prefab is invalid.");
-            return;
+            return false;
         }
 
         Transform EjectPoint = ResolveEjectPoint(Denomination.GetVisualType());
@@ -558,10 +1116,10 @@ public sealed class OreSellTrigger : MonoBehaviour
         if (MoneyPickup == null)
         {
             Log("Failed to create money pickup for denomination " + Denomination.GetId() + ".");
-            return;
+            return false;
         }
 
-        MoneyPickup.Initialize(Denomination.GetGoldValue(), CurrencyWallet.CurrencyType.Gold);
+        MoneyPickup.Initialize(Denomination.GetGoldValue(), global::CurrencyWallet.CurrencyType.Gold);
         MoneyPickup.SetSaveMoneyId(Denomination.GetId());
         ApplyEmissionImpulse(MoneyPickup, Denomination.GetVisualType(), EjectPoint);
 
@@ -570,6 +1128,8 @@ public sealed class OreSellTrigger : MonoBehaviour
             " | Value: " + Denomination.GetGoldValue().ToString("0.00") +
             " | VisualType: " + Denomination.GetVisualType() +
             " | Remaining pending pieces: " + PendingMoneyEmissions.Count);
+
+        return true;
     }
 
     private void ApplyEmissionImpulse(MoneyPickup MoneyPickup, MoneyVisualType VisualType, Transform EjectPoint)
@@ -946,6 +1506,224 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Registers processed ore value into the current visible batch or starts a new batch when the inactivity window expired.
+    /// </summary>
+    /// <param name="GoldMinorUnits">Processed gold value in minor currency units.</param>
+    /// <returns>Identifier of the batch that owns this processed value.</returns>
+    private int RegisterBatchProcessedValue(int GoldMinorUnits)
+    {
+        int ClampedGoldMinorUnits = Mathf.Max(0, GoldMinorUnits);
+
+        if (ClampedGoldMinorUnits <= 0)
+        {
+            return CurrentBatchId;
+        }
+
+        if (ShouldStartNewBatch())
+        {
+            StartNewBatch();
+        }
+
+        HasActiveBatch = true;
+        CurrentBatchTotalMinorUnits += ClampedGoldMinorUnits;
+        LastBatchOreProcessedTime = Time.time;
+        BatchCompletedTime = -1f;
+
+        RefreshBatchDisplay();
+        return CurrentBatchId;
+    }
+
+    /// <summary>
+    /// Removes previously registered processed value if the physical payout could not be composed exactly.
+    /// </summary>
+    /// <param name="GoldMinorUnits">Gold value in minor units to remove.</param>
+    /// <param name="BatchId">Batch identifier that was originally assigned to the value.</param>
+    private void RollbackBatchProcessedValue(int GoldMinorUnits, int BatchId)
+    {
+        if (!HasActiveBatch || BatchId != CurrentBatchId)
+        {
+            return;
+        }
+
+        CurrentBatchTotalMinorUnits = Mathf.Max(0, CurrentBatchTotalMinorUnits - Mathf.Max(0, GoldMinorUnits));
+        CurrentBatchPaidMinorUnits = Mathf.Min(CurrentBatchPaidMinorUnits, CurrentBatchTotalMinorUnits);
+
+        if (CurrentBatchTotalMinorUnits <= 0)
+        {
+            ClearBatchDisplayState();
+            return;
+        }
+
+        RefreshBatchDisplay();
+    }
+
+    /// <summary>
+    /// Registers emitted physical money value for the batch that owns the emitted piece.
+    /// </summary>
+    /// <param name="GoldMinorUnits">Emitted gold value in minor currency units.</param>
+    /// <param name="BatchId">Batch identifier assigned to the emitted money piece.</param>
+    private void RegisterBatchPaidValue(int GoldMinorUnits, int BatchId)
+    {
+        if (!HasActiveBatch || BatchId != CurrentBatchId)
+        {
+            return;
+        }
+
+        CurrentBatchPaidMinorUnits = Mathf.Min(
+            CurrentBatchTotalMinorUnits,
+            CurrentBatchPaidMinorUnits + Mathf.Max(0, GoldMinorUnits));
+
+        if (GetCurrentBatchRemainingMinorUnits() <= 0 && BatchCompletedTime < 0f)
+        {
+            BatchCompletedTime = Time.time;
+        }
+
+        RefreshBatchDisplay();
+    }
+
+    /// <summary>
+    /// Updates clearing rules for the current batch display.
+    /// A batch is cleared only after it has been fully paid and the inactivity window has expired.
+    /// </summary>
+    private void UpdateBatchDisplayLifecycle()
+    {
+        if (!HasActiveBatch)
+        {
+            RefreshBatchDisplay();
+            return;
+        }
+
+        if (GetCurrentBatchRemainingMinorUnits() > 0)
+        {
+            return;
+        }
+
+        if (BatchCompletedTime < 0f)
+        {
+            BatchCompletedTime = Time.time;
+        }
+
+        bool HasInactivityExpired = LastBatchOreProcessedTime < 0f ||
+            Time.time - LastBatchOreProcessedTime >= Mathf.Max(0f, BatchInactivityThreshold);
+
+        bool HasClearDelayExpired = Time.time - BatchCompletedTime >= Mathf.Max(0f, BatchClearDelay);
+
+        if (!HasInactivityExpired || !HasClearDelayExpired)
+        {
+            return;
+        }
+
+        ClearBatchDisplayState();
+    }
+
+    /// <summary>
+    /// Returns whether a new processed ore should start a new batch according to the inactivity threshold.
+    /// </summary>
+    /// <returns>True when no batch exists or the previous batch inactivity window has expired.</returns>
+    private bool ShouldStartNewBatch()
+    {
+        if (!HasActiveBatch)
+        {
+            return true;
+        }
+
+        if (LastBatchOreProcessedTime < 0f)
+        {
+            return false;
+        }
+
+        return Time.time - LastBatchOreProcessedTime > Mathf.Max(0f, BatchInactivityThreshold);
+    }
+
+    /// <summary>
+    /// Starts a new visible processing batch and resets all displayed monetary counters.
+    /// </summary>
+    private void StartNewBatch()
+    {
+        CurrentBatchId++;
+        HasActiveBatch = true;
+        CurrentBatchTotalMinorUnits = 0;
+        CurrentBatchPaidMinorUnits = 0;
+        LastBatchOreProcessedTime = -1f;
+        BatchCompletedTime = -1f;
+
+        RefreshBatchDisplay();
+    }
+
+    /// <summary>
+    /// Clears the current visible batch counters and hides or empties the assigned display texts.
+    /// </summary>
+    private void ClearBatchDisplayState()
+    {
+        HasActiveBatch = false;
+        CurrentBatchTotalMinorUnits = 0;
+        CurrentBatchPaidMinorUnits = 0;
+        LastBatchOreProcessedTime = -1f;
+        BatchCompletedTime = -1f;
+
+        RefreshBatchDisplay();
+    }
+
+    /// <summary>
+    /// Gets the remaining unpaid value for the current visible batch.
+    /// </summary>
+    /// <returns>Remaining unpaid value in minor currency units.</returns>
+    private int GetCurrentBatchRemainingMinorUnits()
+    {
+        return Mathf.Max(0, CurrentBatchTotalMinorUnits - CurrentBatchPaidMinorUnits);
+    }
+
+    /// <summary>
+    /// Writes current batch values into the configured TextMeshPro fields.
+    /// </summary>
+    private void RefreshBatchDisplay()
+    {
+        bool ShouldShowDisplay = HasActiveBatch && CurrentBatchTotalMinorUnits > 0;
+
+        if (BatchDisplayRoot != null && HideBatchDisplayWhenEmpty)
+        {
+            BatchDisplayRoot.SetActive(ShouldShowDisplay);
+        }
+
+        if (!ShouldShowDisplay)
+        {
+            SetBatchText(BatchTotalValueText, string.Empty);
+            SetBatchText(BatchPaidValueText, string.Empty);
+            SetBatchText(BatchRemainingValueText, string.Empty);
+            return;
+        }
+
+        SetBatchText(BatchTotalValueText, FormatCurrency(CurrentBatchTotalMinorUnits));
+        SetBatchText(BatchPaidValueText, FormatCurrency(CurrentBatchPaidMinorUnits));
+        SetBatchText(BatchRemainingValueText, FormatCurrency(GetCurrentBatchRemainingMinorUnits()));
+    }
+
+    /// <summary>
+    /// Assigns text safely when a TextMeshPro reference is configured.
+    /// </summary>
+    /// <param name="TargetText">Target TextMeshPro component.</param>
+    /// <param name="Value">String value to display.</param>
+    private void SetBatchText(TextMeshProUGUI TargetText, string Value)
+    {
+        if (TargetText == null)
+        {
+            return;
+        }
+
+        TargetText.text = Value;
+    }
+
+    /// <summary>
+    /// Formats a minor-unit currency value for the machine display.
+    /// </summary>
+    /// <param name="MinorUnits">Currency value in minor units.</param>
+    /// <returns>Formatted currency text.</returns>
+    private string FormatCurrency(int MinorUnits)
+    {
+        return FromMinorUnits(MinorUnits).ToString("0.00") + CurrencySuffix;
+    }
+
     private void LogQueuedOre(OreItemData OreItemData)
     {
         string OreName = OreItemData != null && OreItemData.GetOreDefinition() != null
@@ -971,6 +1749,25 @@ public sealed class OreSellTrigger : MonoBehaviour
             " | Research granted instantly: " +
             (GrantResearchInstantly && OreItemData != null ? OreItemData.GetResearchValue().ToString("0.00") : "0.00") +
             " | Pending money pieces: " + PendingMoneyEmissions.Count);
+    }
+
+    /// <summary>
+    /// Forces configured processing animators to a safe paused pose when this component is disabled.
+    /// </summary>
+    private void OnDisable()
+    {
+        IsProcessingAnimationActive = false;
+        IsProcessingAnimationStopRequested = false;
+
+        if (ProcessingAnimators == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < ProcessingAnimators.Length; Index++)
+        {
+            PauseProcessingAnimatorAtRestPose(ProcessingAnimators[Index]);
+        }
     }
 
     private static int ToMinorUnits(float Value)
