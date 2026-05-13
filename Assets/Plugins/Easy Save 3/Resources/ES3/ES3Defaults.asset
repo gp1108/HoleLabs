@@ -39,6 +39,7 @@ MonoBehaviour:
     - Assembly-CSharp-firstpass
     - Autodesk.Fbx
     - Autodesk.Fbx.BuildTestAssets
+    - DamageNumbersPro
     - Lofelt.NiceVibrations
     - Lofelt.NiceVibrations.Demo
     - MoreMountains.Tools

@@ -24,6 +24,14 @@ public sealed class OreSellTrigger : MonoBehaviour
         Bill = 1
     }
 
+    private enum MachineCycleState
+    {
+        Idle = 0,
+        Crushing = 1,
+        WaitingForPayout = 2,
+        Paying = 3
+    }
+
     [System.Serializable]
     private sealed class MoneyDenomination
     {
@@ -163,30 +171,27 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("Available physical denominations used to compose the emitted gold value exactly.")]
     [SerializeField] private List<MoneyDenomination> MoneyDenominations = new();
 
-    [Header("Payout Variation")]
-    [Tooltip("Chance to use a valid alternative composition instead of the fully optimal one.")]
-    [SerializeField][Range(0f, 1f)] private float AlternativeCompositionChance = 0.2f;
-
-    [Tooltip("If true, emitted denomination order is shuffled slightly for visual variation.")]
+    [Header("Emission Order")]
+    [Tooltip("If true, emitted denomination order is shuffled slightly for visual variation after the optimal amount of pieces has been calculated.")]
     [SerializeField] private bool ShuffleEmissionOrder = true;
 
     [Header("Batch Display")]
     [Tooltip("Optional root object that is shown while the current batch display has valid values and hidden when the display is cleared.")]
     [SerializeField] private GameObject BatchDisplayRoot;
 
-    [Tooltip("Text that displays the total gold value processed during the current batch.")]
+    [Tooltip("Primary display text. During crushing it shows the accumulated batch total; during payout it shows the remaining unpaid value.")]
     [SerializeField] private TextMeshProUGUI BatchTotalValueText;
 
-    [Tooltip("Text that displays the gold value already emitted as physical money during the current batch.")]
+    [Tooltip("Optional secondary text that displays the gold value already emitted as physical money during the current batch.")]
     [SerializeField] private TextMeshProUGUI BatchPaidValueText;
 
-    [Tooltip("Text that displays the gold value still pending to be emitted during the current batch.")]
+    [Tooltip("Optional secondary text that displays the gold value still pending to be emitted during the current batch.")]
     [SerializeField] private TextMeshProUGUI BatchRemainingValueText;
 
-    [Tooltip("Seconds without processing another ore pickup required before a later ore starts a new batch.")]
+    [Tooltip("Seconds without receiving another unprocessed ore pickup required before the machine closes the current crushing batch and starts paying it out.")]
     [SerializeField] private float BatchInactivityThreshold = 3f;
 
-    [Tooltip("Seconds waited after the current batch has been fully paid before clearing the display.")]
+    [Tooltip("Seconds waited after the current batch has been fully paid before clearing the display when no new ore is waiting.")]
     [SerializeField] private float BatchClearDelay = 1.5f;
 
     [Tooltip("Suffix appended to formatted batch currency values.")]
@@ -216,6 +221,9 @@ public sealed class OreSellTrigger : MonoBehaviour
 
     private float OreConsumeTimer;
     private float MoneyEmissionTimer;
+    private MachineCycleState CurrentCycleState = MachineCycleState.Idle;
+    private float LastOreQueuedTime = -1f;
+    private bool HasPayoutCompositionFailure;
     private int CurrentBatchId;
     private bool HasActiveBatch;
     private int CurrentBatchTotalMinorUnits;
@@ -286,11 +294,13 @@ public sealed class OreSellTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Processes ore consumption and money emission with separate timers.
+    /// Updates the sell cycle. The machine crushes ore first, waits for the input inactivity window,
+    /// pays the closed batch, and only resumes crushing once the payout queue is empty.
     /// </summary>
     private void Update()
     {
         UpdateOreConsumption();
+        UpdatePayoutStartGate();
         UpdateMoneyEmission();
         UpdateProcessingAnimationState();
         UpdateBatchDisplayLifecycle();
@@ -341,12 +351,12 @@ public sealed class OreSellTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns whether the machine still has valid ore pickups waiting to be consumed.
-    /// Pending money emissions intentionally do not keep the processing animations alive.
+    /// Returns whether the machine is actively allowed to crush valid ore pickups.
+    /// Pending payout emissions intentionally do not keep the processing animations alive.
     /// </summary>
     private bool ShouldProcessingAnimationRun()
     {
-        return GetValidQueuedOrePickupCount() > 0;
+        return CurrentCycleState != MachineCycleState.Paying && GetValidQueuedOrePickupCount() > 0;
     }
 
     /// <summary>
@@ -845,6 +855,13 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         PendingOreSales.Enqueue(PendingOreSale);
         QueuedOrePickups.Add(OrePickup);
+        LastOreQueuedTime = Time.time;
+        HasPayoutCompositionFailure = false;
+
+        if (CurrentCycleState != MachineCycleState.Paying)
+        {
+            CurrentCycleState = MachineCycleState.Crushing;
+        }
 
         LogQueuedOre(OreItemData);
         return true;
@@ -852,17 +869,34 @@ public sealed class OreSellTrigger : MonoBehaviour
 
     private void UpdateOreConsumption()
     {
+        if (CurrentCycleState == MachineCycleState.Paying)
+        {
+            return;
+        }
+
         if (PendingOreSales.Count == 0)
         {
+            if (HasActiveBatch && CurrentCycleState == MachineCycleState.Crushing)
+            {
+                CurrentCycleState = MachineCycleState.WaitingForPayout;
+            }
+
             return;
         }
 
         if (GetValidQueuedOrePickupCount() == 0)
         {
             DrainInvalidPendingOreSales();
+
+            if (HasActiveBatch)
+            {
+                CurrentCycleState = MachineCycleState.WaitingForPayout;
+            }
+
             return;
         }
 
+        CurrentCycleState = MachineCycleState.Crushing;
         OreConsumeTimer -= Time.deltaTime;
 
         if (OreConsumeTimer > 0f)
@@ -894,8 +928,14 @@ public sealed class OreSellTrigger : MonoBehaviour
 
     private void UpdateMoneyEmission()
     {
+        if (CurrentCycleState != MachineCycleState.Paying)
+        {
+            return;
+        }
+
         if (PendingMoneyEmissions.Count == 0)
         {
+            CompleteCurrentPayoutCycle();
             return;
         }
 
@@ -908,6 +948,11 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         MoneyEmissionTimer = GetCurrentEmissionInterval();
         EmitNextMoneyPiece();
+
+        if (PendingMoneyEmissions.Count == 0)
+        {
+            CompleteCurrentPayoutCycle();
+        }
     }
 
     private void ConsumeNextQueuedOre()
@@ -979,17 +1024,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         if (GoldMinorUnits > 0)
         {
-            int BatchId = RegisterBatchProcessedValue(GoldMinorUnits);
-            bool CouldBuildExactPayout = TryEnqueueExactMoneyPayout(GoldValue, BatchId);
-
-            if (!CouldBuildExactPayout)
-            {
-                RollbackBatchProcessedValue(GoldMinorUnits, BatchId);
-
-                Log(
-                    "Failed to build exact payout for ore value " + GoldValue.ToString("0.00") +
-                    ". Check configured denominations. At least one denomination combination is missing.");
-            }
+            RegisterBatchProcessedValue(GoldMinorUnits);
         }
 
         if (GrantResearchInstantly && CurrencyWallet != null)
@@ -1006,21 +1041,22 @@ public sealed class OreSellTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Converts a processed gold value into exact physical money emissions assigned to the provided batch.
+    /// Converts a closed batch value into exact physical money emissions assigned to the provided batch.
+    /// The composition is always optimal, meaning the smallest possible amount of physical pieces is used.
     /// </summary>
-    /// <param name="GoldValue">Gold value that must be emitted physically.</param>
+    /// <param name="TargetMinorUnits">Gold value in minor currency units that must be emitted physically.</param>
     /// <param name="BatchId">Batch identifier that owns the emitted money pieces.</param>
-    /// <returns>True when an exact payout composition was queued.</returns>
-    private bool TryEnqueueExactMoneyPayout(float GoldValue, int BatchId)
+    /// <returns>True when an exact optimal payout composition was queued.</returns>
+    private bool TryEnqueueExactMoneyPayout(int TargetMinorUnits, int BatchId)
     {
-        int TargetMinorUnits = ToMinorUnits(GoldValue);
+        int ClampedTargetMinorUnits = Mathf.Max(0, TargetMinorUnits);
 
-        if (TargetMinorUnits <= 0)
+        if (ClampedTargetMinorUnits <= 0)
         {
             return true;
         }
 
-        List<MoneyDenomination> Result = BuildExactDenominationComposition(TargetMinorUnits);
+        List<MoneyDenomination> Result = BuildExactDenominationComposition(ClampedTargetMinorUnits);
 
         if (Result == null || Result.Count == 0)
         {
@@ -1045,7 +1081,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         Log(
-            "Queued exact payout for gold value " + GoldValue.ToString("0.00") +
+            "Queued optimal exact payout for batch value " + FromMinorUnits(ClampedTargetMinorUnits).ToString("0.00") +
             " | Pieces: " + Result.Count);
 
         return true;
@@ -1223,18 +1259,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         List<int> FinalValueComposition = new(OptimalValueComposition);
-
-        if (AlternativeCompositionChance > 0f && UnityEngine.Random.value < AlternativeCompositionChance)
-        {
-            if (TryApplyAlternativeExpansion(FinalValueComposition, UniqueMinorUnitValues))
-            {
-                Log(
-                    "Using alternative payout composition for value " +
-                    FromMinorUnits(TargetMinorUnits).ToString("0.00") +
-                    " | Piece count: " + FinalValueComposition.Count);
-            }
-        }
-
         List<MoneyDenomination> Result = new();
 
         for (int Index = 0; Index < FinalValueComposition.Count; Index++)
@@ -1342,67 +1366,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         return Result;
     }
 
-    private bool TryApplyAlternativeExpansion(List<int> CompositionValues, List<int> UniqueValues)
-    {
-        if (CompositionValues == null || CompositionValues.Count == 0)
-        {
-            return false;
-        }
-
-        List<int> CandidateIndices = new();
-
-        for (int Index = 0; Index < CompositionValues.Count; Index++)
-        {
-            if (CompositionValues[Index] > 1)
-            {
-                CandidateIndices.Add(Index);
-            }
-        }
-
-        if (CandidateIndices.Count == 0)
-        {
-            return false;
-        }
-
-        ShuffleIntList(CandidateIndices);
-
-        for (int CandidateIndex = 0; CandidateIndex < CandidateIndices.Count; CandidateIndex++)
-        {
-            int ReplaceIndex = CandidateIndices[CandidateIndex];
-            int ValueToExpand = CompositionValues[ReplaceIndex];
-
-            List<int> SmallerValues = new();
-
-            for (int ValueIndex = 0; ValueIndex < UniqueValues.Count; ValueIndex++)
-            {
-                int CandidateValue = UniqueValues[ValueIndex];
-
-                if (CandidateValue < ValueToExpand)
-                {
-                    SmallerValues.Add(CandidateValue);
-                }
-            }
-
-            if (SmallerValues.Count == 0)
-            {
-                continue;
-            }
-
-            List<int> ExpandedValues = BuildOptimalValueComposition(ValueToExpand, SmallerValues);
-
-            if (ExpandedValues == null || ExpandedValues.Count <= 1)
-            {
-                continue;
-            }
-
-            CompositionValues.RemoveAt(ReplaceIndex);
-            CompositionValues.InsertRange(ReplaceIndex, ExpandedValues);
-            return true;
-        }
-
-        return false;
-    }
-
     private MoneyDenomination PickWeightedDenomination(List<MoneyDenomination> Bucket)
     {
         if (Bucket == null || Bucket.Count == 0)
@@ -1490,24 +1453,9 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
     }
 
-    private void ShuffleIntList(List<int> Values)
-    {
-        if (Values == null || Values.Count <= 1)
-        {
-            return;
-        }
-
-        for (int Index = Values.Count - 1; Index > 0; Index--)
-        {
-            int SwapIndex = UnityEngine.Random.Range(0, Index + 1);
-            int Cached = Values[Index];
-            Values[Index] = Values[SwapIndex];
-            Values[SwapIndex] = Cached;
-        }
-    }
-
     /// <summary>
-    /// Registers processed ore value into the current visible batch or starts a new batch when the inactivity window expired.
+    /// Adds crushed ore value into the current visible batch.
+    /// A new batch is created only when there is no active unpaid or waiting batch.
     /// </summary>
     /// <param name="GoldMinorUnits">Processed gold value in minor currency units.</param>
     /// <returns>Identifier of the batch that owns this processed value.</returns>
@@ -1520,7 +1468,12 @@ public sealed class OreSellTrigger : MonoBehaviour
             return CurrentBatchId;
         }
 
-        if (ShouldStartNewBatch())
+        bool ShouldForceNewBatch = HasActiveBatch &&
+            CurrentCycleState != MachineCycleState.Paying &&
+            CurrentBatchTotalMinorUnits > 0 &&
+            GetCurrentBatchRemainingMinorUnits() <= 0;
+
+        if (!HasActiveBatch || ShouldForceNewBatch)
         {
             StartNewBatch();
         }
@@ -1529,32 +1482,91 @@ public sealed class OreSellTrigger : MonoBehaviour
         CurrentBatchTotalMinorUnits += ClampedGoldMinorUnits;
         LastBatchOreProcessedTime = Time.time;
         BatchCompletedTime = -1f;
+        HasPayoutCompositionFailure = false;
 
         RefreshBatchDisplay();
         return CurrentBatchId;
     }
 
     /// <summary>
-    /// Removes previously registered processed value if the physical payout could not be composed exactly.
+    /// Starts payout for the current batch when the machine has stopped receiving unprocessed ore
+    /// for the configured inactivity window and no valid ore remains available to crush.
     /// </summary>
-    /// <param name="GoldMinorUnits">Gold value in minor units to remove.</param>
-    /// <param name="BatchId">Batch identifier that was originally assigned to the value.</param>
-    private void RollbackBatchProcessedValue(int GoldMinorUnits, int BatchId)
+    private void UpdatePayoutStartGate()
     {
-        if (!HasActiveBatch || BatchId != CurrentBatchId)
+        if (!HasActiveBatch || CurrentCycleState == MachineCycleState.Paying)
         {
             return;
         }
 
-        CurrentBatchTotalMinorUnits = Mathf.Max(0, CurrentBatchTotalMinorUnits - Mathf.Max(0, GoldMinorUnits));
-        CurrentBatchPaidMinorUnits = Mathf.Min(CurrentBatchPaidMinorUnits, CurrentBatchTotalMinorUnits);
-
-        if (CurrentBatchTotalMinorUnits <= 0)
+        if (CurrentBatchTotalMinorUnits <= 0 || GetCurrentBatchRemainingMinorUnits() <= 0)
         {
-            ClearBatchDisplayState();
             return;
         }
 
+        if (GetValidQueuedOrePickupCount() > 0)
+        {
+            CurrentCycleState = MachineCycleState.Crushing;
+            return;
+        }
+
+        DrainInvalidPendingOreSales();
+
+        if (GetValidQueuedOrePickupCount() > 0)
+        {
+            CurrentCycleState = MachineCycleState.Crushing;
+            return;
+        }
+
+        CurrentCycleState = MachineCycleState.WaitingForPayout;
+
+        if (LastOreQueuedTime < 0f)
+        {
+            return;
+        }
+
+        if (Time.time - LastOreQueuedTime < Mathf.Max(0f, BatchInactivityThreshold))
+        {
+            return;
+        }
+
+        TryStartCurrentBatchPayout();
+    }
+
+    /// <summary>
+    /// Builds the optimal physical payout queue for the current closed batch and switches the machine into payout mode.
+    /// </summary>
+    private void TryStartCurrentBatchPayout()
+    {
+        if (!HasActiveBatch ||
+            CurrentBatchTotalMinorUnits <= 0 ||
+            GetCurrentBatchRemainingMinorUnits() <= 0 ||
+            HasPayoutCompositionFailure)
+        {
+            return;
+        }
+
+        PendingMoneyEmissions.Clear();
+        CurrentBatchPaidMinorUnits = 0;
+
+        bool CouldBuildExactPayout = TryEnqueueExactMoneyPayout(CurrentBatchTotalMinorUnits, CurrentBatchId);
+
+        if (!CouldBuildExactPayout)
+        {
+            HasPayoutCompositionFailure = true;
+
+            Log(
+                "Failed to build exact optimal payout for batch value " +
+                FromMinorUnits(CurrentBatchTotalMinorUnits).ToString("0.00") +
+                ". Check configured denominations. At least one denomination combination is missing.");
+
+            RefreshBatchDisplay();
+            return;
+        }
+
+        CurrentCycleState = MachineCycleState.Paying;
+        MoneyEmissionTimer = 0f;
+        BatchCompletedTime = -1f;
         RefreshBatchDisplay();
     }
 
@@ -1583,8 +1595,34 @@ public sealed class OreSellTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Updates clearing rules for the current batch display.
-    /// A batch is cleared only after it has been fully paid and the inactivity window has expired.
+    /// Completes the active payout cycle. New ore that arrived during payout remains queued
+    /// and will be crushed only after the current batch display has been reset.
+    /// </summary>
+    private void CompleteCurrentPayoutCycle()
+    {
+        if (CurrentCycleState != MachineCycleState.Paying)
+        {
+            return;
+        }
+
+        CurrentBatchPaidMinorUnits = CurrentBatchTotalMinorUnits;
+        BatchCompletedTime = Time.time;
+        HasPayoutCompositionFailure = false;
+
+        if (GetValidQueuedOrePickupCount() > 0)
+        {
+            ClearBatchDisplayState();
+            CurrentCycleState = MachineCycleState.Crushing;
+            OreConsumeTimer = 0f;
+            return;
+        }
+
+        CurrentCycleState = MachineCycleState.Idle;
+        RefreshBatchDisplay();
+    }
+
+    /// <summary>
+    /// Updates clearing rules for the current batch display once payout has fully completed.
     /// </summary>
     private void UpdateBatchDisplayLifecycle()
     {
@@ -1594,8 +1632,16 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-        if (GetCurrentBatchRemainingMinorUnits() > 0)
+        if (CurrentCycleState == MachineCycleState.Paying || GetCurrentBatchRemainingMinorUnits() > 0)
         {
+            return;
+        }
+
+        if (GetValidQueuedOrePickupCount() > 0)
+        {
+            ClearBatchDisplayState();
+            CurrentCycleState = MachineCycleState.Crushing;
+            OreConsumeTimer = 0f;
             return;
         }
 
@@ -1604,36 +1650,13 @@ public sealed class OreSellTrigger : MonoBehaviour
             BatchCompletedTime = Time.time;
         }
 
-        bool HasInactivityExpired = LastBatchOreProcessedTime < 0f ||
-            Time.time - LastBatchOreProcessedTime >= Mathf.Max(0f, BatchInactivityThreshold);
-
-        bool HasClearDelayExpired = Time.time - BatchCompletedTime >= Mathf.Max(0f, BatchClearDelay);
-
-        if (!HasInactivityExpired || !HasClearDelayExpired)
+        if (Time.time - BatchCompletedTime < Mathf.Max(0f, BatchClearDelay))
         {
             return;
         }
 
         ClearBatchDisplayState();
-    }
-
-    /// <summary>
-    /// Returns whether a new processed ore should start a new batch according to the inactivity threshold.
-    /// </summary>
-    /// <returns>True when no batch exists or the previous batch inactivity window has expired.</returns>
-    private bool ShouldStartNewBatch()
-    {
-        if (!HasActiveBatch)
-        {
-            return true;
-        }
-
-        if (LastBatchOreProcessedTime < 0f)
-        {
-            return false;
-        }
-
-        return Time.time - LastBatchOreProcessedTime > Mathf.Max(0f, BatchInactivityThreshold);
+        CurrentCycleState = MachineCycleState.Idle;
     }
 
     /// <summary>
@@ -1647,6 +1670,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         CurrentBatchPaidMinorUnits = 0;
         LastBatchOreProcessedTime = -1f;
         BatchCompletedTime = -1f;
+        HasPayoutCompositionFailure = false;
 
         RefreshBatchDisplay();
     }
@@ -1661,6 +1685,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         CurrentBatchPaidMinorUnits = 0;
         LastBatchOreProcessedTime = -1f;
         BatchCompletedTime = -1f;
+        HasPayoutCompositionFailure = false;
 
         RefreshBatchDisplay();
     }
@@ -1676,6 +1701,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
     /// <summary>
     /// Writes current batch values into the configured TextMeshPro fields.
+    /// The primary text behaves as the single machine number: total while crushing/waiting, remaining while paying.
     /// </summary>
     private void RefreshBatchDisplay()
     {
@@ -1694,7 +1720,14 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-        SetBatchText(BatchTotalValueText, FormatCurrency(CurrentBatchTotalMinorUnits));
+        bool ShouldDisplayRemainingAsPrimary = CurrentCycleState == MachineCycleState.Paying ||
+            (BatchCompletedTime >= 0f && GetCurrentBatchRemainingMinorUnits() <= 0);
+
+        int PrimaryDisplayedMinorUnits = ShouldDisplayRemainingAsPrimary
+            ? GetCurrentBatchRemainingMinorUnits()
+            : CurrentBatchTotalMinorUnits;
+
+        SetBatchText(BatchTotalValueText, FormatCurrency(PrimaryDisplayedMinorUnits));
         SetBatchText(BatchPaidValueText, FormatCurrency(CurrentBatchPaidMinorUnits));
         SetBatchText(BatchRemainingValueText, FormatCurrency(GetCurrentBatchRemainingMinorUnits()));
     }
