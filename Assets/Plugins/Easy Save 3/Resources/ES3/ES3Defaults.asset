@@ -40,6 +40,11 @@ MonoBehaviour:
     - Autodesk.Fbx
     - Autodesk.Fbx.BuildTestAssets
     - DamageNumbersPro
+    - Kamgam.SettingsGenerator
+    - Kamgam.SettingsGeneratorExamples
+    - Kamgam.UGUIComponentsForSettings
+    - Kamgam.UIToolkitComponentsForSettings
+    - LocalizationsForSettings
     - Lofelt.NiceVibrations
     - Lofelt.NiceVibrations.Demo
     - MoreMountains.Tools

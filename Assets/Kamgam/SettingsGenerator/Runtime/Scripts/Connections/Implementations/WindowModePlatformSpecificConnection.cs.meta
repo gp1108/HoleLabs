@@ -1,0 +1,10 @@
+﻿fileFormatVersion: 2
+guid: 02acf5bb981d4ab3ac8f20143c690484
+timeCreated: 1753092547
+AssetOrigin:
+  serializedVersion: 1
+  productId: 240015
+  packageName: Settings & Game Options - Unified Menu Generator
+  packageVersion: 1.80
+  assetPath: Assets/Kamgam/SettingsGenerator/Runtime/Scripts/Connections/Implementations/WindowModePlatformSpecificConnection.cs
+  uploadId: 914120
