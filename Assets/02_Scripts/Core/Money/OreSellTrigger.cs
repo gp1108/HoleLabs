@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using DamageNumbersPro;
 using TMPro;
 using UnityEngine;
 
@@ -200,6 +201,34 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("If true, the batch display root is hidden when there is no active batch to show.")]
     [SerializeField] private bool HideBatchDisplayWhenEmpty = true;
 
+    [Header("Damage Numbers Pro Display")]
+    [Tooltip("If true, the primary batch value is rendered by Damage Numbers Pro instead of the legacy TextMeshProUGUI primary text.")]
+    [SerializeField] private bool UseDamageNumberProBatchDisplay = true;
+
+    [Tooltip("GUI Damage Numbers Pro prefab used as the main machine value display. Use a GUI prefab, not a mesh/worldspace prefab.")]
+    [SerializeField] private DamageNumber BatchValueNumberPrefab;
+
+    [Tooltip("RectTransform parent inside the canvas where the Damage Numbers Pro GUI value is spawned.")]
+    [SerializeField] private RectTransform BatchValueNumberParent;
+
+    [Tooltip("Anchored position used when spawning the Damage Numbers Pro GUI value under the configured parent.")]
+    [SerializeField] private Vector2 BatchValueNumberAnchoredPosition = Vector2.zero;
+
+    [Tooltip("If true, the legacy primary TextMeshProUGUI text is cleared while Damage Numbers Pro is available for the primary value.")]
+    [SerializeField] private bool HideLegacyPrimaryTextWhenUsingDamageNumberPro = true;
+
+    [Tooltip("If true, CurrencySuffix is written into Damage Numbers Pro rightText so the popup can show values like 120.00€.")]
+    [SerializeField] private bool UseCurrencySuffixAsDamageNumberRightText = true;
+
+    [Tooltip("If true, the active Damage Numbers Pro value fades out when the batch display is cleared. If false, it is destroyed immediately. Ignored when KeepDamageNumberInstanceWhenCleared is enabled.")]
+    [SerializeField] private bool FadeDamageNumberOnClear = true;
+
+    [Tooltip("If true, the spawned Damage Numbers Pro instance is kept and disabled instead of being faded or destroyed when the display clears. This prevents editor inspector errors caused by selecting runtime TextMeshPro objects that get destroyed by the popup lifecycle.")]
+    [SerializeField] private bool KeepDamageNumberInstanceWhenCleared = true;
+
+    [Tooltip("If true, the spawned Damage Numbers Pro RectTransform is forced back under the configured parent and anchored position every time the value refreshes.")]
+    [SerializeField] private bool ForceDamageNumberRectTransform = true;
+
     [Header("Debug")]
     [Tooltip("Logs sales, processed ore, denomination decomposition and money emissions.")]
     [SerializeField] private bool DebugLogs = false;
@@ -234,6 +263,8 @@ public sealed class OreSellTrigger : MonoBehaviour
     private bool IsProcessingAnimationStopRequested;
     private bool[] ProcessingAnimatorPausedStates = new bool[0];
     private float[] ProcessingAnimatorPauseTargets = new float[0];
+    private DamageNumber ActiveBatchValueNumber;
+    private int LastDamageNumberPrimaryMinorUnits = int.MinValue;
 
     public int PendingSaleCount => PendingOreSales.Count;
     public int PendingMoneyEmissionCount => PendingMoneyEmissions.Count;
@@ -1700,8 +1731,9 @@ public sealed class OreSellTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Writes current batch values into the configured TextMeshPro fields.
-    /// The primary text behaves as the single machine number: total while crushing/waiting, remaining while paying.
+    /// Writes current batch values into the configured display outputs.
+    /// The primary value uses Damage Numbers Pro when configured, otherwise it falls back to TextMeshProUGUI.
+    /// The primary value behaves as the single machine number: total while crushing/waiting, remaining while paying.
     /// </summary>
     private void RefreshBatchDisplay()
     {
@@ -1714,6 +1746,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         if (!ShouldShowDisplay)
         {
+            ClearDamageNumberProBatchDisplay();
             SetBatchText(BatchTotalValueText, string.Empty);
             SetBatchText(BatchPaidValueText, string.Empty);
             SetBatchText(BatchRemainingValueText, string.Empty);
@@ -1727,9 +1760,173 @@ public sealed class OreSellTrigger : MonoBehaviour
             ? GetCurrentBatchRemainingMinorUnits()
             : CurrentBatchTotalMinorUnits;
 
-        SetBatchText(BatchTotalValueText, FormatCurrency(PrimaryDisplayedMinorUnits));
+        bool IsDamageNumberDisplayAvailable = CanUseDamageNumberProBatchDisplay();
+
+        if (IsDamageNumberDisplayAvailable)
+        {
+            UpdateDamageNumberProBatchDisplay(PrimaryDisplayedMinorUnits);
+        }
+        else
+        {
+            ClearDamageNumberProBatchDisplay();
+        }
+
+        bool ShouldWriteLegacyPrimaryText = !IsDamageNumberDisplayAvailable || !HideLegacyPrimaryTextWhenUsingDamageNumberPro;
+        SetBatchText(BatchTotalValueText, ShouldWriteLegacyPrimaryText ? FormatCurrency(PrimaryDisplayedMinorUnits) : string.Empty);
         SetBatchText(BatchPaidValueText, FormatCurrency(CurrentBatchPaidMinorUnits));
         SetBatchText(BatchRemainingValueText, FormatCurrency(GetCurrentBatchRemainingMinorUnits()));
+    }
+
+    /// <summary>
+    /// Returns whether the primary batch value can currently be rendered by Damage Numbers Pro.
+    /// </summary>
+    /// <returns>True when the feature is enabled and all required references are configured.</returns>
+    private bool CanUseDamageNumberProBatchDisplay()
+    {
+        return UseDamageNumberProBatchDisplay &&
+            BatchValueNumberPrefab != null &&
+            GetBatchValueNumberParent() != null;
+    }
+
+    /// <summary>
+    /// Gets the configured Damage Numbers Pro GUI parent, falling back to the batch display root RectTransform when possible.
+    /// </summary>
+    /// <returns>RectTransform used as the GUI popup parent.</returns>
+    private RectTransform GetBatchValueNumberParent()
+    {
+        if (BatchValueNumberParent != null)
+        {
+            return BatchValueNumberParent;
+        }
+
+        if (BatchDisplayRoot == null)
+        {
+            return null;
+        }
+
+        return BatchDisplayRoot.GetComponent<RectTransform>();
+    }
+
+    /// <summary>
+    /// Spawns or updates the persistent Damage Numbers Pro GUI value used as the main batch display.
+    /// </summary>
+    /// <param name="PrimaryMinorUnits">Primary monetary value in minor currency units.</param>
+    private void UpdateDamageNumberProBatchDisplay(int PrimaryMinorUnits)
+    {
+        if (!CanUseDamageNumberProBatchDisplay())
+        {
+            return;
+        }
+
+        RectTransform Parent = GetBatchValueNumberParent();
+        float PrimaryValue = FromMinorUnits(PrimaryMinorUnits);
+
+        if (ActiveBatchValueNumber == null)
+        {
+            ActiveBatchValueNumber = BatchValueNumberPrefab.SpawnGUI(
+                Parent,
+                BatchValueNumberAnchoredPosition,
+                PrimaryValue);
+
+            if (ActiveBatchValueNumber != null)
+            {
+                ActiveBatchValueNumber.permanent = true;
+                LastDamageNumberPrimaryMinorUnits = int.MinValue;
+            }
+        }
+
+        if (ActiveBatchValueNumber == null)
+        {
+            return;
+        }
+
+        if (!ActiveBatchValueNumber.gameObject.activeSelf)
+        {
+            ActiveBatchValueNumber.gameObject.SetActive(true);
+            LastDamageNumberPrimaryMinorUnits = int.MinValue;
+        }
+
+        ApplyDamageNumberRectTransform(Parent);
+
+        if (LastDamageNumberPrimaryMinorUnits == PrimaryMinorUnits)
+        {
+            return;
+        }
+
+        ActiveBatchValueNumber.number = PrimaryValue;
+        ActiveBatchValueNumber.enableNumber = true;
+
+        if (UseCurrencySuffixAsDamageNumberRightText)
+        {
+            ActiveBatchValueNumber.rightText = CurrencySuffix;
+            ActiveBatchValueNumber.enableRightText = !string.IsNullOrEmpty(CurrencySuffix);
+        }
+
+        ActiveBatchValueNumber.UpdateText();
+        LastDamageNumberPrimaryMinorUnits = PrimaryMinorUnits;
+    }
+
+    /// <summary>
+    /// Forces the active Damage Numbers Pro GUI instance to stay under the expected canvas parent.
+    /// This avoids invisible numbers caused by prefab-side anchors, scale or runtime reparenting.
+    /// </summary>
+    /// <param name="Parent">RectTransform that should own the GUI popup.</param>
+    private void ApplyDamageNumberRectTransform(RectTransform Parent)
+    {
+        if (!ForceDamageNumberRectTransform || ActiveBatchValueNumber == null || Parent == null)
+        {
+            return;
+        }
+
+        RectTransform ActiveRectTransform = ActiveBatchValueNumber.GetComponent<RectTransform>();
+
+        if (ActiveRectTransform == null)
+        {
+            return;
+        }
+
+        if (ActiveRectTransform.parent != Parent)
+        {
+            ActiveRectTransform.SetParent(Parent, false);
+        }
+
+        ActiveRectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        ActiveRectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        ActiveRectTransform.pivot = new Vector2(0.5f, 0.5f);
+        ActiveRectTransform.anchoredPosition = BatchValueNumberAnchoredPosition;
+        ActiveRectTransform.localRotation = Quaternion.identity;
+        ActiveRectTransform.localScale = Vector3.one;
+    }
+
+    /// <summary>
+    /// Clears the active Damage Numbers Pro batch value when the machine display is reset.
+    /// </summary>
+    private void ClearDamageNumberProBatchDisplay()
+    {
+        if (ActiveBatchValueNumber == null)
+        {
+            LastDamageNumberPrimaryMinorUnits = int.MinValue;
+            return;
+        }
+
+        if (KeepDamageNumberInstanceWhenCleared)
+        {
+            ActiveBatchValueNumber.gameObject.SetActive(false);
+            LastDamageNumberPrimaryMinorUnits = int.MinValue;
+            return;
+        }
+
+        if (FadeDamageNumberOnClear)
+        {
+            ActiveBatchValueNumber.FadeOut();
+        }
+        else
+        {
+            Destroy(ActiveBatchValueNumber.gameObject);
+        }
+
+        ActiveBatchValueNumber = null;
+        LastDamageNumberPrimaryMinorUnits = int.MinValue;
     }
 
     /// <summary>
@@ -1791,6 +1988,7 @@ public sealed class OreSellTrigger : MonoBehaviour
     {
         IsProcessingAnimationActive = false;
         IsProcessingAnimationStopRequested = false;
+        ClearDamageNumberProBatchDisplay();
 
         if (ProcessingAnimators == null)
         {

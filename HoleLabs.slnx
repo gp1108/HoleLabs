@@ -1,8 +1,8 @@
 ﻿<Solution>
   <Project Path="Assembly-CSharp-firstpass.csproj" />
   <Project Path="MoreMountains.Tools.csproj" />
-  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Kamgam.SettingsGenerator.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Kamgam.SettingsGeneratorEditor.csproj" />
   <Project Path="Kamgam.UGUIComponentsForSettings.csproj" />
   <Project Path="MoreMountains.Tools.Editor.csproj" />
