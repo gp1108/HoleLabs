@@ -408,7 +408,364 @@ MonoBehaviour:
     _defaultValue: 0
     IgnoreConnectionDefaults: 0
     ConnectionObject: {fileID: 11400000, guid: 185c27af11cebe54b95475b169f20d66, type: 2}
-  _strings: []
+  _strings:
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Gamepad.leftStick
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: d687188adefd90f4db5930702da374e2, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Keyboard.w
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 602b8dbfe52d6544eada55a23d6974af, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Keyboard.upArrow
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 8d71da255d243d249a0269352ad24286, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Keyboard.s
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 30b071253f5bdaa43b41d54b57faed1a, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Keyboard.downArrow
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 32b32f6c12168074da4342e130c847ad, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Keyboard.a
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: eea6f8e5e1e268148bcd5efcc88feb64, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Keyboard.leftArrow
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: a8faa234d8859f7408f77823c2f01753, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Keyboard.d
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: c12d4233d46f370419275aaa2f51f666, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Keyboard.rightArrow
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: f994e0cad354384469b9ff405b02df97, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.XRController.{Primary2DAxis}
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 461bba66398e1804796121148f22d332, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Move.Joystick.stick
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 62f4222fab49bee41924d55a38c1ad79, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Look.Gamepad.rightStick
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 280196d20b20d884f9db86589b716f89, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Look.Pointer.delta
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 405185157e7fef24e9a79dfc4cdc2009, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Look.Joystick.{Hatswitch}
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 3de0fc93cc5f26c4488103d6c068e9a8, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UsePrimary.Gamepad.buttonWest
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 281e922c7532df147aa861ec8a6b6509, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UsePrimary.Mouse.leftButton
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 642d884becea050499af645e1af5f9c3, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UsePrimary.Touchscreen.primaryTouch.tap
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 693bc6d0e1e02074db4ad0b54dd926f0, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UsePrimary.Joystick.trigger
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 9c0f0b5f575a0fb47b3be5b073bf4591, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UsePrimary.XRController.{PrimaryAction}
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 6fcc2ae42fd439e4a9a1cb56758c8814, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UsePrimary.Keyboard.enter
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 23683926d903d834d8d8b8c90472f908, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UseSecondary.Gamepad.buttonWest
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 0bf66975c6da8fc4aa1af5e197aad65f, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UseSecondary.Mouse.rightButton
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: e69170c941226e94e8f551e0e7d3cd9b, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UseSecondary.Touchscreen.primaryTouch.tap
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 585bda8b000b35d4092f6e9efcabceb5, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UseSecondary.Joystick.trigger
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 45322b6e4a76f9f4e8453e46f4719a66, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UseSecondary.XRController.{PrimaryAction}
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 6d3893270cdb168479ea1a5e829e8243, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.UseSecondary.Keyboard.enter
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 5b0835e878c5f6845a9ae5bd78c458e8, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Next.Keyboard.2
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: b7ebb5a1161a5dc47a92adc988066a5e, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Next.Gamepad.dpad.right
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: fcbaba507ebe88344af52b53d0570f05, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Sprint.Keyboard.leftShift
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 215f0c5ed65fcd141924539c5e9f72a6, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Sprint.Gamepad.leftStickPress
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 0d863116e96ee8e44b4e6c109537df4e, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Sprint.XRController.trigger
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 9599b48ea29390c4ca41013fe338f419, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Jump.Keyboard.space
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 5a9caca1fb4812548856288e436b13c8, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Jump.Gamepad.buttonSouth
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 862eda1b14429204e86957da8e967c63, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Jump.XRController.secondaryButton
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: ccef81598b99ee747807a93fd51e05e5, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Previous.Keyboard.1
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 701829c635a16f34eb43a898a788d2cc, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Previous.Gamepad.dpad.left
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: e28114562ae9a444fad2c47d006dd22e, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Interact.Keyboard.e
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: df18abd7f7e69c643b24de80a3f46e52, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Interact.Gamepad.buttonNorth
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 2e904c64434af5542a53fcefb9b6eee6, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Crouch.Gamepad.buttonEast
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 7a638a7f150156143a6a3083d07dcefa, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Crouch.Keyboard.c
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 38d759b9234e7ae4ab21cb71d512f279, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.DropItem.Keyboard.g
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 93264e87c2637a049a943f07ebe6cc79, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.HotbarScroll.Mouse.scroll.y
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: b0dc85b8f402fb44faca4c2851690631, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot1.Keyboard.1
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 8e73780cc1b8b52419c433b7ae65b13c, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot2.Keyboard.2
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: f8e69990d5021704b84f27b0a54b57db, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot3.Keyboard.3
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 8000da427b40b5f43b927a4eb0e663ef, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot4.Keyboard.4
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 578fca61cfcf9f54cb932afe57b13598, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot5.Keyboard.5
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 95fd25261ddd1d74caa8074c4785d364, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot6.Keyboard.6
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 0b94f03a6eda81b48ab1ea88e363de77, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot7.Keyboard.7
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: ca5d43bd8f235b640af881ef10fde00c, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot8.Keyboard.8
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 1eb13159df8ff19459d5635c8f44768a, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.Slot9.Keyboard.9
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 84f90ebbfb38ee44a93b23a427e2d34a, type: 2}
   _colors: []
   _colorOptions: []
   _keyCombinations:

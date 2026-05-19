@@ -13,5 +13,5 @@ MonoBehaviour:
   m_Name: SettingsGeneratorSettings
   m_EditorClassIdentifier: Kamgam.SettingsGenerator::Kamgam.SettingsGenerator.SettingsGeneratorSettings
   ShowEditorInfoLogs: 1
-  DefaultProvider: {fileID: 0}
+  DefaultProvider: {fileID: 11400000, guid: 87c6dfe6c9e482741864a307ffcc35c8, type: 2}
   LogLevel: 1
