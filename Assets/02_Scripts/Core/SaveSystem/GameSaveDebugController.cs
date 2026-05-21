@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine.SceneManagement;
 using UnityEngine;
 
@@ -10,8 +11,10 @@ using UnityEngine;
 /// </summary>
 public sealed class GameSaveDebugController : MonoBehaviour
 {
-    private const string SaveFileName = "save_debug.es3";
+    private const string SaveSlotFilePrefix = "save_slot_";
+    private const string SaveSlotFileExtension = ".es3";
     private const string SaveRootKey = "debug_save_root";
+    private const int SaveSlotCount = 3;
     private static bool HasPendingLoadRequest;
     private static string PendingLoadFileName;
     private static string PendingLoadRootKey;
@@ -617,37 +620,143 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
-    /// Saves the current gameplay state into the fixed debug slot.
+    /// Gets the number of supported save slots.
+    /// </summary>
+    /// <returns>Maximum save slot count.</returns>
+    public int GetSaveSlotCount()
+    {
+        return SaveSlotCount;
+    }
+
+    /// <summary>
+    /// Saves the current gameplay state into the first save slot.
+    /// This is kept for debug hotkeys and backwards compatibility with older buttons.
     /// </summary>
     [ContextMenu("Save Debug Game")]
     public void SaveGame()
     {
-        NormalizeTransientCarryStatesForSaveLoad();
-        Physics.SyncTransforms();
-        SaveData Data = BuildSaveData();
-        ES3.Save(SaveRootKey, Data, SaveFileName);
-        Log("Saved debug slot to file: " + SaveFileName);
+        SaveGameToSlot(0);
     }
 
     /// <summary>
-    /// Requests a clean scene reload and applies the saved snapshot only after the new scene boots.
-    /// This avoids restoring save data on top of a dirty live runtime world.
+    /// Requests loading from the first save slot.
+    /// This is kept for debug hotkeys and backwards compatibility with older buttons.
     /// </summary>
     [ContextMenu("Load Debug Game")]
     public void LoadGame()
     {
-        if (!ES3.KeyExists(SaveRootKey, SaveFileName))
+        LoadGameFromSlot(0);
+    }
+
+    /// <summary>
+    /// Saves the current gameplay state into the requested save slot.
+    /// Existing data in that slot is overwritten deliberately.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index. Slot 1 is index 0.</param>
+    public void SaveGameToSlot(int SlotIndex)
+    {
+        if (!IsValidSlotIndex(SlotIndex))
         {
-            Log("No debug save found in file: " + SaveFileName);
+            Log("Save failed because slot index is invalid: " + SlotIndex);
+            return;
+        }
+
+        NormalizeTransientCarryStatesForSaveLoad();
+        Physics.SyncTransforms();
+        SaveData Data = BuildSaveData();
+        string SlotFileName = GetSaveSlotFileName(SlotIndex);
+        ES3.Save(SaveRootKey, Data, SlotFileName);
+        Log("Saved slot " + (SlotIndex + 1) + " to file: " + SlotFileName);
+    }
+
+    /// <summary>
+    /// Requests a clean scene reload and applies the saved snapshot from the requested slot after the new scene boots.
+    /// This avoids restoring save data on top of a dirty live runtime world.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index. Slot 1 is index 0.</param>
+    public void LoadGameFromSlot(int SlotIndex)
+    {
+        if (!IsValidSlotIndex(SlotIndex))
+        {
+            Log("Load failed because slot index is invalid: " + SlotIndex);
+            return;
+        }
+
+        string SlotFileName = GetSaveSlotFileName(SlotIndex);
+
+        if (!ES3.KeyExists(SaveRootKey, SlotFileName))
+        {
+            Log("No save found in slot " + (SlotIndex + 1) + " file: " + SlotFileName);
             return;
         }
 
         HasPendingLoadRequest = true;
-        PendingLoadFileName = SaveFileName;
+        PendingLoadFileName = SlotFileName;
         PendingLoadRootKey = SaveRootKey;
 
         Scene ActiveScene = SceneManager.GetActiveScene();
         SceneManager.LoadScene(ActiveScene.name);
+    }
+
+    /// <summary>
+    /// Returns true when the requested save slot contains a valid Easy Save root key.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index.</param>
+    /// <returns>True if save data exists in the slot.</returns>
+    public bool DoesSaveSlotExist(int SlotIndex)
+    {
+        return IsValidSlotIndex(SlotIndex) && ES3.KeyExists(SaveRootKey, GetSaveSlotFileName(SlotIndex));
+    }
+
+    /// <summary>
+    /// Gets the timestamp text used by save/load slot UI.
+    /// Empty slots return the provided empty label.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index.</param>
+    /// <param name="EmptyLabel">Text used when no slot data exists.</param>
+    /// <returns>Formatted timestamp or empty label.</returns>
+    public string GetSaveSlotTimestampLabel(int SlotIndex, string EmptyLabel = "NO DATA")
+    {
+        if (!DoesSaveSlotExist(SlotIndex))
+        {
+            return EmptyLabel;
+        }
+
+        string SlotFileName = GetSaveSlotFileName(SlotIndex);
+        string AbsolutePath = Path.Combine(Application.persistentDataPath, SlotFileName);
+
+        if (!File.Exists(AbsolutePath))
+        {
+            return "SAVED DATA";
+        }
+
+        DateTime LastWriteTime = File.GetLastWriteTime(AbsolutePath);
+        return LastWriteTime.ToString("dd/MM/yyyy   HH:mm");
+    }
+
+    /// <summary>
+    /// Gets the Easy Save file name used by a slot.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index.</param>
+    /// <returns>Relative Easy Save file name.</returns>
+    public string GetSaveSlotFileName(int SlotIndex)
+    {
+        if (!IsValidSlotIndex(SlotIndex))
+        {
+            return string.Empty;
+        }
+
+        return SaveSlotFilePrefix + (SlotIndex + 1) + SaveSlotFileExtension;
+    }
+
+    /// <summary>
+    /// Returns whether a slot index is inside the supported save slot range.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index.</param>
+    /// <returns>True when the slot index is valid.</returns>
+    private bool IsValidSlotIndex(int SlotIndex)
+    {
+        return SlotIndex >= 0 && SlotIndex < SaveSlotCount;
     }
 
     /// <summary>

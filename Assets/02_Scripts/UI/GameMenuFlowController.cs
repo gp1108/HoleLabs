@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -81,6 +83,66 @@ public sealed class GameMenuFlowController : MonoBehaviour
             }
 
             PanelRoot.SetActive(false);
+        }
+    }
+
+    /// <summary>
+    /// Serializable UI data for one save or load slot row.
+    /// The slot can display saved metadata, expose a selection button and optionally show a selected indicator.
+    /// </summary>
+    [Serializable]
+    private sealed class SaveSlotView
+    {
+        [Tooltip("Zero-based slot index used by the save controller. Slot 1 should use index 0.")]
+        [SerializeField] private int SlotIndex;
+
+        [Tooltip("Optional button used to select this save slot.")]
+        [SerializeField] private Button SlotButton;
+
+        [Tooltip("Optional text that displays the save timestamp or the empty-slot label.")]
+        [SerializeField] private TMP_Text DateText;
+
+        [Tooltip("Optional object activated only while this slot is selected. Use it for your red X or highlight.")]
+        [SerializeField] private GameObject SelectedIndicatorRoot;
+
+        /// <summary>
+        /// Gets the zero-based slot index represented by this UI entry.
+        /// </summary>
+        public int GetSlotIndex()
+        {
+            return Mathf.Max(0, SlotIndex);
+        }
+
+        /// <summary>
+        /// Gets the configured button for this slot.
+        /// </summary>
+        public Button GetSlotButton()
+        {
+            return SlotButton;
+        }
+
+        /// <summary>
+        /// Updates this slot visual state.
+        /// </summary>
+        /// <param name="TimestampLabel">Timestamp or empty-state text displayed in the slot.</param>
+        /// <param name="IsSelected">True when this slot is the current selected slot.</param>
+        /// <param name="IsSelectable">True when the slot button can be clicked.</param>
+        public void Refresh(string TimestampLabel, bool IsSelected, bool IsSelectable)
+        {
+            if (DateText != null)
+            {
+                DateText.text = TimestampLabel;
+            }
+
+            if (SelectedIndicatorRoot != null)
+            {
+                SelectedIndicatorRoot.SetActive(IsSelected);
+            }
+
+            if (SlotButton != null)
+            {
+                SlotButton.interactable = IsSelectable;
+            }
         }
     }
 
@@ -227,6 +289,34 @@ public sealed class GameMenuFlowController : MonoBehaviour
     [Tooltip("Optional language settings panel opened from Options.")]
     [SerializeField] private MenuPanel LanguagePanel = new MenuPanel();
 
+    [Tooltip("Save game panel opened from the pause menu.")]
+    [SerializeField] private MenuPanel SavePanel = new MenuPanel();
+
+    [Tooltip("Load game panel opened from the pause menu.")]
+    [SerializeField] private MenuPanel LoadPanel = new MenuPanel();
+
+    [Header("Save And Load Slots")]
+    [Tooltip("Save controller used to write and load selected save slots.")]
+    [SerializeField] private GameSaveDebugController SaveController;
+
+    [Tooltip("If true, slot selection buttons are connected automatically during Awake.")]
+    [SerializeField] private bool BindSlotButtonsAutomatically = true;
+
+    [Tooltip("Text displayed in slot timestamp fields when no save data exists.")]
+    [SerializeField] private string EmptySlotLabel = "NO DATA";
+
+    [Tooltip("Button or root object that confirms saving into the selected slot. Hidden until a save slot is selected.")]
+    [SerializeField] private GameObject SaveConfirmButtonRoot;
+
+    [Tooltip("Button or root object that confirms loading the selected slot. Hidden until a valid load slot is selected.")]
+    [SerializeField] private GameObject LoadConfirmButtonRoot;
+
+    [Tooltip("Slot rows shown inside the save panel.")]
+    [SerializeField] private List<SaveSlotView> SaveSlotViews = new List<SaveSlotView>();
+
+    [Tooltip("Slot rows shown inside the load panel.")]
+    [SerializeField] private List<SaveSlotView> LoadSlotViews = new List<SaveSlotView>();
+
     [Header("External Modal Panels")]
     [Tooltip("Panels opened outside the pause menu flow. Example: upgrades, shop, research, storage or machine UI.")]
     [SerializeField] private List<ExternalModalPanel> ExternalModalPanels = new List<ExternalModalPanel>();
@@ -240,11 +330,11 @@ public sealed class GameMenuFlowController : MonoBehaviour
     [SerializeField] private bool PauseWorldWhilePauseMenuOpen = true;
 
     [Header("Button Events")]
-    [Tooltip("Event invoked when the Save button is pressed.")]
-    [SerializeField] private UnityEvent OnSaveRequested;
+    [Tooltip("Event invoked after a save slot has been confirmed and written.")]
+    [SerializeField] private UnityEvent OnSaveConfirmed;
 
-    [Tooltip("Event invoked when the Load button is pressed.")]
-    [SerializeField] private UnityEvent OnLoadRequested;
+    [Tooltip("Event invoked immediately before a confirmed load slot reloads the scene.")]
+    [SerializeField] private UnityEvent OnLoadConfirmed;
 
     [Tooltip("Event invoked when the Main Menu button is pressed, after modal focus and time scale have been restored.")]
     [SerializeField] private UnityEvent OnMainMenuRequested;
@@ -293,6 +383,16 @@ public sealed class GameMenuFlowController : MonoBehaviour
     private bool DidEnablePauseCancelAction;
 
     /// <summary>
+    /// Currently selected save slot index, or -1 when no save slot is selected.
+    /// </summary>
+    private int SelectedSaveSlotIndex = -1;
+
+    /// <summary>
+    /// Currently selected load slot index, or -1 when no load slot is selected.
+    /// </summary>
+    private int SelectedLoadSlotIndex = -1;
+
+    /// <summary>
     /// Gets whether the pause menu stack has at least one open panel.
     /// </summary>
     public bool IsPauseMenuOpen
@@ -325,6 +425,18 @@ public sealed class GameMenuFlowController : MonoBehaviour
         {
             PlayerModalStateController = FindFirstObjectByType<PlayerModalStateController>();
         }
+
+        if (SaveController == null)
+        {
+            SaveController = FindFirstObjectByType<GameSaveDebugController>();
+        }
+
+        if (BindSlotButtonsAutomatically)
+        {
+            BindSaveAndLoadSlotButtons();
+        }
+
+        RefreshSaveAndLoadSlotPanels();
 
         if (HidePausePanelsOnAwake)
         {
@@ -513,6 +625,101 @@ public sealed class GameMenuFlowController : MonoBehaviour
     }
 
     /// <summary>
+    /// Opens the save slot selection panel from the pause menu.
+    /// </summary>
+    public void OpenSavePanel()
+    {
+        SelectedSaveSlotIndex = -1;
+        RefreshSaveSlotViews();
+        ApplySaveConfirmVisibility();
+        OpenPauseSubPanel(SavePanel);
+    }
+
+    /// <summary>
+    /// Opens the load slot selection panel from the pause menu.
+    /// </summary>
+    public void OpenLoadPanel()
+    {
+        SelectedLoadSlotIndex = -1;
+        RefreshLoadSlotViews();
+        ApplyLoadConfirmVisibility();
+        OpenPauseSubPanel(LoadPanel);
+    }
+
+    /// <summary>
+    /// Selects one slot in the save panel. Saving is allowed for both empty and occupied slots.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index.</param>
+    public void SelectSaveSlot(int SlotIndex)
+    {
+        SelectedSaveSlotIndex = Mathf.Max(0, SlotIndex);
+        RefreshSaveSlotViews();
+        ApplySaveConfirmVisibility();
+        Log("Selected save slot: " + (SelectedSaveSlotIndex + 1));
+    }
+
+    /// <summary>
+    /// Selects one slot in the load panel. Loading is only confirmed if the selected slot has data.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index.</param>
+    public void SelectLoadSlot(int SlotIndex)
+    {
+        if (SaveController == null || !SaveController.DoesSaveSlotExist(SlotIndex))
+        {
+            SelectedLoadSlotIndex = -1;
+            RefreshLoadSlotViews();
+            ApplyLoadConfirmVisibility();
+            Log("Ignored empty load slot: " + (SlotIndex + 1));
+            return;
+        }
+
+        SelectedLoadSlotIndex = Mathf.Max(0, SlotIndex);
+        RefreshLoadSlotViews();
+        ApplyLoadConfirmVisibility();
+        Log("Selected load slot: " + (SelectedLoadSlotIndex + 1));
+    }
+
+    /// <summary>
+    /// Saves the current game into the selected save slot.
+    /// </summary>
+    public void ConfirmSelectedSaveSlot()
+    {
+        if (SaveController == null || SelectedSaveSlotIndex < 0)
+        {
+            return;
+        }
+
+        SaveController.SaveGameToSlot(SelectedSaveSlotIndex);
+        RefreshSaveAndLoadSlotPanels();
+        ApplySaveConfirmVisibility();
+        OnSaveConfirmed?.Invoke();
+    }
+
+    /// <summary>
+    /// Loads the selected load slot after restoring menu-owned runtime state.
+    /// </summary>
+    public void ConfirmSelectedLoadSlot()
+    {
+        if (SaveController == null || SelectedLoadSlotIndex < 0)
+        {
+            return;
+        }
+
+        if (!SaveController.DoesSaveSlotExist(SelectedLoadSlotIndex))
+        {
+            SelectedLoadSlotIndex = -1;
+            RefreshLoadSlotViews();
+            ApplyLoadConfirmVisibility();
+            return;
+        }
+
+        int SlotIndexToLoad = SelectedLoadSlotIndex;
+        OnLoadConfirmed?.Invoke();
+        CloseAllMenusAndExternalModals();
+        SaveController.LoadGameFromSlot(SlotIndexToLoad);
+    }
+
+    /// <summary>
     /// Returns to the previous pause menu panel, or resumes gameplay if only the root pause panel is open.
     /// </summary>
     public void BackToPreviousPanel()
@@ -626,19 +833,21 @@ public sealed class GameMenuFlowController : MonoBehaviour
     }
 
     /// <summary>
-    /// Invokes the save button event. Hook your save system to this UnityEvent in the Inspector.
+    /// Opens the save slot selection panel.
+    /// Kept as a compatibility entry point for existing pause menu button events.
     /// </summary>
     public void RequestSave()
     {
-        OnSaveRequested?.Invoke();
+        OpenSavePanel();
     }
 
     /// <summary>
-    /// Invokes the load button event. Hook your load system to this UnityEvent in the Inspector.
+    /// Opens the load slot selection panel.
+    /// Kept as a compatibility entry point for existing pause menu button events.
     /// </summary>
     public void RequestLoad()
     {
-        OnLoadRequested?.Invoke();
+        OpenLoadPanel();
     }
 
     /// <summary>
@@ -831,6 +1040,129 @@ public sealed class GameMenuFlowController : MonoBehaviour
     }
 
     /// <summary>
+    /// Automatically binds configured slot buttons to their selection callbacks.
+    /// </summary>
+    private void BindSaveAndLoadSlotButtons()
+    {
+        for (int Index = 0; Index < SaveSlotViews.Count; Index++)
+        {
+            SaveSlotView SlotView = SaveSlotViews[Index];
+
+            if (SlotView == null || SlotView.GetSlotButton() == null)
+            {
+                continue;
+            }
+
+            int CapturedSlotIndex = SlotView.GetSlotIndex();
+            SlotView.GetSlotButton().onClick.AddListener(() => SelectSaveSlot(CapturedSlotIndex));
+        }
+
+        for (int Index = 0; Index < LoadSlotViews.Count; Index++)
+        {
+            SaveSlotView SlotView = LoadSlotViews[Index];
+
+            if (SlotView == null || SlotView.GetSlotButton() == null)
+            {
+                continue;
+            }
+
+            int CapturedSlotIndex = SlotView.GetSlotIndex();
+            SlotView.GetSlotButton().onClick.AddListener(() => SelectLoadSlot(CapturedSlotIndex));
+        }
+    }
+
+    /// <summary>
+    /// Refreshes both save and load slot views.
+    /// </summary>
+    private void RefreshSaveAndLoadSlotPanels()
+    {
+        RefreshSaveSlotViews();
+        RefreshLoadSlotViews();
+        ApplySaveConfirmVisibility();
+        ApplyLoadConfirmVisibility();
+    }
+
+    /// <summary>
+    /// Refreshes the save panel slot labels and selected state.
+    /// </summary>
+    private void RefreshSaveSlotViews()
+    {
+        for (int Index = 0; Index < SaveSlotViews.Count; Index++)
+        {
+            SaveSlotView SlotView = SaveSlotViews[Index];
+
+            if (SlotView == null)
+            {
+                continue;
+            }
+
+            int SlotIndex = SlotView.GetSlotIndex();
+            string TimestampLabel = SaveController != null
+                ? SaveController.GetSaveSlotTimestampLabel(SlotIndex, EmptySlotLabel)
+                : EmptySlotLabel;
+
+            SlotView.Refresh(
+                TimestampLabel,
+                SlotIndex == SelectedSaveSlotIndex,
+                true);
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the load panel slot labels, selected state and interactability.
+    /// Empty load slots remain visible but cannot be selected.
+    /// </summary>
+    private void RefreshLoadSlotViews()
+    {
+        for (int Index = 0; Index < LoadSlotViews.Count; Index++)
+        {
+            SaveSlotView SlotView = LoadSlotViews[Index];
+
+            if (SlotView == null)
+            {
+                continue;
+            }
+
+            int SlotIndex = SlotView.GetSlotIndex();
+            bool HasData = SaveController != null && SaveController.DoesSaveSlotExist(SlotIndex);
+            string TimestampLabel = SaveController != null
+                ? SaveController.GetSaveSlotTimestampLabel(SlotIndex, EmptySlotLabel)
+                : EmptySlotLabel;
+
+            SlotView.Refresh(
+                TimestampLabel,
+                HasData && SlotIndex == SelectedLoadSlotIndex,
+                HasData);
+        }
+    }
+
+    /// <summary>
+    /// Shows the save confirmation button only after a save slot has been selected.
+    /// </summary>
+    private void ApplySaveConfirmVisibility()
+    {
+        if (SaveConfirmButtonRoot != null)
+        {
+            SaveConfirmButtonRoot.SetActive(SelectedSaveSlotIndex >= 0);
+        }
+    }
+
+    /// <summary>
+    /// Shows the load confirmation button only after a valid save slot has been selected.
+    /// </summary>
+    private void ApplyLoadConfirmVisibility()
+    {
+        bool CanLoad = SaveController != null &&
+            SelectedLoadSlotIndex >= 0 &&
+            SaveController.DoesSaveSlotExist(SelectedLoadSlotIndex);
+
+        if (LoadConfirmButtonRoot != null)
+        {
+            LoadConfirmButtonRoot.SetActive(CanLoad);
+        }
+    }
+
+    /// <summary>
     /// Hides every registered pause menu panel.
     /// </summary>
     private void HideAllPauseMenuPanels()
@@ -842,6 +1174,8 @@ public sealed class GameMenuFlowController : MonoBehaviour
         ControlsPanel.Hide();
         KeybindsPanel.Hide();
         LanguagePanel.Hide();
+        SavePanel.Hide();
+        LoadPanel.Hide();
     }
 
     /// <summary>
