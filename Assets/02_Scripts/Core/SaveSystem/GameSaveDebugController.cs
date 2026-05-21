@@ -14,10 +14,13 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private const string SaveSlotFilePrefix = "save_slot_";
     private const string SaveSlotFileExtension = ".es3";
     private const string SaveRootKey = "debug_save_root";
+    private const string SaveTimestampUtcTicksKey = "debug_save_timestamp_utc_ticks";
     private const int SaveSlotCount = 3;
     private static bool HasPendingLoadRequest;
     private static string PendingLoadFileName;
     private static string PendingLoadRootKey;
+    private static int PendingLoadSlotIndex = -1;
+    private static int CurrentActiveSlotIndex = -1;
 
     [Serializable]
     private sealed class ItemInstanceData
@@ -494,6 +497,10 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Tooltip("Authoritative sell trigger used to resolve money denomination prefabs from saved money ids.")]
     [SerializeField] private OreSellTrigger OreSellTrigger;
 
+    [Header("Scene Loading")]
+    [Tooltip("Optional gameplay scene loaded when Continue or Load is requested from a non-gameplay menu scene. Leave empty to reload the currently active scene.")]
+    [SerializeField] private string GameplaySceneName = string.Empty;
+
     [Header("Debug")]
     [Tooltip("Logs save and load operations.")]
     [SerializeField] private bool DebugLogs = true;
@@ -570,25 +577,20 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(PendingLoadFileName) || string.IsNullOrWhiteSpace(PendingLoadRootKey))
         {
-            HasPendingLoadRequest = false;
-            PendingLoadFileName = string.Empty;
-            PendingLoadRootKey = string.Empty;
+            ClearPendingLoadRequest();
             return;
         }
 
         if (!ES3.KeyExists(PendingLoadRootKey, PendingLoadFileName))
         {
-            HasPendingLoadRequest = false;
-            PendingLoadFileName = string.Empty;
-            PendingLoadRootKey = string.Empty;
+            ClearPendingLoadRequest();
             return;
         }
 
+        int LoadedSlotIndex = PendingLoadSlotIndex;
         SaveData Data = ES3.Load<SaveData>(PendingLoadRootKey, filePath: PendingLoadFileName);
 
-        HasPendingLoadRequest = false;
-        PendingLoadFileName = string.Empty;
-        PendingLoadRootKey = string.Empty;
+        ClearPendingLoadRequest();
 
         if (Data == null)
         {
@@ -597,9 +599,10 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         ApplySaveData(Data);
+        CurrentActiveSlotIndex = LoadedSlotIndex;
         Physics.SyncTransforms();
 
-        Log("Deferred load applied after clean scene reload.");
+        Log("Deferred load applied after clean scene reload from slot " + (CurrentActiveSlotIndex + 1) + ".");
     }
 
     /// <summary>
@@ -665,7 +668,10 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Physics.SyncTransforms();
         SaveData Data = BuildSaveData();
         string SlotFileName = GetSaveSlotFileName(SlotIndex);
+        DateTime SaveTimeUtc = DateTime.UtcNow;
         ES3.Save(SaveRootKey, Data, SlotFileName);
+        ES3.Save(SaveTimestampUtcTicksKey, SaveTimeUtc.Ticks, SlotFileName);
+        CurrentActiveSlotIndex = SlotIndex;
         Log("Saved slot " + (SlotIndex + 1) + " to file: " + SlotFileName);
     }
 
@@ -693,9 +699,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
         HasPendingLoadRequest = true;
         PendingLoadFileName = SlotFileName;
         PendingLoadRootKey = SaveRootKey;
+        PendingLoadSlotIndex = SlotIndex;
 
         Scene ActiveScene = SceneManager.GetActiveScene();
-        SceneManager.LoadScene(ActiveScene.name);
+        string SceneNameToLoad = string.IsNullOrWhiteSpace(GameplaySceneName)
+            ? ActiveScene.name
+            : GameplaySceneName;
+
+        SceneManager.LoadScene(SceneNameToLoad);
     }
 
     /// <summary>
@@ -722,16 +733,12 @@ public sealed class GameSaveDebugController : MonoBehaviour
             return EmptyLabel;
         }
 
-        string SlotFileName = GetSaveSlotFileName(SlotIndex);
-        string AbsolutePath = Path.Combine(Application.persistentDataPath, SlotFileName);
-
-        if (!File.Exists(AbsolutePath))
+        if (!TryGetSaveSlotTimestampUtc(SlotIndex, out DateTime TimestampUtc))
         {
             return "SAVED DATA";
         }
 
-        DateTime LastWriteTime = File.GetLastWriteTime(AbsolutePath);
-        return LastWriteTime.ToString("dd/MM/yyyy   HH:mm");
+        return TimestampUtc.ToLocalTime().ToString("dd/MM/yyyy   HH:mm");
     }
 
     /// <summary>
@@ -747,6 +754,147 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         return SaveSlotFilePrefix + (SlotIndex + 1) + SaveSlotFileExtension;
+    }
+
+    /// <summary>
+    /// Gets the currently active save slot index for the loaded runtime session.
+    /// A value of -1 means the player is in an unslotted or fresh runtime session.
+    /// </summary>
+    /// <returns>Zero-based active save slot index, or -1 when none is active.</returns>
+    public int GetCurrentSaveSlotIndex()
+    {
+        return CurrentActiveSlotIndex;
+    }
+
+    /// <summary>
+    /// Gets whether the current runtime session is associated with a saved slot.
+    /// </summary>
+    /// <returns>True when a current save slot is known.</returns>
+    public bool HasCurrentSaveSlot()
+    {
+        return IsValidSlotIndex(CurrentActiveSlotIndex);
+    }
+
+    /// <summary>
+    /// Gets whether at least one valid save slot exists.
+    /// Useful for enabling or disabling a main menu Continue button.
+    /// </summary>
+    /// <returns>True when any save slot contains save data.</returns>
+    public bool HasAnySaveGame()
+    {
+        return GetLatestSaveSlotIndex() >= 0;
+    }
+
+    /// <summary>
+    /// Gets the latest saved slot based on available slot timestamps.
+    /// </summary>
+    /// <returns>Zero-based latest slot index, or -1 if no save exists.</returns>
+    public int GetLatestSaveSlotIndex()
+    {
+        int LatestSlotIndex = -1;
+        DateTime LatestTimestampUtc = DateTime.MinValue;
+
+        for (int SlotIndex = 0; SlotIndex < SaveSlotCount; SlotIndex++)
+        {
+            if (!DoesSaveSlotExist(SlotIndex))
+            {
+                continue;
+            }
+
+            DateTime TimestampUtc = DateTime.MinValue.AddSeconds(SlotIndex + 1);
+
+            if (TryGetSaveSlotTimestampUtc(SlotIndex, out DateTime ResolvedTimestampUtc))
+            {
+                TimestampUtc = ResolvedTimestampUtc;
+            }
+
+            if (LatestSlotIndex < 0 || TimestampUtc > LatestTimestampUtc)
+            {
+                LatestSlotIndex = SlotIndex;
+                LatestTimestampUtc = TimestampUtc;
+            }
+        }
+
+        return LatestSlotIndex;
+    }
+
+    /// <summary>
+    /// Loads the latest saved slot if any valid save exists.
+    /// This is the intended entry point for the main menu Continue button.
+    /// </summary>
+    public void ContinueLatestSaveGame()
+    {
+        TryContinueLatestSaveGame();
+    }
+
+    /// <summary>
+    /// Attempts to load the latest saved slot.
+    /// </summary>
+    /// <returns>True when a latest save slot was found and a load was requested.</returns>
+    public bool TryContinueLatestSaveGame()
+    {
+        int LatestSlotIndex = GetLatestSaveSlotIndex();
+
+        if (LatestSlotIndex < 0)
+        {
+            Log("Continue failed because no save slot exists.");
+            return false;
+        }
+
+        LoadGameFromSlot(LatestSlotIndex);
+        return true;
+    }
+
+    /// <summary>
+    /// Clears the pending static load request consumed after a clean scene load.
+    /// </summary>
+    private static void ClearPendingLoadRequest()
+    {
+        HasPendingLoadRequest = false;
+        PendingLoadFileName = string.Empty;
+        PendingLoadRootKey = string.Empty;
+        PendingLoadSlotIndex = -1;
+    }
+
+    /// <summary>
+    /// Tries to resolve the last write timestamp for a save slot.
+    /// The physical file timestamp is preferred and the metadata key is used as a fallback.
+    /// </summary>
+    /// <param name="SlotIndex">Zero-based slot index.</param>
+    /// <param name="TimestampUtc">Resolved timestamp in UTC.</param>
+    /// <returns>True when a timestamp could be resolved.</returns>
+    private bool TryGetSaveSlotTimestampUtc(int SlotIndex, out DateTime TimestampUtc)
+    {
+        TimestampUtc = DateTime.MinValue;
+
+        if (!IsValidSlotIndex(SlotIndex))
+        {
+            return false;
+        }
+
+        string SlotFileName = GetSaveSlotFileName(SlotIndex);
+        string AbsolutePath = Path.Combine(Application.persistentDataPath, SlotFileName);
+
+        if (File.Exists(AbsolutePath))
+        {
+            TimestampUtc = File.GetLastWriteTimeUtc(AbsolutePath);
+            return true;
+        }
+
+        if (File.Exists(SlotFileName))
+        {
+            TimestampUtc = File.GetLastWriteTimeUtc(SlotFileName);
+            return true;
+        }
+
+        if (ES3.KeyExists(SaveTimestampUtcTicksKey, SlotFileName))
+        {
+            long TimestampTicks = ES3.Load<long>(SaveTimestampUtcTicksKey, SlotFileName);
+            TimestampUtc = new DateTime(TimestampTicks, DateTimeKind.Utc);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

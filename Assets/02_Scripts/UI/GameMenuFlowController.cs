@@ -102,8 +102,11 @@ public sealed class GameMenuFlowController : MonoBehaviour
         [Tooltip("Optional text that displays the save timestamp or the empty-slot label.")]
         [SerializeField] private TMP_Text DateText;
 
-        [Tooltip("Optional object activated only while this slot is selected. Use it for your red X or highlight.")]
+        [Tooltip("Optional object activated only while this slot is selected. Use it for your red X or selection highlight.")]
         [SerializeField] private GameObject SelectedIndicatorRoot;
+
+        [Tooltip("Optional object activated while this slot is the current runtime save slot. Use it to show where the player currently is.")]
+        [SerializeField] private GameObject CurrentSlotIndicatorRoot;
 
         /// <summary>
         /// Gets the zero-based slot index represented by this UI entry.
@@ -126,8 +129,9 @@ public sealed class GameMenuFlowController : MonoBehaviour
         /// </summary>
         /// <param name="TimestampLabel">Timestamp or empty-state text displayed in the slot.</param>
         /// <param name="IsSelected">True when this slot is the current selected slot.</param>
+        /// <param name="IsCurrentSlot">True when this slot is the active runtime save slot.</param>
         /// <param name="IsSelectable">True when the slot button can be clicked.</param>
-        public void Refresh(string TimestampLabel, bool IsSelected, bool IsSelectable)
+        public void Refresh(string TimestampLabel, bool IsSelected, bool IsCurrentSlot, bool IsSelectable)
         {
             if (DateText != null)
             {
@@ -137,6 +141,11 @@ public sealed class GameMenuFlowController : MonoBehaviour
             if (SelectedIndicatorRoot != null)
             {
                 SelectedIndicatorRoot.SetActive(IsSelected);
+            }
+
+            if (CurrentSlotIndicatorRoot != null)
+            {
+                CurrentSlotIndicatorRoot.SetActive(IsCurrentSlot);
             }
 
             if (SlotButton != null)
@@ -550,6 +559,7 @@ public sealed class GameMenuFlowController : MonoBehaviour
         }
 
         CaptureTimeScaleIfNeeded(PauseWorldWhilePauseMenuOpen);
+        RefreshSaveAndLoadSlotPanels();
         HideAllPauseMenuPanels();
         SetPauseMenuRootActive(true);
 
@@ -630,8 +640,7 @@ public sealed class GameMenuFlowController : MonoBehaviour
     public void OpenSavePanel()
     {
         SelectedSaveSlotIndex = -1;
-        RefreshSaveSlotViews();
-        ApplySaveConfirmVisibility();
+        RefreshSaveAndLoadSlotPanels();
         OpenPauseSubPanel(SavePanel);
     }
 
@@ -641,8 +650,7 @@ public sealed class GameMenuFlowController : MonoBehaviour
     public void OpenLoadPanel()
     {
         SelectedLoadSlotIndex = -1;
-        RefreshLoadSlotViews();
-        ApplyLoadConfirmVisibility();
+        RefreshSaveAndLoadSlotPanels();
         OpenPauseSubPanel(LoadPanel);
     }
 
@@ -1101,9 +1109,12 @@ public sealed class GameMenuFlowController : MonoBehaviour
                 ? SaveController.GetSaveSlotTimestampLabel(SlotIndex, EmptySlotLabel)
                 : EmptySlotLabel;
 
+            bool IsCurrentSlot = SaveController != null && SaveController.GetCurrentSaveSlotIndex() == SlotIndex;
+
             SlotView.Refresh(
                 TimestampLabel,
                 SlotIndex == SelectedSaveSlotIndex,
+                IsCurrentSlot,
                 true);
         }
     }
@@ -1129,9 +1140,12 @@ public sealed class GameMenuFlowController : MonoBehaviour
                 ? SaveController.GetSaveSlotTimestampLabel(SlotIndex, EmptySlotLabel)
                 : EmptySlotLabel;
 
+            bool IsCurrentSlot = SaveController != null && SaveController.GetCurrentSaveSlotIndex() == SlotIndex;
+
             SlotView.Refresh(
                 TimestampLabel,
                 HasData && SlotIndex == SelectedLoadSlotIndex,
+                IsCurrentSlot,
                 HasData);
         }
     }
