@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 097f058ea4dfc1342a4c1711dd14fbe8, type: 3}
+  m_Name: AudioEvent_HoverButtonClick
+  m_EditorClassIdentifier: Assembly-CSharp::GameAudioEvent
+  Clips:
+  - {fileID: 8300000, guid: 9cac006ba1c009e47b743e995b956cfe, type: 3}
+  MixerGroup: {fileID: 5309479378654716194, guid: 7aa1a94eb7eb93045ac6df7cd9f363f3, type: 2}
+  Volume: 1
+  VolumeRandomMultiplierRange: {x: 1, y: 1}
+  Pitch: 1
+  PitchRandomMultiplierRange: {x: 1, y: 1.3}
+  PlaybackDelay: 0
+  Cooldown: 0.03
+  Priority: 128
+  IgnoreListenerPause: 1
+  StereoPan: 0
+  SpatialBlend: 1
+  MinDistance: 1
+  MaxDistance: 25
+  DopplerLevel: 0
+  RolloffMode: 0

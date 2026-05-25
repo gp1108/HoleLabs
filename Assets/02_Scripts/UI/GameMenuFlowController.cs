@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -338,6 +339,36 @@ public sealed class GameMenuFlowController : MonoBehaviour
     [Tooltip("If true, opening the pause menu sets Time.timeScale to 0 and closing it restores the previous value.")]
     [SerializeField] private bool PauseWorldWhilePauseMenuOpen = true;
 
+    [Header("Button Navigation Timing")]
+    [Tooltip("If true, button-driven navigation waits before changing panels so the pressed animation can be seen.")]
+    [SerializeField] private bool DelayButtonDrivenNavigation = true;
+
+    [Tooltip("Delay in unscaled seconds before executing a button-driven menu action. Use this to match the button pressed animation length.")]
+    [SerializeField] private float ButtonPressedNavigationDelay = 0.16f;
+
+    [Tooltip("If true, new button navigation requests are ignored while a delayed navigation action is already pending.")]
+    [SerializeField] private bool IgnoreButtonNavigationWhilePending = true;
+
+    [Header("Cancel Input Audio")]
+    [Tooltip("Optional UI audio played when the pause menu is opened through the pause/cancel input.")]
+    [SerializeField] private GameAudioEvent PauseOpenAudio;
+
+    [Tooltip("Optional UI audio played when the pause/cancel input behaves like a Back or Cancel action.")]
+    [SerializeField] private GameAudioEvent BackCancelAudio;
+
+    [Tooltip("Optional audio trigger used as fallback for cancel/back input. Its PlayCancel method is used if assigned.")]
+    [SerializeField] private GameAudioTrigger BackCancelAudioTrigger;
+
+    [Tooltip("If true, the currently selected UI object may play its GameAudioTrigger cancel event before the fallback cancel audio is used.")]
+    [SerializeField] private bool TryPlayCancelAudioFromSelectedObject = true;
+
+    [Header("UI Selection")]
+    [Tooltip("If true, EventSystem selection is cleared before executing cancel/back input, preventing stale selected button visuals.")]
+    [SerializeField] private bool ClearSelectionOnCancelInput = true;
+
+    [Tooltip("If true, EventSystem selection is cleared after every panel transition. Disable this if you rely on keyboard/gamepad default selection.")]
+    [SerializeField] private bool ClearSelectionAfterPanelTransition = true;
+
     [Header("Button Events")]
     [Tooltip("Event invoked after a save slot has been confirmed and written.")]
     [SerializeField] private UnityEvent OnSaveConfirmed;
@@ -390,6 +421,16 @@ public sealed class GameMenuFlowController : MonoBehaviour
     /// True when this controller enabled the pause/cancel action and should disable it later.
     /// </summary>
     private bool DidEnablePauseCancelAction;
+
+    /// <summary>
+    /// Pending delayed button action coroutine.
+    /// </summary>
+    private Coroutine PendingDelayedButtonAction;
+
+    /// <summary>
+    /// True while a delayed button navigation action is waiting to execute.
+    /// </summary>
+    private bool IsDelayedButtonActionPending;
 
     /// <summary>
     /// Currently selected save slot index, or -1 when no save slot is selected.
@@ -496,6 +537,7 @@ public sealed class GameMenuFlowController : MonoBehaviour
             }
         }
 
+        CancelPendingDelayedButtonAction();
         CloseAllMenusAndExternalModals();
     }
 
@@ -512,27 +554,17 @@ public sealed class GameMenuFlowController : MonoBehaviour
     /// Executes the global back or pause behaviour.
     /// External modals close first, menu subpanels go back, pause root closes, and gameplay opens pause.
     /// </summary>
-    public void HandleBackOrPauseRequest()
+public void HandleBackOrPauseRequest()
     {
-        if (CurrentExternalModalPanel != null)
+        CancelPendingDelayedButtonAction();
+        PlayPauseCancelInputAudio();
+
+        if (ClearSelectionOnCancelInput)
         {
-            CloseCurrentExternalModal();
-            return;
+            ClearSelectedObject();
         }
 
-        if (PanelStack.Count > 1)
-        {
-            BackToPreviousPanel();
-            return;
-        }
-
-        if (PanelStack.Count == 1)
-        {
-            ResumeGame();
-            return;
-        }
-
-        OpenPauseMenu();
+        HandleBackOrPauseRequestImmediate();
     }
 
     /// <summary>
@@ -548,7 +580,7 @@ public sealed class GameMenuFlowController : MonoBehaviour
 
         if (CurrentExternalModalPanel != null)
         {
-            CloseCurrentExternalModal();
+            CloseCurrentExternalModalImmediate();
             return;
         }
 
@@ -566,7 +598,7 @@ public sealed class GameMenuFlowController : MonoBehaviour
         PanelStack.Clear();
         PanelStack.Add(PauseMenuPanel);
         PauseMenuPanel.Show();
-        SelectDefaultObject(PauseMenuPanel.GetDefaultSelectedObject());
+        ApplyPanelSelection(PauseMenuPanel);
         ApplyGameplayHudVisibility(false);
         Log("Pause menu opened.");
     }
@@ -574,84 +606,73 @@ public sealed class GameMenuFlowController : MonoBehaviour
     /// <summary>
     /// Closes the whole pause menu and returns to gameplay.
     /// </summary>
-    public void ResumeGame()
+public void ResumeGame()
     {
-        HideAllPauseMenuPanels();
-        SetPauseMenuRootActive(false);
-        PanelStack.Clear();
-        ReleaseModalFocusIfNoUiIsOpen();
-        RestoreTimeScaleIfCaptured();
-        ApplyGameplayHudVisibility(true);
-        ClearSelectedObject();
-        Log("Returned to gameplay.");
+        RunButtonDrivenActionDelayed(ResumeGameImmediate, "ResumeGame");
     }
 
     /// <summary>
     /// Opens the Options panel from the pause menu.
     /// </summary>
-    public void OpenOptionsPanel()
+public void OpenOptionsPanel()
     {
-        OpenPauseSubPanel(OptionsPanel);
+        RunButtonDrivenActionDelayed(() => OpenPauseSubPanelImmediate(OptionsPanel), "OpenOptionsPanel");
     }
 
     /// <summary>
     /// Opens the Graphics panel from the current menu stack.
     /// </summary>
-    public void OpenGraphicsPanel()
+public void OpenGraphicsPanel()
     {
-        OpenPauseSubPanel(GraphicsPanel);
+        RunButtonDrivenActionDelayed(() => OpenPauseSubPanelImmediate(GraphicsPanel), "OpenGraphicsPanel");
     }
 
     /// <summary>
     /// Opens the Audio panel from the current menu stack.
     /// </summary>
-    public void OpenAudioPanel()
+public void OpenAudioPanel()
     {
-        OpenPauseSubPanel(AudioPanel);
+        RunButtonDrivenActionDelayed(() => OpenPauseSubPanelImmediate(AudioPanel), "OpenAudioPanel");
     }
 
     /// <summary>
     /// Opens the Controls panel from the current menu stack.
     /// </summary>
-    public void OpenControlsPanel()
+public void OpenControlsPanel()
     {
-        OpenPauseSubPanel(ControlsPanel);
+        RunButtonDrivenActionDelayed(() => OpenPauseSubPanelImmediate(ControlsPanel), "OpenControlsPanel");
     }
 
     /// <summary>
     /// Opens the Keybinds panel from the current menu stack.
     /// </summary>
-    public void OpenKeybindsPanel()
+public void OpenKeybindsPanel()
     {
-        OpenPauseSubPanel(KeybindsPanel);
+        RunButtonDrivenActionDelayed(() => OpenPauseSubPanelImmediate(KeybindsPanel), "OpenKeybindsPanel");
     }
 
     /// <summary>
     /// Opens the Language panel from the current menu stack.
     /// </summary>
-    public void OpenLanguagePanel()
+public void OpenLanguagePanel()
     {
-        OpenPauseSubPanel(LanguagePanel);
+        RunButtonDrivenActionDelayed(() => OpenPauseSubPanelImmediate(LanguagePanel), "OpenLanguagePanel");
     }
 
     /// <summary>
     /// Opens the save slot selection panel from the pause menu.
     /// </summary>
-    public void OpenSavePanel()
+public void OpenSavePanel()
     {
-        SelectedSaveSlotIndex = -1;
-        RefreshSaveAndLoadSlotPanels();
-        OpenPauseSubPanel(SavePanel);
+        RunButtonDrivenActionDelayed(OpenSavePanelImmediate, "OpenSavePanel");
     }
 
     /// <summary>
     /// Opens the load slot selection panel from the pause menu.
     /// </summary>
-    public void OpenLoadPanel()
+public void OpenLoadPanel()
     {
-        SelectedLoadSlotIndex = -1;
-        RefreshSaveAndLoadSlotPanels();
-        OpenPauseSubPanel(LoadPanel);
+        RunButtonDrivenActionDelayed(OpenLoadPanelImmediate, "OpenLoadPanel");
     }
 
     /// <summary>
@@ -706,57 +727,17 @@ public sealed class GameMenuFlowController : MonoBehaviour
     /// <summary>
     /// Loads the selected load slot after restoring menu-owned runtime state.
     /// </summary>
-    public void ConfirmSelectedLoadSlot()
+public void ConfirmSelectedLoadSlot()
     {
-        if (SaveController == null || SelectedLoadSlotIndex < 0)
-        {
-            return;
-        }
-
-        if (!SaveController.DoesSaveSlotExist(SelectedLoadSlotIndex))
-        {
-            SelectedLoadSlotIndex = -1;
-            RefreshLoadSlotViews();
-            ApplyLoadConfirmVisibility();
-            return;
-        }
-
-        int SlotIndexToLoad = SelectedLoadSlotIndex;
-        OnLoadConfirmed?.Invoke();
-        CloseAllMenusAndExternalModals();
-        SaveController.LoadGameFromSlot(SlotIndexToLoad);
+        RunButtonDrivenActionDelayed(ConfirmSelectedLoadSlotImmediate, "ConfirmSelectedLoadSlot");
     }
 
     /// <summary>
     /// Returns to the previous pause menu panel, or resumes gameplay if only the root pause panel is open.
     /// </summary>
-    public void BackToPreviousPanel()
+public void BackToPreviousPanel()
     {
-        if (CurrentExternalModalPanel != null)
-        {
-            CloseCurrentExternalModal();
-            return;
-        }
-
-        if (PanelStack.Count <= 0)
-        {
-            return;
-        }
-
-        if (PanelStack.Count == 1)
-        {
-            ResumeGame();
-            return;
-        }
-
-        MenuPanel CurrentPanel = PanelStack[PanelStack.Count - 1];
-        PanelStack.RemoveAt(PanelStack.Count - 1);
-        CurrentPanel.Hide();
-
-        MenuPanel PreviousPanel = PanelStack[PanelStack.Count - 1];
-        PreviousPanel.Show();
-        SelectDefaultObject(PreviousPanel.GetDefaultSelectedObject());
-        Log("Returned to previous panel: " + PreviousPanel.GetPanelId());
+        RunButtonDrivenActionDelayed(BackToPreviousPanelImmediate, "BackToPreviousPanel");
     }
 
     /// <summary>
@@ -823,21 +804,9 @@ public sealed class GameMenuFlowController : MonoBehaviour
     /// <summary>
     /// Closes the currently open external modal, if one exists.
     /// </summary>
-    public void CloseCurrentExternalModal()
+public void CloseCurrentExternalModal()
     {
-        if (CurrentExternalModalPanel == null)
-        {
-            return;
-        }
-
-        string ModalId = CurrentExternalModalPanel.GetModalId();
-        CurrentExternalModalPanel.HideVisualOnly();
-        CurrentExternalModalPanel = null;
-        ReleaseModalFocusIfNoUiIsOpen();
-        RestoreTimeScaleIfCaptured();
-        ApplyGameplayHudVisibility(true);
-        ClearSelectedObject();
-        Log("External modal closed: " + ModalId);
+        RunButtonDrivenActionDelayed(CloseCurrentExternalModalImmediate, "CloseCurrentExternalModal");
     }
 
     /// <summary>
@@ -861,10 +830,9 @@ public sealed class GameMenuFlowController : MonoBehaviour
     /// <summary>
     /// Restores time and focus, then invokes the main menu button event.
     /// </summary>
-    public void RequestMainMenu()
+public void RequestMainMenu()
     {
-        CloseAllMenusAndExternalModals();
-        OnMainMenuRequested?.Invoke();
+        RunButtonDrivenActionDelayed(RequestMainMenuImmediate, "RequestMainMenu");
     }
 
     /// <summary>
@@ -887,11 +855,324 @@ public sealed class GameMenuFlowController : MonoBehaviour
         ClearSelectedObject();
     }
 
+
+    /// <summary>
+    /// Executes the global back or pause behaviour immediately without any button animation delay.
+    /// </summary>
+    private void HandleBackOrPauseRequestImmediate()
+    {
+        if (CurrentExternalModalPanel != null)
+        {
+            CloseCurrentExternalModalImmediate();
+            return;
+        }
+
+        if (PanelStack.Count > 1)
+        {
+            BackToPreviousPanelImmediate();
+            return;
+        }
+
+        if (PanelStack.Count == 1)
+        {
+            ResumeGameImmediate();
+            return;
+        }
+
+        OpenPauseMenu();
+    }
+
+    /// <summary>
+    /// Closes the whole pause menu immediately and returns to gameplay.
+    /// </summary>
+    private void ResumeGameImmediate()
+    {
+        CancelPendingDelayedButtonAction();
+        HideAllPauseMenuPanels();
+        SetPauseMenuRootActive(false);
+        PanelStack.Clear();
+        ReleaseModalFocusIfNoUiIsOpen();
+        RestoreTimeScaleIfCaptured();
+        ApplyGameplayHudVisibility(true);
+        ClearSelectedObject();
+        Log("Returned to gameplay.");
+    }
+
+    /// <summary>
+    /// Opens the save panel immediately without waiting for a button animation.
+    /// </summary>
+    private void OpenSavePanelImmediate()
+    {
+        SelectedSaveSlotIndex = -1;
+        RefreshSaveAndLoadSlotPanels();
+        OpenPauseSubPanelImmediate(SavePanel);
+    }
+
+    /// <summary>
+    /// Opens the load panel immediately without waiting for a button animation.
+    /// </summary>
+    private void OpenLoadPanelImmediate()
+    {
+        SelectedLoadSlotIndex = -1;
+        RefreshSaveAndLoadSlotPanels();
+        OpenPauseSubPanelImmediate(LoadPanel);
+    }
+
+    /// <summary>
+    /// Loads the selected slot immediately after restoring menu-owned runtime state.
+    /// </summary>
+    private void ConfirmSelectedLoadSlotImmediate()
+    {
+        if (SaveController == null || SelectedLoadSlotIndex < 0)
+        {
+            return;
+        }
+
+        if (!SaveController.DoesSaveSlotExist(SelectedLoadSlotIndex))
+        {
+            SelectedLoadSlotIndex = -1;
+            RefreshLoadSlotViews();
+            ApplyLoadConfirmVisibility();
+            return;
+        }
+
+        int SlotIndexToLoad = SelectedLoadSlotIndex;
+        OnLoadConfirmed?.Invoke();
+        CloseAllMenusAndExternalModals();
+        SaveController.LoadGameFromSlot(SlotIndexToLoad);
+    }
+
+    /// <summary>
+    /// Returns to the previous pause menu panel immediately, or resumes gameplay if only the root pause panel is open.
+    /// </summary>
+    private void BackToPreviousPanelImmediate()
+    {
+        if (CurrentExternalModalPanel != null)
+        {
+            CloseCurrentExternalModalImmediate();
+            return;
+        }
+
+        if (PanelStack.Count <= 0)
+        {
+            return;
+        }
+
+        if (PanelStack.Count == 1)
+        {
+            ResumeGameImmediate();
+            return;
+        }
+
+        ClearSelectedObject();
+
+        MenuPanel CurrentPanel = PanelStack[PanelStack.Count - 1];
+        PanelStack.RemoveAt(PanelStack.Count - 1);
+        CurrentPanel.Hide();
+
+        MenuPanel PreviousPanel = PanelStack[PanelStack.Count - 1];
+        PreviousPanel.Show();
+        ApplyPanelSelection(PreviousPanel);
+        Log("Returned to previous panel: " + PreviousPanel.GetPanelId());
+    }
+
+    /// <summary>
+    /// Closes the currently open external modal immediately, if one exists.
+    /// </summary>
+    private void CloseCurrentExternalModalImmediate()
+    {
+        if (CurrentExternalModalPanel == null)
+        {
+            return;
+        }
+
+        string ModalId = CurrentExternalModalPanel.GetModalId();
+        CurrentExternalModalPanel.HideVisualOnly();
+        CurrentExternalModalPanel = null;
+        ReleaseModalFocusIfNoUiIsOpen();
+        RestoreTimeScaleIfCaptured();
+        ApplyGameplayHudVisibility(true);
+        ClearSelectedObject();
+        Log("External modal closed: " + ModalId);
+    }
+
+    /// <summary>
+    /// Restores time and focus immediately, then invokes the main menu button event.
+    /// </summary>
+    private void RequestMainMenuImmediate()
+    {
+        CloseAllMenusAndExternalModals();
+        OnMainMenuRequested?.Invoke();
+    }
+
+    /// <summary>
+    /// Runs a button-driven menu action after the configured pressed animation delay.
+    /// </summary>
+    /// <param name="ActionToRun">Action to execute after the delay.</param>
+    /// <param name="ActionName">Debug name used in logs.</param>
+    private void RunButtonDrivenActionDelayed(Action ActionToRun, string ActionName)
+    {
+        if (ActionToRun == null)
+        {
+            return;
+        }
+
+        if (!DelayButtonDrivenNavigation || ButtonPressedNavigationDelay <= 0f || !gameObject.activeInHierarchy)
+        {
+            ClearSelectedObject();
+            ActionToRun.Invoke();
+            return;
+        }
+
+        if (IsDelayedButtonActionPending)
+        {
+            if (IgnoreButtonNavigationWhilePending)
+            {
+                Log("Ignored delayed menu action while another action is pending: " + ActionName);
+                return;
+            }
+
+            CancelPendingDelayedButtonAction();
+        }
+
+        PendingDelayedButtonAction = StartCoroutine(RunButtonDrivenActionDelayedRoutine(ActionToRun, ActionName));
+    }
+
+    /// <summary>
+    /// Waits in unscaled time before executing a button-driven menu action.
+    /// </summary>
+    /// <param name="ActionToRun">Action to execute after the delay.</param>
+    /// <param name="ActionName">Debug name used in logs.</param>
+    private IEnumerator RunButtonDrivenActionDelayedRoutine(Action ActionToRun, string ActionName)
+    {
+        IsDelayedButtonActionPending = true;
+
+        yield return new WaitForSecondsRealtime(Mathf.Max(0f, ButtonPressedNavigationDelay));
+
+        PendingDelayedButtonAction = null;
+        IsDelayedButtonActionPending = false;
+
+        ClearSelectedObject();
+        ActionToRun?.Invoke();
+        Log("Executed delayed menu action: " + ActionName);
+    }
+
+    /// <summary>
+    /// Cancels any pending delayed button action.
+    /// </summary>
+    private void CancelPendingDelayedButtonAction()
+    {
+        if (PendingDelayedButtonAction == null)
+        {
+            IsDelayedButtonActionPending = false;
+            return;
+        }
+
+        StopCoroutine(PendingDelayedButtonAction);
+        PendingDelayedButtonAction = null;
+        IsDelayedButtonActionPending = false;
+    }
+
+    /// <summary>
+    /// Applies EventSystem selection policy after a panel becomes visible.
+    /// </summary>
+    /// <param name="Panel">Panel that has just become visible.</param>
+    private void ApplyPanelSelection(MenuPanel Panel)
+    {
+        if (Panel == null)
+        {
+            ClearSelectedObject();
+            return;
+        }
+
+        if (ClearSelectionAfterPanelTransition)
+        {
+            ClearSelectedObject();
+            return;
+        }
+
+        SelectDefaultObject(Panel.GetDefaultSelectedObject());
+    }
+
+    /// <summary>
+    /// Plays the correct UI audio for the pause/cancel input based on current menu state.
+    /// </summary>
+    private void PlayPauseCancelInputAudio()
+    {
+        if (!IsAnyMenuOrExternalModalOpen)
+        {
+            PlayUiAudioEvent(PauseOpenAudio);
+            return;
+        }
+
+        if (TryPlayCancelAudioFromSelectedObject && TryPlaySelectedObjectCancelAudio())
+        {
+            return;
+        }
+
+        if (BackCancelAudioTrigger != null)
+        {
+            BackCancelAudioTrigger.PlayCancel();
+            return;
+        }
+
+        PlayUiAudioEvent(BackCancelAudio);
+    }
+
+    /// <summary>
+    /// Attempts to play the GameAudioTrigger cancel event on the currently selected UI object.
+    /// </summary>
+    /// <returns>True if a selected active GameAudioTrigger was found.</returns>
+    private bool TryPlaySelectedObjectCancelAudio()
+    {
+        if (EventSystem.current == null || EventSystem.current.currentSelectedGameObject == null)
+        {
+            return false;
+        }
+
+        GameObject SelectedObject = EventSystem.current.currentSelectedGameObject;
+
+        if (!SelectedObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        GameAudioTrigger AudioTrigger = SelectedObject.GetComponent<GameAudioTrigger>();
+
+        if (AudioTrigger == null)
+        {
+            AudioTrigger = SelectedObject.GetComponentInParent<GameAudioTrigger>();
+        }
+
+        if (AudioTrigger == null)
+        {
+            return false;
+        }
+
+        AudioTrigger.PlayCancel();
+        return true;
+    }
+
+    /// <summary>
+    /// Plays a UI audio event directly when assigned.
+    /// </summary>
+    /// <param name="AudioEvent">Audio event to play.</param>
+    private void PlayUiAudioEvent(GameAudioEvent AudioEvent)
+    {
+        if (AudioEvent == null)
+        {
+            return;
+        }
+
+        GameAudio.PlayUi(AudioEvent);
+    }
+
+
     /// <summary>
     /// Opens one pause menu subpanel and pushes it onto the stack.
     /// </summary>
     /// <param name="TargetPanel">Panel to open.</param>
-    private void OpenPauseSubPanel(MenuPanel TargetPanel)
+private void OpenPauseSubPanelImmediate(MenuPanel TargetPanel)
     {
         if (TargetPanel == null || !TargetPanel.GetIsAssigned())
         {
@@ -922,10 +1203,11 @@ public sealed class GameMenuFlowController : MonoBehaviour
             return;
         }
 
+        ClearSelectedObject();
         CurrentPanel.Hide();
         PanelStack.Add(TargetPanel);
         TargetPanel.Show();
-        SelectDefaultObject(TargetPanel.GetDefaultSelectedObject());
+        ApplyPanelSelection(TargetPanel);
         Log("Opened subpanel: " + TargetPanel.GetPanelId());
     }
 
