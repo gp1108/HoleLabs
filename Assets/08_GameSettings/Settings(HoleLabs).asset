@@ -226,13 +226,20 @@ MonoBehaviour:
     _defaultValue: 50
     IgnoreConnectionDefaults: 0
     ConnectionObject: {fileID: 11400000, guid: 5c8d736531357b94391c3aba171efd22, type: 2}
-  - _isActive: 0
+  - _isActive: 1
     ID: audioMasterVolume
     ApplyImmediately: 1
     _groups: []
     _defaultValue: 50
     IgnoreConnectionDefaults: 0
-    ConnectionObject: {fileID: 11400000, guid: 5988387f145940c4ea34688e37d77d2f, type: 2}
+    ConnectionObject: {fileID: 11400000, guid: a5981ea4e0f3ebb4a9722e13fc88e982, type: 2}
+  - _isActive: 1
+    ID: audioMixerUiVolume
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 50
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 3543b26208bd3174aba7ec5c99e2fa5e, type: 2}
   - _isActive: 1
     ID: gamma
     ApplyImmediately: 1

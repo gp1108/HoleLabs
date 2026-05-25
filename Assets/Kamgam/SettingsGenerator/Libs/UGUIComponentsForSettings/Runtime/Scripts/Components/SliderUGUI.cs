@@ -41,6 +41,9 @@ namespace Kamgam.UGUIComponentsForSettings
             "You can learn more here: https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-numeric-format-strings")]
         public string ValueFormat = "{0:N0} %";
 
+        [Tooltip("If enabled, the displayed value will be remapped from MinValue..MaxValue to 0..100. The real slider value is not modified.")]
+        public bool DisplayValueAsPercentage = false;
+
         [Tooltip("Should the default move left/right input commands be used to change the value of the slider\n" +
             "Disable if you want to ship your own controller input. You will have to call Increase() and Decrease() manually.")]
         public bool UseMoveCommandToChangeValue = true;
@@ -97,10 +100,17 @@ namespace Kamgam.UGUIComponentsForSettings
             if (ValueTf == null)
                 return;
 
+            float valueToDisplay = Slider.value;
+
+            if (DisplayValueAsPercentage)
+            {
+                valueToDisplay = Mathf.InverseLerp(MinValue, MaxValue, Slider.value) * 100f;
+            }
+
             if (!string.IsNullOrEmpty(ValueFormat))
-                ValueTf.text = string.Format(ValueFormat, Slider.value);
+                ValueTf.text = string.Format(ValueFormat, valueToDisplay);
             else
-                ValueTf.text = Slider.value.ToString();
+                ValueTf.text = valueToDisplay.ToString();
         }
 
         public int IntValue
