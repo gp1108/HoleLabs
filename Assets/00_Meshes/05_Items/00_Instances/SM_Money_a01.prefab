@@ -13,8 +13,8 @@ GameObject:
   - component: {fileID: 4547841588685117432}
   - component: {fileID: 8969066371740043248}
   - component: {fileID: 1788615591128619090}
-  - component: {fileID: 7818353211805932725}
   - component: {fileID: -7315251690171390515}
+  - component: {fileID: 7843680425370264495}
   m_Layer: 7
   m_Name: SM_Money_a01
   m_TagString: Untagged
@@ -30,13 +30,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6431823255149733203}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: 0, z: -0, w: 0.7071068}
+  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
   m_LocalPosition: {x: -11.99866, y: -0.854, z: -4.914}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: -90, y: 0, z: 0}
 --- !u!33 &4378211539285541764
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -44,7 +44,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6431823255149733203}
-  m_Mesh: {fileID: 4913390762880168061, guid: dcef8aab1cb640c4eba6079a57be77f1, type: 3}
+  m_Mesh: {fileID: -9148769450933618230, guid: 99ac802bd817ab4418a67a981bb4fed1, type: 3}
 --- !u!23 &4547841588685117432
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -111,8 +111,9 @@ MonoBehaviour:
   RuntimeRoot: {fileID: 7862585661975666903}
   CachedRigidbody: {fileID: 1788615591128619090}
   CachedColliders:
-  - {fileID: 7818353211805932725}
+  - {fileID: 0}
   SleepController: {fileID: -7315251690171390515}
+  SaveMoneyId: 
 --- !u!54 &1788615591128619090
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -140,27 +141,6 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 0
   m_CollisionDetection: 0
---- !u!65 &7818353211805932725
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6431823255149733203}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 0.39999998, y: 0.20000003, z: 0.010000003}
-  m_Center: {x: 0, y: 0, z: 0.0050000013}
 --- !u!114 &-7315251690171390515
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -180,3 +160,24 @@ MonoBehaviour:
     MaxAngularSpeed: 0.08
     MinimumSupportNormalY: 0.45
   DebugLogs: 0
+--- !u!65 &7843680425370264495
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6431823255149733203}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.35131723, y: 0.18015033, z: 0.048300367}
+  m_Center: {x: -0.0048950464, y: -0.0033571653, z: 0.003956713}

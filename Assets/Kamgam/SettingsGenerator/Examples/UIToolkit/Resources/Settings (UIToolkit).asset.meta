@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: d4d134d7c0dc41e45a239541defbca6c
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 240015
+  packageName: Settings & Game Options - Unified Menu Generator
+  packageVersion: 1.80
+  assetPath: Assets/Kamgam/SettingsGenerator/Examples/UIToolkit/Resources/Settings
+    (UIToolkit).asset
+  uploadId: 914120
