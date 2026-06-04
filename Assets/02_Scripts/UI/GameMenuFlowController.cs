@@ -277,6 +277,52 @@ public sealed class GameMenuFlowController : MonoBehaviour
     [Tooltip("Optional parent object for all pause menu panels. Assign PAUSE_MENU if you want the whole menu hierarchy toggled together.")]
     [SerializeField] private GameObject PauseMenuRoot;
 
+    [Header("Pause Menu Clipboard Animation")]
+    [Tooltip("RectTransform animated when the pause menu opens or closes. Assign the clipboard visual root, usually MenuScaleRoot or ClipboardRoot. Do not assign the fullscreen dim background.")]
+    [SerializeField] private RectTransform ClipboardAnimationRoot;
+
+    [Tooltip("If true, opening and closing the pause menu animates the clipboard root vertically.")]
+    [SerializeField] private bool AnimatePauseMenuClipboard = true;
+
+    [Tooltip("If true, the current anchored position is captured as the shown position during Awake.")]
+    [SerializeField] private bool CaptureShownClipboardPositionOnAwake = true;
+
+    [Tooltip("If true, the clipboard is moved to the hidden position during Awake after its shown position has been captured.")]
+    [SerializeField] private bool SetClipboardHiddenOnAwake = true;
+
+    [Tooltip("Vertical offset from the shown position used as the hidden position. Positive values hide the clipboard above the screen, negative values hide it below.")]
+    [SerializeField] private float ClipboardHiddenVerticalOffset = 1200f;
+
+    [Tooltip("Unscaled seconds used by the clipboard opening animation.")]
+    [SerializeField] private float ClipboardOpenDuration = 0.28f;
+
+    [Tooltip("Unscaled seconds used by the clipboard closing animation.")]
+    [SerializeField] private float ClipboardCloseDuration = 0.22f;
+
+    [Tooltip("Curve used when the clipboard opens.")]
+    [SerializeField] private AnimationCurve ClipboardOpenCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
+
+    [Tooltip("Curve used when the clipboard closes.")]
+    [SerializeField] private AnimationCurve ClipboardCloseCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
+
+    [Tooltip("If true, the clipboard local scale is animated together with its slide position.")]
+    [SerializeField] private bool AnimateClipboardScale = true;
+
+    [Tooltip("If true, the current local scale is captured as the shown scale during Awake.")]
+    [SerializeField] private bool CaptureShownClipboardScaleOnAwake = true;
+
+    [Tooltip("Local scale used when the clipboard is hidden before opening or after closing.")]
+    [SerializeField] private Vector3 ClipboardHiddenLocalScale = new Vector3(0.92f, 0.92f, 1f);
+
+    [Tooltip("If true, the shown scale is forced again when the opening animation completes.")]
+    [SerializeField] private bool ForceShownScaleOnOpenComplete = true;
+
+    [Tooltip("If true, the hidden scale is forced again when the closing animation completes.")]
+    [SerializeField] private bool ForceHiddenScaleOnCloseComplete = true;
+
+    [Tooltip("If true, pause/back/menu requests are ignored while the clipboard open or close animation is running.")]
+    [SerializeField] private bool BlockMenuInputDuringClipboardAnimation = true;
+
     [Header("Pause Menu Panels")]
     [Tooltip("Main pause panel shown after pressing Escape from gameplay.")]
     [SerializeField] private MenuPanel PauseMenuPanel = new MenuPanel();
@@ -433,6 +479,36 @@ public sealed class GameMenuFlowController : MonoBehaviour
     private bool IsDelayedButtonActionPending;
 
     /// <summary>
+    /// Coroutine currently animating the pause clipboard open or closed.
+    /// </summary>
+    private Coroutine PendingClipboardAnimation;
+
+    /// <summary>
+    /// True while the pause clipboard is being animated.
+    /// </summary>
+    private bool IsPauseClipboardAnimationPending;
+
+    /// <summary>
+    /// Captured shown anchored position for the animated clipboard root.
+    /// </summary>
+    private Vector2 ClipboardShownAnchoredPosition;
+
+    /// <summary>
+    /// True after the clipboard shown anchored position has been captured.
+    /// </summary>
+    private bool HasCapturedClipboardShownPosition;
+
+    /// <summary>
+    /// Captured shown local scale for the animated clipboard root.
+    /// </summary>
+    private Vector3 ClipboardShownLocalScale = Vector3.one;
+
+    /// <summary>
+    /// True after the clipboard shown local scale has been captured.
+    /// </summary>
+    private bool HasCapturedClipboardShownScale;
+
+    /// <summary>
     /// Currently selected save slot index, or -1 when no save slot is selected.
     /// </summary>
     private int SelectedSaveSlotIndex = -1;
@@ -480,6 +556,8 @@ public sealed class GameMenuFlowController : MonoBehaviour
         {
             SaveController = FindFirstObjectByType<GameSaveDebugController>();
         }
+
+        InitializeClipboardAnimationState();
 
         if (BindSlotButtonsAutomatically)
         {
@@ -538,6 +616,7 @@ public sealed class GameMenuFlowController : MonoBehaviour
         }
 
         CancelPendingDelayedButtonAction();
+        CancelPendingClipboardAnimation();
         CloseAllMenusAndExternalModals();
     }
 
@@ -556,6 +635,12 @@ public sealed class GameMenuFlowController : MonoBehaviour
     /// </summary>
 public void HandleBackOrPauseRequest()
     {
+        if (BlockMenuInputDuringClipboardAnimation && IsPauseClipboardAnimationPending)
+        {
+            Log("Ignored pause/cancel input while clipboard animation is running.");
+            return;
+        }
+
         CancelPendingDelayedButtonAction();
         PlayPauseCancelInputAudio();
 
@@ -578,6 +663,12 @@ public void HandleBackOrPauseRequest()
             return;
         }
 
+        if (BlockMenuInputDuringClipboardAnimation && IsPauseClipboardAnimationPending)
+        {
+            Log("Cannot open pause menu while clipboard animation is running.");
+            return;
+        }
+
         if (CurrentExternalModalPanel != null)
         {
             CloseCurrentExternalModalImmediate();
@@ -590,16 +681,19 @@ public void HandleBackOrPauseRequest()
             return;
         }
 
+        CancelPendingClipboardAnimation();
         CaptureTimeScaleIfNeeded(PauseWorldWhilePauseMenuOpen);
         RefreshSaveAndLoadSlotPanels();
         HideAllPauseMenuPanels();
         SetPauseMenuRootActive(true);
+        SetClipboardAtHiddenPosition();
 
         PanelStack.Clear();
         PanelStack.Add(PauseMenuPanel);
         PauseMenuPanel.Show();
         ApplyPanelSelection(PauseMenuPanel);
         ApplyGameplayHudVisibility(false);
+        PlayClipboardOpenAnimation();
         Log("Pause menu opened.");
     }
 
@@ -840,6 +934,8 @@ public void RequestMainMenu()
     /// </summary>
     public void CloseAllMenusAndExternalModals()
     {
+        CancelPendingClipboardAnimation();
+
         if (CurrentExternalModalPanel != null)
         {
             CurrentExternalModalPanel.HideVisualOnly();
@@ -848,13 +944,13 @@ public void RequestMainMenu()
 
         HideAllPauseMenuPanels();
         SetPauseMenuRootActive(false);
+        SetClipboardAtHiddenPosition();
         PanelStack.Clear();
         ReleaseModalFocusIfNoUiIsOpen();
         RestoreTimeScaleIfCaptured();
         ApplyGameplayHudVisibility(true);
         ClearSelectedObject();
     }
-
 
     /// <summary>
     /// Executes the global back or pause behaviour immediately without any button animation delay.
@@ -888,14 +984,15 @@ public void RequestMainMenu()
     private void ResumeGameImmediate()
     {
         CancelPendingDelayedButtonAction();
-        HideAllPauseMenuPanels();
-        SetPauseMenuRootActive(false);
-        PanelStack.Clear();
-        ReleaseModalFocusIfNoUiIsOpen();
-        RestoreTimeScaleIfCaptured();
-        ApplyGameplayHudVisibility(true);
-        ClearSelectedObject();
-        Log("Returned to gameplay.");
+
+        if (AnimatePauseMenuClipboard && ClipboardAnimationRoot != null && PauseMenuRoot != null && PauseMenuRoot.activeInHierarchy)
+        {
+            ClearSelectedObject();
+            PlayClipboardCloseAnimation(FinishResumeGameAfterClipboardClose);
+            return;
+        }
+
+        FinishResumeGameAfterClipboardClose();
     }
 
     /// <summary>
@@ -1017,6 +1114,12 @@ public void RequestMainMenu()
             return;
         }
 
+        if (BlockMenuInputDuringClipboardAnimation && IsPauseClipboardAnimationPending)
+        {
+            Log("Ignored button-driven action while clipboard animation is running: " + ActionName);
+            return;
+        }
+
         if (!DelayButtonDrivenNavigation || ButtonPressedNavigationDelay <= 0f || !gameObject.activeInHierarchy)
         {
             ClearSelectedObject();
@@ -1071,6 +1174,336 @@ public void RequestMainMenu()
         StopCoroutine(PendingDelayedButtonAction);
         PendingDelayedButtonAction = null;
         IsDelayedButtonActionPending = false;
+    }
+
+    /// <summary>
+    /// Initializes the clipboard animation cached position and optional hidden startup state.
+    /// </summary>
+    private void InitializeClipboardAnimationState()
+    {
+        if (ClipboardAnimationRoot == null)
+        {
+            return;
+        }
+
+        if (CaptureShownClipboardPositionOnAwake || !HasCapturedClipboardShownPosition)
+        {
+            CaptureClipboardShownPosition();
+        }
+
+        if (CaptureShownClipboardScaleOnAwake || !HasCapturedClipboardShownScale)
+        {
+            CaptureClipboardShownScale();
+        }
+
+        if (SetClipboardHiddenOnAwake)
+        {
+            SetClipboardAtHiddenPosition();
+        }
+    }
+
+    /// <summary>
+    /// Captures the current animated clipboard anchored position as the shown position.
+    /// </summary>
+    [ContextMenu("Capture Clipboard Shown Position")]
+    public void CaptureClipboardShownPosition()
+    {
+        if (ClipboardAnimationRoot == null)
+        {
+            return;
+        }
+
+        ClipboardShownAnchoredPosition = ClipboardAnimationRoot.anchoredPosition;
+        HasCapturedClipboardShownPosition = true;
+    }
+
+    /// <summary>
+    /// Captures the current animated clipboard local scale as the shown scale.
+    /// </summary>
+    [ContextMenu("Capture Clipboard Shown Scale")]
+    public void CaptureClipboardShownScale()
+    {
+        if (ClipboardAnimationRoot == null)
+        {
+            return;
+        }
+
+        ClipboardShownLocalScale = ClipboardAnimationRoot.localScale;
+        HasCapturedClipboardShownScale = true;
+    }
+
+    /// <summary>
+    /// Moves the animated clipboard root to its shown position.
+    /// </summary>
+    [ContextMenu("Set Clipboard Shown Position")]
+    public void SetClipboardAtShownPosition()
+    {
+        if (ClipboardAnimationRoot == null)
+        {
+            return;
+        }
+
+        EnsureClipboardShownPositionCaptured();
+        EnsureClipboardShownScaleCaptured();
+        ClipboardAnimationRoot.anchoredPosition = ClipboardShownAnchoredPosition;
+
+        if (AnimateClipboardScale || ForceShownScaleOnOpenComplete)
+        {
+            ClipboardAnimationRoot.localScale = ClipboardShownLocalScale;
+        }
+    }
+
+    /// <summary>
+    /// Moves the animated clipboard root to its hidden position.
+    /// </summary>
+    [ContextMenu("Set Clipboard Hidden Position")]
+    public void SetClipboardAtHiddenPosition()
+    {
+        if (ClipboardAnimationRoot == null)
+        {
+            return;
+        }
+
+        EnsureClipboardShownPositionCaptured();
+        EnsureClipboardShownScaleCaptured();
+        ClipboardAnimationRoot.anchoredPosition = GetClipboardHiddenAnchoredPosition();
+
+        if (AnimateClipboardScale || ForceHiddenScaleOnCloseComplete)
+        {
+            ClipboardAnimationRoot.localScale = ClipboardHiddenLocalScale;
+        }
+    }
+
+    /// <summary>
+    /// Plays the clipboard opening animation if enabled.
+    /// </summary>
+    private void PlayClipboardOpenAnimation()
+    {
+        if (!AnimatePauseMenuClipboard || ClipboardAnimationRoot == null)
+        {
+            SetClipboardAtShownPosition();
+            return;
+        }
+
+        EnsureClipboardShownPositionCaptured();
+        EnsureClipboardShownScaleCaptured();
+        Vector2 HiddenPosition = GetClipboardHiddenAnchoredPosition();
+        Vector2 ShownPosition = ClipboardShownAnchoredPosition;
+        Vector3 HiddenScale = ClipboardHiddenLocalScale;
+        Vector3 ShownScale = ClipboardShownLocalScale;
+
+        StartClipboardAnimation(HiddenPosition, ShownPosition, HiddenScale, ShownScale, ClipboardOpenDuration, ClipboardOpenCurve, null, "Open");
+    }
+
+    /// <summary>
+    /// Plays the clipboard closing animation if enabled.
+    /// </summary>
+    /// <param name="OnComplete">Callback invoked after the close animation completes.</param>
+    private void PlayClipboardCloseAnimation(Action OnComplete)
+    {
+        if (!AnimatePauseMenuClipboard || ClipboardAnimationRoot == null)
+        {
+            SetClipboardAtHiddenPosition();
+            OnComplete?.Invoke();
+            return;
+        }
+
+        EnsureClipboardShownPositionCaptured();
+        EnsureClipboardShownScaleCaptured();
+        Vector2 ShownPosition = ClipboardAnimationRoot.anchoredPosition;
+        Vector2 HiddenPosition = GetClipboardHiddenAnchoredPosition();
+        Vector3 ShownScale = ClipboardAnimationRoot.localScale;
+        Vector3 HiddenScale = ClipboardHiddenLocalScale;
+
+        StartClipboardAnimation(ShownPosition, HiddenPosition, ShownScale, HiddenScale, ClipboardCloseDuration, ClipboardCloseCurve, OnComplete, "Close");
+    }
+
+    /// <summary>
+    /// Starts a clipboard anchored-position animation.
+    /// </summary>
+    /// <param name="FromPosition">Start anchored position.</param>
+    /// <param name="ToPosition">Target anchored position.</param>
+    /// <param name="Duration">Animation duration in unscaled seconds.</param>
+    /// <param name="Curve">Optional animation curve.</param>
+    /// <param name="OnComplete">Callback invoked after the animation completes.</param>
+    /// <param name="AnimationName">Debug animation name.</param>
+    private void StartClipboardAnimation(
+        Vector2 FromPosition,
+        Vector2 ToPosition,
+        Vector3 FromScale,
+        Vector3 ToScale,
+        float Duration,
+        AnimationCurve Curve,
+        Action OnComplete,
+        string AnimationName)
+    {
+        CancelPendingClipboardAnimation();
+
+        if (ClipboardAnimationRoot == null)
+        {
+            OnComplete?.Invoke();
+            return;
+        }
+
+        if (Duration <= 0f || !gameObject.activeInHierarchy)
+        {
+            ClipboardAnimationRoot.anchoredPosition = ToPosition;
+
+            if (AnimateClipboardScale)
+            {
+                ClipboardAnimationRoot.localScale = ToScale;
+            }
+
+            OnComplete?.Invoke();
+            return;
+        }
+
+        PendingClipboardAnimation = StartCoroutine(PlayClipboardAnimationRoutine(
+            FromPosition,
+            ToPosition,
+            FromScale,
+            ToScale,
+            Duration,
+            Curve,
+            OnComplete,
+            AnimationName));
+    }
+
+    /// <summary>
+    /// Animates the clipboard root using unscaled time so it still works while gameplay is paused.
+    /// </summary>
+    /// <param name="FromPosition">Start anchored position.</param>
+    /// <param name="ToPosition">Target anchored position.</param>
+    /// <param name="Duration">Animation duration in unscaled seconds.</param>
+    /// <param name="Curve">Optional animation curve.</param>
+    /// <param name="OnComplete">Callback invoked after the animation completes.</param>
+    /// <param name="AnimationName">Debug animation name.</param>
+    private IEnumerator PlayClipboardAnimationRoutine(
+        Vector2 FromPosition,
+        Vector2 ToPosition,
+        Vector3 FromScale,
+        Vector3 ToScale,
+        float Duration,
+        AnimationCurve Curve,
+        Action OnComplete,
+        string AnimationName)
+    {
+        IsPauseClipboardAnimationPending = true;
+
+        if (ClipboardAnimationRoot != null)
+        {
+            ClipboardAnimationRoot.anchoredPosition = FromPosition;
+
+            if (AnimateClipboardScale)
+            {
+                ClipboardAnimationRoot.localScale = FromScale;
+            }
+        }
+
+        float ElapsedTime = 0f;
+        float SafeDuration = Mathf.Max(0.0001f, Duration);
+
+        while (ElapsedTime < SafeDuration)
+        {
+            ElapsedTime += Time.unscaledDeltaTime;
+            float NormalizedTime = Mathf.Clamp01(ElapsedTime / SafeDuration);
+            float EvaluatedTime = Curve != null ? Curve.Evaluate(NormalizedTime) : NormalizedTime;
+
+            if (ClipboardAnimationRoot != null)
+            {
+                ClipboardAnimationRoot.anchoredPosition = Vector2.LerpUnclamped(FromPosition, ToPosition, EvaluatedTime);
+
+                if (AnimateClipboardScale)
+                {
+                    ClipboardAnimationRoot.localScale = Vector3.LerpUnclamped(FromScale, ToScale, EvaluatedTime);
+                }
+            }
+
+            yield return null;
+        }
+
+        if (ClipboardAnimationRoot != null)
+        {
+            ClipboardAnimationRoot.anchoredPosition = ToPosition;
+
+            if (AnimateClipboardScale)
+            {
+                ClipboardAnimationRoot.localScale = ToScale;
+            }
+        }
+
+        PendingClipboardAnimation = null;
+        IsPauseClipboardAnimationPending = false;
+        OnComplete?.Invoke();
+        Log("Clipboard animation completed: " + AnimationName);
+    }
+
+    /// <summary>
+    /// Cancels any pending clipboard animation without invoking its completion callback.
+    /// </summary>
+    private void CancelPendingClipboardAnimation()
+    {
+        if (PendingClipboardAnimation == null)
+        {
+            IsPauseClipboardAnimationPending = false;
+            return;
+        }
+
+        StopCoroutine(PendingClipboardAnimation);
+        PendingClipboardAnimation = null;
+        IsPauseClipboardAnimationPending = false;
+    }
+
+    /// <summary>
+    /// Finishes closing the pause menu after the clipboard has animated away.
+    /// </summary>
+    private void FinishResumeGameAfterClipboardClose()
+    {
+        HideAllPauseMenuPanels();
+        SetPauseMenuRootActive(false);
+        SetClipboardAtHiddenPosition();
+        PanelStack.Clear();
+        ReleaseModalFocusIfNoUiIsOpen();
+        RestoreTimeScaleIfCaptured();
+        ApplyGameplayHudVisibility(true);
+        ClearSelectedObject();
+        Log("Returned to gameplay.");
+    }
+
+    /// <summary>
+    /// Ensures the shown position has been captured before animation math is used.
+    /// </summary>
+    private void EnsureClipboardShownPositionCaptured()
+    {
+        if (HasCapturedClipboardShownPosition)
+        {
+            return;
+        }
+
+        CaptureClipboardShownPosition();
+    }
+
+    /// <summary>
+    /// Ensures the shown local scale has been captured before animation math is used.
+    /// </summary>
+    private void EnsureClipboardShownScaleCaptured()
+    {
+        if (HasCapturedClipboardShownScale)
+        {
+            return;
+        }
+
+        CaptureClipboardShownScale();
+    }
+
+    /// <summary>
+    /// Gets the hidden anchored position derived from the captured shown position and vertical offset.
+    /// </summary>
+    /// <returns>Hidden anchored position.</returns>
+    private Vector2 GetClipboardHiddenAnchoredPosition()
+    {
+        EnsureClipboardShownPositionCaptured();
+        return ClipboardShownAnchoredPosition + new Vector2(0f, ClipboardHiddenVerticalOffset);
     }
 
     /// <summary>

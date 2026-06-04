@@ -29,8 +29,8 @@ MonoBehaviour:
   BaseResearchValueMax: 1
   PropertyRanges:
   - PropertyType: 1
-    MinValue: 0.85
-    MaxValue: 1.1
+    MinValue: 3
+    MaxValue: 10
     AffectedByUpgrades: 1
   - PropertyType: 2
     MinValue: 0.9
