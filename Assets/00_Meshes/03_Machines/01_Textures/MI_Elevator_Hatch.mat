@@ -67,7 +67,7 @@ Material:
     - _DstBlendAlpha: 0
     - _Em_Control: 3.61
     - _Emissive: 1
-    - _M_Control: 1
+    - _M_Control: 0.52
     - _N_Control: 1
     - _QueueControl: 0
     - _QueueOffset: 0
@@ -76,6 +76,7 @@ Material:
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
+    - _Tint_Power: 1
     - _UV_Rotation: 0
     - _WorkflowMode: 1
     - _ZTest: 4
