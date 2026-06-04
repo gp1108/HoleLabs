@@ -3,8 +3,8 @@ using UnityEngine;
 /// <summary>
 /// Converts generic lever snap indices into elevator motor commands.
 /// The same binder can control either vertical travel or self rotation.
-/// It also forces neutral when the elevator is overweighted or when no weight actor
-/// remains inside the elevator trigger.
+/// It also forces neutral when the elevator is overweighted, when no weight actor
+/// remains inside the elevator trigger, or when the selected subsystem is locked by progression.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class ElevatorLeverStateBinder : MonoBehaviour
@@ -42,6 +42,10 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
     [Tooltip("Snap index mapped to the positive direction. Vertical: up. Rotation: right.")]
     [SerializeField] private int PositiveIndex = 2;
 
+    [Header("Progression Locks")]
+    [Tooltip("If true, rotation levers are locked to neutral until the elevator motor reports rotation as unlocked.")]
+    [SerializeField] private bool LockRotationLeverUntilUnlocked = true;
+
     [Header("Debug")]
     [Tooltip("Logs received snap indices and forced neutral states.")]
     [SerializeField] private bool DebugLogs = false;
@@ -50,6 +54,11 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
     /// Whether the lever was forced to neutral during the previous frame.
     /// </summary>
     private bool WasForcedNeutralLastFrame;
+
+    /// <summary>
+    /// Last force-neutral reason logged by this binder.
+    /// </summary>
+    private string LastForceNeutralReason;
 
     /// <summary>
     /// Enforces neutral lever state whenever the elevator cannot currently operate.
@@ -61,27 +70,25 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
             return;
         }
 
-        bool MustForceNeutral =
-            ElevatorWeightSystem.IsElevatorOverweighted() ||
-            !ElevatorWeightSystem.HasAnyWeightActorInside();
+        bool MustForceNeutral = ShouldForceNeutral(out string ForceReason);
 
         if (MustForceNeutral)
         {
             SnapLever.SetExternalLock(true, NeutralIndex);
             ApplyNeutralStateToMotor();
 
-            if (!WasForcedNeutralLastFrame)
+            if (!WasForcedNeutralLastFrame || LastForceNeutralReason != ForceReason)
             {
                 SnapLever.SetSnapIndexWithoutNotify(NeutralIndex);
                 WasForcedNeutralLastFrame = true;
+                LastForceNeutralReason = ForceReason;
 
                 if (DebugLogs)
                 {
                     Debug.Log(
                         "[ElevatorLeverStateBinder] Lever forced to neutral. " +
                         "Mode=" + ControlMode +
-                        " | Overweighted=" + ElevatorWeightSystem.IsElevatorOverweighted() +
-                        " | HasActorInside=" + ElevatorWeightSystem.HasAnyWeightActorInside(),
+                        " | Reason=" + ForceReason,
                         this);
                 }
             }
@@ -91,6 +98,7 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
 
         SnapLever.SetExternalLock(false, NeutralIndex);
         WasForcedNeutralLastFrame = false;
+        LastForceNeutralReason = string.Empty;
     }
 
     /// <summary>
@@ -104,11 +112,7 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
             return;
         }
 
-        bool MustForceNeutral =
-            ElevatorWeightSystem.IsElevatorOverweighted() ||
-            !ElevatorWeightSystem.HasAnyWeightActorInside();
-
-        if (MustForceNeutral)
+        if (ShouldForceNeutral(out _))
         {
             SnapLever.SetSnapIndexWithoutNotify(NeutralIndex);
             ApplyNeutralStateToMotor();
@@ -128,6 +132,35 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
         }
 
         ApplyNeutralStateToMotor();
+    }
+
+    /// <summary>
+    /// Returns whether the lever must be forced to neutral because the controlled subsystem cannot operate.
+    /// </summary>
+    /// <param name="Reason">Human-readable reason used for debug logs.</param>
+    /// <returns>True when the lever must be locked to neutral.</returns>
+    private bool ShouldForceNeutral(out string Reason)
+    {
+        if (ElevatorWeightSystem.IsElevatorOverweighted())
+        {
+            Reason = "Overweighted";
+            return true;
+        }
+
+        if (!ElevatorWeightSystem.HasAnyWeightActorInside())
+        {
+            Reason = "NoWeightActorInside";
+            return true;
+        }
+
+        if (ControlMode == LeverControlMode.Rotation && LockRotationLeverUntilUnlocked && !ElevatorPhysicalMotor.GetIsRotationUnlocked())
+        {
+            Reason = "RotationLocked";
+            return true;
+        }
+
+        Reason = string.Empty;
+        return false;
     }
 
     /// <summary>

@@ -29,6 +29,24 @@ public sealed class SnapLever : MonoBehaviour
     }
 
     /// <summary>
+    /// Defines how drag input is converted into lever degrees.
+    /// Mouse delta input is already frame-relative and must not be multiplied by Time.deltaTime directly.
+    /// Stick input is continuous and must be time-scaled.
+    /// </summary>
+    public enum DragTimingMode
+    {
+        /// <summary>
+        /// Use this for mouse delta. Sensitivity is normalized against a reference frame rate to preserve the previous 60 FPS feel.
+        /// </summary>
+        FrameDelta,
+
+        /// <summary>
+        /// Use this for gamepad stick or any continuous input source.
+        /// </summary>
+        TimeScaled
+    }
+
+    /// <summary>
     /// Invoked when the snapped state changes.
     /// </summary>
     [Serializable]
@@ -50,8 +68,14 @@ public sealed class SnapLever : MonoBehaviour
     [Tooltip("Mouse delta source used to drag the lever.")]
     [SerializeField] private DragInputMode DragMode = DragInputMode.VerticalMouse;
 
-    [Tooltip("Degrees applied per mouse input unit while dragging.")]
+    [Tooltip("Degrees applied per input unit while dragging.")]
     [SerializeField] private float DragSensitivity = 160f;
+
+    [Tooltip("How drag input is converted into rotation. Use FrameDelta for mouse delta and TimeScaled for gamepad stick input.")]
+    [SerializeField] private DragTimingMode DragTiming = DragTimingMode.FrameDelta;
+
+    [Tooltip("Reference frame rate used by FrameDelta drag mode to preserve the previous 60 FPS lever feel while removing frame-rate dependency.")]
+    [SerializeField] private float FrameDeltaReferenceFrameRate = 60f;
 
     [Tooltip("Interpolation speed used when returning to the snapped target.")]
     [SerializeField] private float SnapSpeed = 720f;
@@ -144,6 +168,7 @@ public sealed class SnapLever : MonoBehaviour
     private void OnValidate()
     {
         DragSensitivity = Mathf.Max(0f, DragSensitivity);
+        FrameDeltaReferenceFrameRate = Mathf.Max(1f, FrameDeltaReferenceFrameRate);
         SnapSpeed = Mathf.Max(0f, SnapSpeed);
         InteractionDistance = Mathf.Max(0.1f, InteractionDistance);
         InteractionRadius = Mathf.Max(0f, InteractionRadius);
@@ -274,7 +299,7 @@ public sealed class SnapLever : MonoBehaviour
             InputValue *= -1f;
         }
 
-        float DeltaAngle = InputValue * DragSensitivity * Time.deltaTime;
+        float DeltaAngle = InputValue * DragSensitivity * GetDragTimingMultiplier();
 
         CurrentAngle = Mathf.Clamp(CurrentAngle + DeltaAngle, MinAngle, MaxAngle);
         ApplyAngle(CurrentAngle);
@@ -293,6 +318,20 @@ public sealed class SnapLever : MonoBehaviour
 
             OnSnapChanged.Invoke(CurrentSnapIndex);
         }
+    }
+
+    /// <summary>
+    /// Gets the multiplier used to convert drag input into degrees for the current timing mode.
+    /// </summary>
+    /// <returns>Input-to-angle multiplier.</returns>
+    private float GetDragTimingMultiplier()
+    {
+        if (DragTiming == DragTimingMode.TimeScaled)
+        {
+            return Time.deltaTime;
+        }
+
+        return 1f / Mathf.Max(1f, FrameDeltaReferenceFrameRate);
     }
 
     /// <summary>
