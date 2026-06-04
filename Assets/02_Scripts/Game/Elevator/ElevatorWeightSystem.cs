@@ -4,11 +4,9 @@ using UnityEngine;
 
 /// <summary>
 /// Authoritative elevator weight evaluator.
-/// Free carryables count while physically inside the trigger.
-/// Held or magnetized carryables count as player-transferred weight
-/// while the player remains inside the elevator.
-/// Upgrade integration is resolved through UpgradeManager without coupling
-/// purchasing logic to this system.
+/// The system tracks live overlapping colliders and resolves unique weight sources every physics step.
+/// This prevents stale world items from accumulating weight when they are picked into the hotbar,
+/// destroyed, pooled or hidden by scene persistence without a reliable trigger exit event.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Collider))]
@@ -41,14 +39,26 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     [SerializeField] private bool DebugLogs = false;
 
     /// <summary>
-    /// Carryables currently overlapping the elevator trigger.
+    /// Live colliders currently believed to overlap the elevator trigger.
+    /// This is intentionally collider-based instead of provider-based so disabled, destroyed or replaced items
+    /// can be cleaned safely before resolving unique weight contributors.
     /// </summary>
-    private readonly HashSet<PhysicsCarryable> OverlappingCarryables = new HashSet<PhysicsCarryable>();
+    private readonly HashSet<Collider> OverlappingColliders = new HashSet<Collider>();
 
     /// <summary>
-    /// Player weight actors currently overlapping the elevator trigger.
+    /// Unique carryables resolved from the current live overlapping collider set.
     /// </summary>
-    private readonly HashSet<ElevatorWeightActor> OverlappingActors = new HashSet<ElevatorWeightActor>();
+    private readonly HashSet<PhysicsCarryable> CurrentCarryablesInside = new HashSet<PhysicsCarryable>();
+
+    /// <summary>
+    /// Unique weight actors resolved from the current live overlapping collider set.
+    /// </summary>
+    private readonly HashSet<ElevatorWeightActor> CurrentActorsInside = new HashSet<ElevatorWeightActor>();
+
+    /// <summary>
+    /// Unique direct weight providers resolved from live colliders that do not belong to a PhysicsCarryable.
+    /// </summary>
+    private readonly HashSet<IWeightProvider> CurrentDirectWeightProvidersInside = new HashSet<IWeightProvider>();
 
     /// <summary>
     /// Cached trigger collider.
@@ -60,8 +70,9 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// </summary>
     public bool HasAnyWeightActorInside()
     {
-        CleanupNullReferences();
-        return OverlappingActors.Count > 0;
+        CleanupInvalidOverlappingColliders();
+        RefreshResolvedOverlapSets();
+        return CurrentActorsInside.Count > 0;
     }
 
     /// <summary>
@@ -89,7 +100,7 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Validates trigger setup.
+    /// Validates trigger setup and resolves optional dependencies.
     /// </summary>
     private void Awake()
     {
@@ -107,11 +118,22 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Initializes the UI.
+    /// Initializes the UI with the first evaluated weight state.
     /// </summary>
     private void Start()
     {
         RefreshWeight();
+    }
+
+    /// <summary>
+    /// Clears transient overlap state when this evaluator is disabled.
+    /// </summary>
+    private void OnDisable()
+    {
+        OverlappingColliders.Clear();
+        CurrentCarryablesInside.Clear();
+        CurrentActorsInside.Clear();
+        CurrentDirectWeightProvidersInside.Clear();
     }
 
     /// <summary>
@@ -123,70 +145,67 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Registers overlapping actors and carryables.
+    /// Registers a collider that entered the elevator trigger.
     /// </summary>
+    /// <param name="Other">Collider that entered the elevator trigger.</param>
     private void OnTriggerEnter(Collider Other)
     {
-        RegisterOverlap(Other);
+        RegisterCollider(Other);
     }
 
     /// <summary>
     /// Keeps overlap registration stable on moving platform edge cases.
     /// </summary>
+    /// <param name="Other">Collider that stayed inside the elevator trigger.</param>
     private void OnTriggerStay(Collider Other)
     {
-        RegisterOverlap(Other);
+        RegisterCollider(Other);
     }
 
     /// <summary>
-    /// Removes overlapping actors and carryables when they leave the trigger.
+    /// Removes a collider that exited the elevator trigger.
     /// </summary>
+    /// <param name="Other">Collider that exited the elevator trigger.</param>
     private void OnTriggerExit(Collider Other)
     {
-        PhysicsCarryable Carryable = ResolveCarryable(Other);
-        if (Carryable != null)
+        if (Other == null)
         {
-            OverlappingCarryables.Remove(Carryable);
+            return;
         }
 
-        ElevatorWeightActor Actor = ResolveWeightActor(Other);
-        if (Actor != null)
-        {
-            OverlappingActors.Remove(Actor);
-        }
+        OverlappingColliders.Remove(Other);
     }
 
     /// <summary>
-    /// Registers a carryable or actor found in the provided collider hierarchy.
+    /// Registers a currently overlapping collider if it is still a valid live collider.
     /// </summary>
-    private void RegisterOverlap(Collider Other)
+    /// <param name="Other">Collider currently overlapping the elevator trigger.</param>
+    private void RegisterCollider(Collider Other)
     {
-        PhysicsCarryable Carryable = ResolveCarryable(Other);
-        if (Carryable != null)
+        if (!IsColliderValidForWeightEvaluation(Other))
         {
-            OverlappingCarryables.Add(Carryable);
+            return;
         }
 
-        ElevatorWeightActor Actor = ResolveWeightActor(Other);
-        if (Actor != null)
-        {
-            OverlappingActors.Add(Actor);
-        }
+        OverlappingColliders.Add(Other);
     }
 
     /// <summary>
-    /// Recomputes the full authoritative weight.
+    /// Recomputes the full authoritative weight from live unique weight contributors.
     /// </summary>
     private void RefreshWeight()
     {
-        CleanupNullReferences();
+        CleanupInvalidOverlappingColliders();
+        RefreshResolvedOverlapSets();
 
         RuntimeMaxAllowedWeight = ResolveMaxAllowedWeight();
 
         float FreeCarryableWeight = EvaluateFreeCarryablesInsideWeight();
+        float DirectWeightedObjectWeight = EvaluateDirectWeightedObjectsInsideWeight();
         float ActorWeight = EvaluateActorsInsideWeight();
+        float TransferredCarryableWeight = CurrentActorsInside.Count > 0 ? EvaluateTransferredCarryableWeight() : 0f;
 
-        CurrentWeight = Mathf.Max(0f, FreeCarryableWeight + ActorWeight);
+        CurrentWeight = Mathf.Max(0f, FreeCarryableWeight + DirectWeightedObjectWeight + ActorWeight + TransferredCarryableWeight);
         IsOverweighted = CurrentWeight > RuntimeMaxAllowedWeight;
 
         if (DebugLogs)
@@ -194,7 +213,10 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
             Debug.Log(
                 "[ElevatorWeightSystem] CurrentWeight=" + CurrentWeight.ToString("F2") +
                 " | FreeCarryables=" + FreeCarryableWeight.ToString("F2") +
+                " | DirectWeightedObjects=" + DirectWeightedObjectWeight.ToString("F2") +
                 " | ActorWeight=" + ActorWeight.ToString("F2") +
+                " | TransferredCarryables=" + TransferredCarryableWeight.ToString("F2") +
+                " | LiveColliders=" + OverlappingColliders.Count +
                 " | MaxAllowed=" + RuntimeMaxAllowedWeight.ToString("F2"),
                 this);
         }
@@ -203,13 +225,50 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
+    /// Resolves unique current actors, carryables and direct providers from the live collider set.
+    /// </summary>
+    private void RefreshResolvedOverlapSets()
+    {
+        CurrentCarryablesInside.Clear();
+        CurrentActorsInside.Clear();
+        CurrentDirectWeightProvidersInside.Clear();
+
+        foreach (Collider Collider in OverlappingColliders)
+        {
+            if (!IsColliderValidForWeightEvaluation(Collider))
+            {
+                continue;
+            }
+
+            PhysicsCarryable Carryable = ResolveCarryable(Collider);
+            if (Carryable != null)
+            {
+                CurrentCarryablesInside.Add(Carryable);
+            }
+
+            ElevatorWeightActor Actor = ResolveWeightActor(Collider);
+            if (Actor != null)
+            {
+                CurrentActorsInside.Add(Actor);
+            }
+
+            IWeightProvider DirectWeightProvider = ResolveDirectWeightProvider(Collider, Carryable);
+            if (IsWeightProviderValid(DirectWeightProvider))
+            {
+                CurrentDirectWeightProvidersInside.Add(DirectWeightProvider);
+            }
+        }
+    }
+
+    /// <summary>
     /// Sums all carryables physically inside the elevator that are not currently held or magnetized.
     /// </summary>
+    /// <returns>Total free carryable weight inside the elevator.</returns>
     private float EvaluateFreeCarryablesInsideWeight()
     {
         float TotalWeight = 0f;
 
-        foreach (PhysicsCarryable Carryable in OverlappingCarryables)
+        foreach (PhysicsCarryable Carryable in CurrentCarryablesInside)
         {
             if (Carryable == null)
             {
@@ -228,18 +287,36 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Sums base player weight plus every held or magnetized carryable while the player is inside the elevator.
+    /// Sums every direct weighted object inside the elevator that is not represented by a PhysicsCarryable.
     /// </summary>
-    private float EvaluateActorsInsideWeight()
+    /// <returns>Total direct weighted object weight inside the elevator.</returns>
+    private float EvaluateDirectWeightedObjectsInsideWeight()
     {
-        if (OverlappingActors.Count == 0)
-        {
-            return 0f;
-        }
-
         float TotalWeight = 0f;
 
-        foreach (ElevatorWeightActor Actor in OverlappingActors)
+        foreach (IWeightProvider WeightProvider in CurrentDirectWeightProvidersInside)
+        {
+            if (!IsWeightProviderValid(WeightProvider))
+            {
+                continue;
+            }
+
+            TotalWeight += Mathf.Max(0f, WeightProvider.GetWeight());
+        }
+
+        return TotalWeight;
+    }
+
+    /// <summary>
+    /// Sums every actor currently inside the elevator.
+    /// Actor weight includes body weight and optional hotbar item weight.
+    /// </summary>
+    /// <returns>Total actor weight inside the elevator.</returns>
+    private float EvaluateActorsInsideWeight()
+    {
+        float TotalWeight = 0f;
+
+        foreach (ElevatorWeightActor Actor in CurrentActorsInside)
         {
             if (Actor == null)
             {
@@ -247,7 +324,6 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
             }
 
             TotalWeight += Actor.GetBaseWeight();
-            TotalWeight += EvaluateTransferredCarryableWeight();
         }
 
         return TotalWeight;
@@ -257,6 +333,7 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// Sums every carryable currently controlled by the player through hold or magnet.
     /// Because only one player can own these states, explicit ownership tracking is not required.
     /// </summary>
+    /// <returns>Total transferred carryable weight.</returns>
     private float EvaluateTransferredCarryableWeight()
     {
         float TotalWeight = 0f;
@@ -282,8 +359,11 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Resolves the gameplay weight of a carryable from its ore item data.
+    /// Resolves the gameplay weight of a carryable from its highest-priority weight provider.
+    /// Priority order is explicit PhysicsWeight, ore pickup data, world item data, then any custom provider.
     /// </summary>
+    /// <param name="Carryable">Carryable being evaluated.</param>
+    /// <returns>Resolved non-negative carryable weight.</returns>
     private float GetCarryableWeight(PhysicsCarryable Carryable)
     {
         if (Carryable == null)
@@ -291,30 +371,134 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
             return 0f;
         }
 
-        OrePickup OrePickupComponent = Carryable.GetComponent<OrePickup>();
-        if (OrePickupComponent == null)
-        {
-            OrePickupComponent = Carryable.GetComponentInChildren<OrePickup>();
-        }
+        IWeightProvider WeightProvider = ResolveWeightProvider(Carryable);
 
-        if (OrePickupComponent == null)
+        if (WeightProvider == null)
         {
             return 0f;
         }
 
-        OreItemData OreData = OrePickupComponent.GetOreItemData();
-        if (OreData == null)
+        return Mathf.Max(0f, WeightProvider.GetWeight());
+    }
+
+    /// <summary>
+    /// Resolves the authoritative weight provider for a carryable hierarchy.
+    /// </summary>
+    /// <param name="Carryable">Carryable being evaluated.</param>
+    /// <returns>Resolved weight provider, or null when the carryable has no weight.</returns>
+    private IWeightProvider ResolveWeightProvider(PhysicsCarryable Carryable)
+    {
+        if (Carryable == null)
         {
-            Debug.LogWarning("Carryable has no OreItemData assigned.", Carryable);
-            return 0f;
+            return null;
         }
 
-        return Mathf.Max(0f, OreData.GetWeightValue());
+        PhysicsWeight ExplicitWeight = Carryable.GetComponent<PhysicsWeight>();
+        if (ExplicitWeight == null)
+        {
+            ExplicitWeight = Carryable.GetComponentInChildren<PhysicsWeight>(true);
+        }
+
+        if (ExplicitWeight != null)
+        {
+            return ExplicitWeight;
+        }
+
+        OrePickup OrePickup = Carryable.GetComponent<OrePickup>();
+        if (OrePickup == null)
+        {
+            OrePickup = Carryable.GetComponentInChildren<OrePickup>(true);
+        }
+
+        if (OrePickup != null)
+        {
+            return OrePickup;
+        }
+
+        WorldItem WorldItem = Carryable.GetComponent<WorldItem>();
+        if (WorldItem == null)
+        {
+            WorldItem = Carryable.GetComponentInChildren<WorldItem>(true);
+        }
+
+        if (WorldItem != null)
+        {
+            return WorldItem;
+        }
+
+        MonoBehaviour[] Behaviours = Carryable.GetComponentsInChildren<MonoBehaviour>(true);
+
+        for (int Index = 0; Index < Behaviours.Length; Index++)
+        {
+            if (Behaviours[Index] is IWeightProvider Provider)
+            {
+                return Provider;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves a direct weighted object from an overlapping collider.
+    /// Direct weighted objects are only used when the collider does not belong to a PhysicsCarryable,
+    /// preventing double counting for ore pickups and fully carryable props.
+    /// </summary>
+    /// <param name="Other">Collider overlapping the elevator trigger.</param>
+    /// <param name="ResolvedCarryable">Carryable already resolved for the same collider.</param>
+    /// <returns>Resolved direct weight provider, or null when none is found.</returns>
+    private IWeightProvider ResolveDirectWeightProvider(Collider Other, PhysicsCarryable ResolvedCarryable)
+    {
+        if (Other == null || ResolvedCarryable != null)
+        {
+            return null;
+        }
+
+        PhysicsWeight ExplicitWeight = Other.GetComponentInParent<PhysicsWeight>();
+        if (ExplicitWeight != null)
+        {
+            return ExplicitWeight;
+        }
+
+        OrePickup OrePickup = Other.GetComponentInParent<OrePickup>();
+        if (OrePickup != null)
+        {
+            return OrePickup;
+        }
+
+        WorldItem WorldItem = Other.GetComponentInParent<WorldItem>();
+        if (WorldItem != null)
+        {
+            return WorldItem;
+        }
+
+        MonoBehaviour[] ParentBehaviours = Other.GetComponentsInParent<MonoBehaviour>(true);
+
+        for (int Index = 0; Index < ParentBehaviours.Length; Index++)
+        {
+            if (ParentBehaviours[Index] is IWeightProvider Provider)
+            {
+                return Provider;
+            }
+        }
+
+        MonoBehaviour[] ChildBehaviours = Other.GetComponentsInChildren<MonoBehaviour>(true);
+
+        for (int Index = 0; Index < ChildBehaviours.Length; Index++)
+        {
+            if (ChildBehaviours[Index] is IWeightProvider Provider)
+            {
+                return Provider;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
     /// Resolves the final maximum allowed weight after upgrades.
     /// </summary>
+    /// <returns>Final maximum allowed weight.</returns>
     private float ResolveMaxAllowedWeight()
     {
         float BaseValue = Mathf.Max(0f, BaseMaxAllowedWeight);
@@ -331,12 +515,83 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     }
 
     /// <summary>
-    /// Removes null references from tracked sets.
+    /// Removes invalid, disabled or inactive colliders from the live overlap set.
+    /// This is required because picked world items can be destroyed or hidden without receiving OnTriggerExit.
     /// </summary>
-    private void CleanupNullReferences()
+    private void CleanupInvalidOverlappingColliders()
     {
-        OverlappingCarryables.RemoveWhere(Item => Item == null);
-        OverlappingActors.RemoveWhere(Item => Item == null);
+        List<Collider> CollidersToRemove = null;
+
+        foreach (Collider Collider in OverlappingColliders)
+        {
+            if (IsColliderValidForWeightEvaluation(Collider))
+            {
+                continue;
+            }
+
+            CollidersToRemove ??= new List<Collider>();
+            CollidersToRemove.Add(Collider);
+        }
+
+        if (CollidersToRemove == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < CollidersToRemove.Count; Index++)
+        {
+            OverlappingColliders.Remove(CollidersToRemove[Index]);
+        }
+    }
+
+    /// <summary>
+    /// Returns whether a collider can still contribute to weight evaluation.
+    /// </summary>
+    /// <param name="Collider">Collider to validate.</param>
+    /// <returns>True when the collider is alive, enabled and active in hierarchy.</returns>
+    private bool IsColliderValidForWeightEvaluation(Collider Collider)
+    {
+        if (Collider == null)
+        {
+            return false;
+        }
+
+        if (!Collider.enabled)
+        {
+            return false;
+        }
+
+        if (!Collider.gameObject.activeInHierarchy)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns whether the weight provider reference still points to a valid active runtime object.
+    /// </summary>
+    /// <param name="WeightProvider">Weight provider to validate.</param>
+    /// <returns>True when the provider is valid.</returns>
+    private bool IsWeightProviderValid(IWeightProvider WeightProvider)
+    {
+        if (WeightProvider == null)
+        {
+            return false;
+        }
+
+        if (WeightProvider is Component Component)
+        {
+            return Component != null && Component.gameObject.activeInHierarchy;
+        }
+
+        if (WeightProvider is Object UnityObject)
+        {
+            return UnityObject != null;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -355,6 +610,8 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// <summary>
     /// Resolves the root PhysicsCarryable from an overlapping collider.
     /// </summary>
+    /// <param name="Other">Collider overlapping the elevator trigger.</param>
+    /// <returns>Resolved carryable, or null when none exists.</returns>
     private PhysicsCarryable ResolveCarryable(Collider Other)
     {
         if (Other == null)
@@ -368,6 +625,8 @@ public sealed class ElevatorWeightSystem : MonoBehaviour
     /// <summary>
     /// Resolves the player weight actor from an overlapping collider.
     /// </summary>
+    /// <param name="Other">Collider overlapping the elevator trigger.</param>
+    /// <returns>Resolved weight actor, or null when none exists.</returns>
     private ElevatorWeightActor ResolveWeightActor(Collider Other)
     {
         if (Other == null)

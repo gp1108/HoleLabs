@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [CreateAssetMenu(fileName = "ItemDefinition_", menuName = "Game/Items/Item Definition")]
 public class ItemDefinition : ScriptableObject
@@ -30,6 +31,10 @@ public class ItemDefinition : ScriptableObject
     [Header("Runtime Defaults")]
     [Tooltip("Default durability assigned when a new runtime instance is created.")]
     [SerializeField] private float DefaultDurability = 100f;
+
+    [Tooltip("Base gameplay weight contributed by one runtime instance of this item when it is physically carried, dropped or stored in the player's hotbar.")]
+    [FormerlySerializedAs("DefaultWeight")]
+    [SerializeField] private float BaseWeight = 0f;
 
     [Tooltip("If true, the item will be auto-equipped when picked into an empty selected slot.")]
     [SerializeField] private bool AutoEquipWhenSelected = true;
@@ -96,6 +101,14 @@ public class ItemDefinition : ScriptableObject
     public float GetDefaultDurability()
     {
         return DefaultDurability;
+    }
+
+    /// <summary>
+    /// Gets the base gameplay weight contributed by one item instance.
+    /// </summary>
+    public float GetBaseWeight()
+    {
+        return Mathf.Max(0f, BaseWeight);
     }
 
     /// <summary>

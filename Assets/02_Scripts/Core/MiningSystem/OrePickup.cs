@@ -5,7 +5,7 @@ using UnityEngine;
 /// This component is separate from the player's generic item system so ore-specific
 /// properties can remain flexible without polluting every item type.
 /// </summary>
-public sealed class OrePickup : MonoBehaviour
+public sealed class OrePickup : MonoBehaviour, IWeightProvider
 {
     [Header("Runtime Data")]
     [Tooltip("Runtime ore data carried by this dropped pickup.")]
@@ -118,6 +118,15 @@ public sealed class OrePickup : MonoBehaviour
     public OreItemData GetOreItemData()
     {
         return OreItemData;
+    }
+
+    /// <summary>
+    /// Gets the gameplay weight currently contributed by this ore pickup.
+    /// </summary>
+    /// <returns>Runtime ore weight, or zero when no ore data is assigned.</returns>
+    public float GetWeight()
+    {
+        return OreItemData != null ? Mathf.Max(0f, OreItemData.GetWeightValue()) : 0f;
     }
 
     /// <summary>

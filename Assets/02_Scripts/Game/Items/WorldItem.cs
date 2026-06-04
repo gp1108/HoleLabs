@@ -4,7 +4,7 @@ using UnityEngine;
 /// Physical world representation of an inventory item. This component stores enough runtime
 /// data to recreate the item when the player picks it up and also supports swapping in place.
 /// </summary>
-public sealed class WorldItem : MonoBehaviour
+public sealed class WorldItem : MonoBehaviour, IWeightProvider
 {
     [Header("Item Data")]
     [Tooltip("Static definition used by this physical world item.")]
@@ -84,6 +84,21 @@ public sealed class WorldItem : MonoBehaviour
         UpgradeLevel = itemInstance.GetUpgradeLevel();
         Durability = itemInstance.GetDurability();
         RefreshObjectName();
+    }
+
+    /// <summary>
+    /// Gets the gameplay weight contributed by this world item.
+    /// Stack amount multiplies the item definition base weight.
+    /// </summary>
+    /// <returns>Non-negative gameplay weight.</returns>
+    public float GetWeight()
+    {
+        if (Definition == null)
+        {
+            return 0f;
+        }
+
+        return Mathf.Max(0f, Definition.GetBaseWeight()) * Mathf.Max(1, Amount);
     }
 
     /// <summary>

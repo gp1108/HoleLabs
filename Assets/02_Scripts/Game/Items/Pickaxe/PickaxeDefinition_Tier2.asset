@@ -20,6 +20,7 @@ MonoBehaviour:
   IsStackable: 0
   MaxStackSize: 1
   DefaultDurability: 100
+  BaseWeight: 20
   AutoEquipWhenSelected: 1
   MiningDamage: 10
   MiningTier: 2
