@@ -15,6 +15,9 @@ MonoBehaviour:
   playerPrefsKey: SGSettings_UIToolkit
   SettingsSaver: {fileID: 11400000, guid: eff16101d4c88994eb9ea954f7846cf7, type: 2}
   SettingsAsset: {fileID: 11400000, guid: d4d134d7c0dc41e45a239541defbca6c, type: 2}
+  DisableAutoInitialization: 0
+  DeleteSavedSettingsAtStart: 0
+  RemoveUnknownSettingsAfterLoad: 0
   PreInitializationEvents:
     m_PersistentCalls:
       m_Calls: []
@@ -30,5 +33,8 @@ MonoBehaviour:
   ApplyOnSceneLoadDelay: 0
   ApplyOnSceneLoadInLateUpdate: 0
   ApplyOnSceneLoadIds: []
+  InputActionAsset: {fileID: 0}
+  IncludeUIBindingsInAutoCreation: 0
+  DontApplyBindingOverridesToAllInstances: 0
   initializedVersion: 4
   _hasBeenInitialisedInEditor: 1

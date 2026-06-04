@@ -33,6 +33,7 @@ MonoBehaviour:
   ApplyOnSceneLoadDelay: 0
   ApplyOnSceneLoadInLateUpdate: 0
   ApplyOnSceneLoadIds: []
+  InputActionAsset: {fileID: 0}
   IncludeUIBindingsInAutoCreation: 0
   DontApplyBindingOverridesToAllInstances: 0
   initializedVersion: 4
