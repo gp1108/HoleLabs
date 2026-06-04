@@ -41,6 +41,17 @@ public sealed class WorldItem : MonoBehaviour
         RefreshObjectName();
     }
 
+
+    /// <summary>
+    /// Gets the static definition currently assigned to this world item.
+    /// Save and registry systems use this to resolve derived item definitions such as pickaxes.
+    /// </summary>
+    /// <returns>Assigned item definition, or null when this world item is not configured.</returns>
+    public ItemDefinition GetDefinition()
+    {
+        return Definition;
+    }
+
     /// <summary>
     /// Builds a runtime item instance from the current world state.
     /// </summary>

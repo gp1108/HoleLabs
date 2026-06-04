@@ -7,7 +7,9 @@ using UnityEngine;
 public sealed class MoneyPickup : MonoBehaviour
 {
     [Header("Runtime Data")]
-    [SerializeField] private CurrencyWallet.CurrencyType CurrencyType = CurrencyWallet.CurrencyType.Gold;
+    [Tooltip("Currency type granted when this pickup is collected. Use Credits for current gameplay money.")]
+    [SerializeField] private CurrencyWallet.CurrencyType CurrencyType = CurrencyWallet.CurrencyType.Credits;
+    [Tooltip("Credit amount granted when this pickup is collected.")]
     [SerializeField] private float Amount = 0.01f;
 
     [Header("Structure")]
@@ -58,7 +60,7 @@ public sealed class MoneyPickup : MonoBehaviour
     public void Initialize(float AmountValue, CurrencyWallet.CurrencyType CurrencyTypeValue)
     {
         Amount = CurrencyMath.RoundCurrency(Mathf.Max(0.01f, AmountValue));
-        CurrencyType = CurrencyTypeValue;
+        CurrencyType = CurrencyWallet.NormalizeCurrencyType(CurrencyTypeValue);
         GetRuntimeRoot().name = "MoneyPickup_" + CurrencyType + "_" + Amount.ToString("0.00");
     }
 
@@ -127,7 +129,7 @@ public sealed class MoneyPickup : MonoBehaviour
     /// </summary>
     public CurrencyWallet.CurrencyType GetCurrencyType()
     {
-        return CurrencyType;
+        return CurrencyWallet.NormalizeCurrencyType(CurrencyType);
     }
 
     /// <summary>

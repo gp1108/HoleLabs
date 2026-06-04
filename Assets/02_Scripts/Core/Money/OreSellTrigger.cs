@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using DamageNumbersPro;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// Trigger volume that receives ore pickups, queues them for machine processing,
@@ -42,8 +43,9 @@ public sealed class OreSellTrigger : MonoBehaviour
         [Tooltip("Money prefab emitted for this denomination.")]
         [SerializeField] private GameObject Prefab;
 
-        [Tooltip("Fixed gold value represented by this denomination.")]
-        [SerializeField] private float GoldValue = 1f;
+        [Tooltip("Fixed credit value represented by this denomination.")]
+        [FormerlySerializedAs("GoldValue")]
+        [SerializeField] private float CreditValue = 1f;
 
         [Tooltip("Relative random weight used when multiple prefabs share the same fixed value.")]
         [SerializeField] private int Weight = 1;
@@ -61,14 +63,14 @@ public sealed class OreSellTrigger : MonoBehaviour
             return Prefab;
         }
 
-        public float GetGoldValue()
+        public float GetCreditValue()
         {
-            return Mathf.Max(0.01f, GoldValue);
+            return Mathf.Max(0.01f, CreditValue);
         }
 
-        public int GetGoldValueMinorUnits()
+        public int GetCreditValueMinorUnits()
         {
-            return Mathf.Max(1, ToMinorUnits(GoldValue));
+            return Mathf.Max(1, ToMinorUnits(CreditValue));
         }
 
         public int GetWeight()
@@ -91,12 +93,12 @@ public sealed class OreSellTrigger : MonoBehaviour
     private sealed class PendingMoneyEmission
     {
         public MoneyDenomination Denomination;
-        public int GoldMinorUnits;
+        public int CreditMinorUnits;
         public int BatchId;
     }
 
     [Header("References")]
-    [Tooltip("Wallet optionally used for non-physical research payouts.")]
+    [Tooltip("Legacy wallet reference kept only to preserve existing scene assignments. The selling machine now pays physical credits only.")]
     [SerializeField] private CurrencyWallet CurrencyWallet;
 
     [Tooltip("Pool used to reuse money prefabs instead of instantiating and destroying them.")]
@@ -166,10 +168,10 @@ public sealed class OreSellTrigger : MonoBehaviour
     [SerializeField] private float BillRandomTorqueImpulse = 0.05f;
 
     [Header("Payout Rules")]
-    [Tooltip("If true, research is still granted instantly when the ore is consumed by the machine.")]
-    [SerializeField] private bool GrantResearchInstantly = false;
+    [Tooltip("Legacy option kept only to preserve serialized data during migration. Research currency is disabled and this value is ignored.")]
+    [SerializeField, HideInInspector] private bool GrantResearchInstantly = false;
 
-    [Tooltip("Available physical denominations used to compose the emitted gold value exactly.")]
+    [Tooltip("Available physical denominations used to compose the emitted credit value exactly.")]
     [SerializeField] private List<MoneyDenomination> MoneyDenominations = new();
 
     [Header("Emission Order")]
@@ -183,10 +185,10 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("Primary display text. During crushing it shows the accumulated batch total; during payout it shows the remaining unpaid value.")]
     [SerializeField] private TextMeshProUGUI BatchTotalValueText;
 
-    [Tooltip("Optional secondary text that displays the gold value already emitted as physical money during the current batch.")]
+    [Tooltip("Optional secondary text that displays the credit value already emitted as physical money during the current batch.")]
     [SerializeField] private TextMeshProUGUI BatchPaidValueText;
 
-    [Tooltip("Optional secondary text that displays the gold value still pending to be emitted during the current batch.")]
+    [Tooltip("Optional secondary text that displays the credit value still pending to be emitted during the current batch.")]
     [SerializeField] private TextMeshProUGUI BatchRemainingValueText;
 
     [Tooltip("Seconds without receiving another unprocessed ore pickup required before the machine closes the current crushing batch and starts paying it out.")]
@@ -196,7 +198,7 @@ public sealed class OreSellTrigger : MonoBehaviour
     [SerializeField] private float BatchClearDelay = 1.5f;
 
     [Tooltip("Suffix appended to formatted batch currency values.")]
-    [SerializeField] private string CurrencySuffix = "€";
+    [SerializeField] private string CurrencySuffix = " C";
 
     [Tooltip("If true, the batch display root is hidden when there is no active batch to show.")]
     [SerializeField] private bool HideBatchDisplayWhenEmpty = true;
@@ -217,7 +219,7 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("If true, the legacy primary TextMeshProUGUI text is cleared while Damage Numbers Pro is available for the primary value.")]
     [SerializeField] private bool HideLegacyPrimaryTextWhenUsingDamageNumberPro = true;
 
-    [Tooltip("If true, CurrencySuffix is written into Damage Numbers Pro rightText so the popup can show values like 120.00€.")]
+    [Tooltip("If true, CurrencySuffix is written into Damage Numbers Pro rightText so the popup can show values like 120.00 C.")]
     [SerializeField] private bool UseCurrencySuffixAsDamageNumberRightText = true;
 
     [Tooltip("If true, the active Damage Numbers Pro value fades out when the batch display is cleared. If false, it is destroyed immediately. Ignored when KeepDamageNumberInstanceWhenCleared is enabled.")]
@@ -1050,23 +1052,14 @@ public sealed class OreSellTrigger : MonoBehaviour
             return;
         }
 
-        float GoldValue = Mathf.Max(0f, OreItemData.GetGoldValue());
-        int GoldMinorUnits = ToMinorUnits(GoldValue);
+        float CreditValue = Mathf.Max(0f, OreItemData.GetCreditValue());
+        int CreditMinorUnits = ToMinorUnits(CreditValue);
 
-        if (GoldMinorUnits > 0)
+        if (CreditMinorUnits > 0)
         {
-            RegisterBatchProcessedValue(GoldMinorUnits);
+            RegisterBatchProcessedValue(CreditMinorUnits);
         }
 
-        if (GrantResearchInstantly && CurrencyWallet != null)
-        {
-            float ResearchValue = Mathf.Max(0f, OreItemData.GetResearchValue());
-
-            if (ResearchValue > 0f)
-            {
-                CurrencyWallet.AddCurrency(global::CurrencyWallet.CurrencyType.Research, ResearchValue);
-            }
-        }
 
         LogProcessedOre(OreItemData);
     }
@@ -1075,7 +1068,7 @@ public sealed class OreSellTrigger : MonoBehaviour
     /// Converts a closed batch value into exact physical money emissions assigned to the provided batch.
     /// The composition is always optimal, meaning the smallest possible amount of physical pieces is used.
     /// </summary>
-    /// <param name="TargetMinorUnits">Gold value in minor currency units that must be emitted physically.</param>
+    /// <param name="TargetMinorUnits">Credits value in minor currency units that must be emitted physically.</param>
     /// <param name="BatchId">Batch identifier that owns the emitted money pieces.</param>
     /// <returns>True when an exact optimal payout composition was queued.</returns>
     private bool TryEnqueueExactMoneyPayout(int TargetMinorUnits, int BatchId)
@@ -1106,7 +1099,7 @@ public sealed class OreSellTrigger : MonoBehaviour
             PendingMoneyEmissions.Enqueue(new PendingMoneyEmission
             {
                 Denomination = Denomination,
-                GoldMinorUnits = Denomination != null ? Denomination.GetGoldValueMinorUnits() : 0,
+                CreditMinorUnits = Denomination != null ? Denomination.GetCreditValueMinorUnits() : 0,
                 BatchId = BatchId
             });
         }
@@ -1136,7 +1129,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         if (WasEmitted)
         {
-            RegisterBatchPaidValue(PendingMoneyEmission.GoldMinorUnits, PendingMoneyEmission.BatchId);
+            RegisterBatchPaidValue(PendingMoneyEmission.CreditMinorUnits, PendingMoneyEmission.BatchId);
         }
     }
 
@@ -1186,13 +1179,13 @@ public sealed class OreSellTrigger : MonoBehaviour
             return false;
         }
 
-        MoneyPickup.Initialize(Denomination.GetGoldValue(), global::CurrencyWallet.CurrencyType.Gold);
+        MoneyPickup.Initialize(Denomination.GetCreditValue(), global::CurrencyWallet.CurrencyType.Credits);
         MoneyPickup.SetSaveMoneyId(Denomination.GetId());
         ApplyEmissionImpulse(MoneyPickup, Denomination.GetVisualType(), EjectPoint);
 
         Log(
             "Emitted denomination | Id: " + Denomination.GetId() +
-            " | Value: " + Denomination.GetGoldValue().ToString("0.00") +
+            " | Value: " + Denomination.GetCreditValue().ToString("0.00") +
             " | VisualType: " + Denomination.GetVisualType() +
             " | Remaining pending pieces: " + PendingMoneyEmissions.Count);
 
@@ -1268,7 +1261,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         for (int Index = 0; Index < SortedDenominations.Count; Index++)
         {
             MoneyDenomination Denomination = SortedDenominations[Index];
-            int Value = Denomination.GetGoldValueMinorUnits();
+            int Value = Denomination.GetCreditValueMinorUnits();
 
             if (!DenominationsByMinorUnits.TryGetValue(Value, out List<MoneyDenomination> Bucket))
             {
@@ -1465,7 +1458,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         SortedDenominations.Sort(
-            (Left, Right) => Right.GetGoldValueMinorUnits().CompareTo(Left.GetGoldValueMinorUnits()));
+            (Left, Right) => Right.GetCreditValueMinorUnits().CompareTo(Left.GetCreditValueMinorUnits()));
     }
 
     private void ShuffleDenominationList(List<MoneyDenomination> Denominations)
@@ -1488,13 +1481,13 @@ public sealed class OreSellTrigger : MonoBehaviour
     /// Adds crushed ore value into the current visible batch.
     /// A new batch is created only when there is no active unpaid or waiting batch.
     /// </summary>
-    /// <param name="GoldMinorUnits">Processed gold value in minor currency units.</param>
+    /// <param name="CreditMinorUnits">Processed credits value in minor currency units.</param>
     /// <returns>Identifier of the batch that owns this processed value.</returns>
-    private int RegisterBatchProcessedValue(int GoldMinorUnits)
+    private int RegisterBatchProcessedValue(int CreditMinorUnits)
     {
-        int ClampedGoldMinorUnits = Mathf.Max(0, GoldMinorUnits);
+        int ClampedCreditMinorUnits = Mathf.Max(0, CreditMinorUnits);
 
-        if (ClampedGoldMinorUnits <= 0)
+        if (ClampedCreditMinorUnits <= 0)
         {
             return CurrentBatchId;
         }
@@ -1510,7 +1503,7 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         HasActiveBatch = true;
-        CurrentBatchTotalMinorUnits += ClampedGoldMinorUnits;
+        CurrentBatchTotalMinorUnits += ClampedCreditMinorUnits;
         LastBatchOreProcessedTime = Time.time;
         BatchCompletedTime = -1f;
         HasPayoutCompositionFailure = false;
@@ -1604,9 +1597,9 @@ public sealed class OreSellTrigger : MonoBehaviour
     /// <summary>
     /// Registers emitted physical money value for the batch that owns the emitted piece.
     /// </summary>
-    /// <param name="GoldMinorUnits">Emitted gold value in minor currency units.</param>
+    /// <param name="CreditMinorUnits">Emitted credits value in minor currency units.</param>
     /// <param name="BatchId">Batch identifier assigned to the emitted money piece.</param>
-    private void RegisterBatchPaidValue(int GoldMinorUnits, int BatchId)
+    private void RegisterBatchPaidValue(int CreditMinorUnits, int BatchId)
     {
         if (!HasActiveBatch || BatchId != CurrentBatchId)
         {
@@ -1615,7 +1608,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         CurrentBatchPaidMinorUnits = Mathf.Min(
             CurrentBatchTotalMinorUnits,
-            CurrentBatchPaidMinorUnits + Mathf.Max(0, GoldMinorUnits));
+            CurrentBatchPaidMinorUnits + Mathf.Max(0, CreditMinorUnits));
 
         if (GetCurrentBatchRemainingMinorUnits() <= 0 && BatchCompletedTime < 0f)
         {
@@ -1962,8 +1955,7 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         Log(
             "Queued ore sale: " + OreName +
-            " | Gold: " + (OreItemData != null ? OreItemData.GetGoldValue().ToString("0.00") : "0.00") +
-            " | Research: " + (OreItemData != null ? OreItemData.GetResearchValue().ToString("0.00") : "0.00") +
+            " | Credits: " + (OreItemData != null ? OreItemData.GetCreditValue().ToString("0.00") : "0.00") +
             " | Pending ore queue: " + PendingOreSales.Count);
     }
 
@@ -1975,9 +1967,8 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         Log(
             "Processed ore sale: " + OreName +
-            " | Gold queued: " + (OreItemData != null ? OreItemData.GetGoldValue().ToString("0.00") : "0.00") +
-            " | Research granted instantly: " +
-            (GrantResearchInstantly && OreItemData != null ? OreItemData.GetResearchValue().ToString("0.00") : "0.00") +
+            " | Credits queued: " + (OreItemData != null ? OreItemData.GetCreditValue().ToString("0.00") : "0.00") +
+            " | LegacyResearchDisabled: 0.00" +
             " | Pending money pieces: " + PendingMoneyEmissions.Count);
     }
 

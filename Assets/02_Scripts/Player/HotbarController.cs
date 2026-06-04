@@ -209,6 +209,34 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
+    /// Notifies listeners that the currently selected runtime item changed internally, for example after durability loss.
+    /// </summary>
+    public void NotifySelectedItemRuntimeChanged()
+    {
+        EnsureSlotListSize(SlotCount);
+        NotifySlotChanged(SelectedIndex);
+    }
+
+    /// <summary>
+    /// Removes the selected item only if the provided runtime instance is still the selected slot instance.
+    /// This prevents an equipped item from deleting a different item after a fast slot change.
+    /// </summary>
+    /// <param name="ExpectedItemInstance">Runtime item instance expected to be selected.</param>
+    /// <returns>True when the expected item was removed.</returns>
+    public bool TryRemoveSelectedItemInstance(ItemInstance ExpectedItemInstance)
+    {
+        EnsureSlotListSize(SlotCount);
+
+        if (ExpectedItemInstance == null || Slots[SelectedIndex] != ExpectedItemInstance)
+        {
+            return false;
+        }
+
+        RemoveSelectedItem();
+        return true;
+    }
+
+    /// <summary>
     /// Allows external systems to block or restore hotbar runtime input.
     /// </summary>
     /// <param name="IsBlocked">True to block hotbar input, false to restore it.</param>

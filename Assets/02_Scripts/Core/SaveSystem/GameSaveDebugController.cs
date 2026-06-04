@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine.SceneManagement;
@@ -97,8 +98,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
             OreItemDataSaveData Result = new OreItemDataSaveData
             {
                 OreId = RuntimeData.GetOreDefinition().GetOreId(),
-                GoldValue = RuntimeData.GetGoldValue(),
-                ResearchValue = RuntimeData.GetResearchValue(),
+                GoldValue = RuntimeData.GetCreditValue(),
+                ResearchValue = 0f,
                 WeightValue = RuntimeData.GetWeightValue()
             };
 
@@ -134,8 +135,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             OreItemData Result = new OreItemData(Definition);
-            Result.SetGoldValue(GoldValue);
-            Result.SetResearchValue(ResearchValue);
+            Result.SetCreditValue(GoldValue);
             Result.SetWeightValue(WeightValue);
 
             for (int Index = 0; Index < Properties.Count; Index++)
@@ -491,6 +491,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Tooltip("All item definitions available in this gameplay scene.")]
     [SerializeField] private List<ItemDefinition> ItemDefinitions = new();
 
+    [Tooltip("Specialized pickaxe item definitions available in this gameplay scene. Register them explicitly to make save/load reconstruction deterministic.")]
+    [SerializeField] private List<PickaxeItemDefinition> PickaxeItemDefinitions = new();
+
     [Tooltip("All ore definitions available in this gameplay scene.")]
     [SerializeField] private List<OreDefinition> OreDefinitions = new();
 
@@ -565,8 +568,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
-    /// Applies a pending deferred load after the scene has been recreated from a clean state.
-    /// This avoids restoring save data on top of a live runtime scene.
+    /// Starts a pending deferred load after the scene has been recreated from a clean state.
+    /// The actual restore is delayed by one frame so every scene Start method can finish its default initialization first.
     /// </summary>
     private void Start()
     {
@@ -575,16 +578,29 @@ public sealed class GameSaveDebugController : MonoBehaviour
             return;
         }
 
+        StartCoroutine(ApplyPendingLoadAfterSceneStart());
+    }
+
+    /// <summary>
+    /// Applies a pending deferred load after all scene Start methods had one chance to run.
+    /// This prevents default ore generation from overriding saved damaged vein states.
+    /// </summary>
+    private IEnumerator ApplyPendingLoadAfterSceneStart()
+    {
+        yield return null;
+
+        RebuildLookupCaches();
+
         if (string.IsNullOrWhiteSpace(PendingLoadFileName) || string.IsNullOrWhiteSpace(PendingLoadRootKey))
         {
             ClearPendingLoadRequest();
-            return;
+            yield break;
         }
 
         if (!ES3.KeyExists(PendingLoadRootKey, PendingLoadFileName))
         {
             ClearPendingLoadRequest();
-            return;
+            yield break;
         }
 
         int LoadedSlotIndex = PendingLoadSlotIndex;
@@ -595,14 +611,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (Data == null)
         {
             Log("Deferred load failed because loaded save data was null.");
-            return;
+            yield break;
         }
 
         ApplySaveData(Data);
         CurrentActiveSlotIndex = LoadedSlotIndex;
         Physics.SyncTransforms();
 
-        Log("Deferred load applied after clean scene reload from slot " + (CurrentActiveSlotIndex + 1) + ".");
+        Log("Deferred load applied after clean scene initialization from slot " + (CurrentActiveSlotIndex + 1) + ".");
     }
 
     /// <summary>
@@ -924,8 +940,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (CurrencyWallet != null)
         {
             Data.SetWallet(new WalletSaveData(
-                CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Gold),
-                CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research)));
+                CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Credits),
+                0f));
         }
 
         if (HotbarController != null)
@@ -969,8 +985,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         if (CurrencyWallet != null && Data.GetWallet() != null)
         {
-            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Gold, Data.GetWallet().GetGold());
-            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Research, Data.GetWallet().GetResearch());
+            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Credits, Data.GetWallet().GetGold());
         }
 
         if (UpgradeManager != null)
@@ -1019,6 +1034,69 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
+    /// Registers one item definition in the save lookup cache.
+    /// Specialized definitions, such as pickaxes, override base definitions with the same id.
+    /// </summary>
+    /// <param name="Definition">Definition to register.</param>
+    private void RegisterItemDefinition(ItemDefinition Definition)
+    {
+        if (Definition == null || string.IsNullOrWhiteSpace(Definition.GetItemId()))
+        {
+            return;
+        }
+
+        string ItemId = Definition.GetItemId();
+
+        if (ItemDefinitionsById.TryGetValue(ItemId, out ItemDefinition ExistingDefinition) && ExistingDefinition != null)
+        {
+            bool NewDefinitionIsSpecialized = Definition.GetType() != typeof(ItemDefinition);
+            bool ExistingDefinitionIsBase = ExistingDefinition.GetType() == typeof(ItemDefinition);
+
+            if (!NewDefinitionIsSpecialized || !ExistingDefinitionIsBase)
+            {
+                return;
+            }
+        }
+
+        ItemDefinitionsById[ItemId] = Definition;
+    }
+
+    /// <summary>
+    /// Registers every loaded item definition asset that Unity currently knows about.
+    /// This is a safety net for derived ScriptableObjects not added manually to the save controller list.
+    /// </summary>
+    private void RegisterLoadedItemDefinitions()
+    {
+        ItemDefinition[] LoadedDefinitions = Resources.FindObjectsOfTypeAll<ItemDefinition>();
+
+        for (int Index = 0; Index < LoadedDefinitions.Length; Index++)
+        {
+            RegisterItemDefinition(LoadedDefinitions[Index]);
+        }
+    }
+
+    /// <summary>
+    /// Registers item definitions referenced by world items already present in the scene.
+    /// This ensures scene pickaxes using PickaxeItemDefinition can be restored even when not assigned manually.
+    /// </summary>
+    private void RegisterSceneWorldItemDefinitions()
+    {
+        WorldItem[] WorldItems = FindObjectsByType<WorldItem>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < WorldItems.Length; Index++)
+        {
+            if (WorldItems[Index] == null)
+            {
+                continue;
+            }
+
+            RegisterItemDefinition(WorldItems[Index].GetDefinition());
+        }
+    }
+
+    /// <summary>
     /// Rebuilds definition and scene object lookup caches.
     /// </summary>
     private void RebuildLookupCaches()
@@ -1031,15 +1109,16 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         for (int Index = 0; Index < ItemDefinitions.Count; Index++)
         {
-            ItemDefinition Definition = ItemDefinitions[Index];
-
-            if (Definition == null || string.IsNullOrWhiteSpace(Definition.GetItemId()))
-            {
-                continue;
-            }
-
-            ItemDefinitionsById[Definition.GetItemId()] = Definition;
+            RegisterItemDefinition(ItemDefinitions[Index]);
         }
+
+        for (int Index = 0; Index < PickaxeItemDefinitions.Count; Index++)
+        {
+            RegisterItemDefinition(PickaxeItemDefinitions[Index]);
+        }
+
+        RegisterLoadedItemDefinitions();
+        RegisterSceneWorldItemDefinitions();
 
         for (int Index = 0; Index < OreDefinitions.Count; Index++)
         {
@@ -1582,6 +1661,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
     /// <summary>
     /// Restores every ore spawn point in the scene from saved state.
+    /// Saved points keep their damaged or regrowing runtime state, while points missing from the save return to their configured deterministic defaults.
     /// </summary>
     private void RestoreOreSpawnPoints(List<OreSpawnPointState> States)
     {
@@ -1593,53 +1673,85 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
         }
 
-        if (States == null || OreRuntimeService == null)
+        if (OreRuntimeService == null)
         {
             return;
         }
 
-        for (int Index = 0; Index < States.Count; Index++)
+        HashSet<string> RestoredSceneIds = new HashSet<string>();
+
+        if (States != null)
         {
-            OreSpawnPointState State = States[Index];
+            for (int Index = 0; Index < States.Count; Index++)
+            {
+                OreSpawnPointState State = States[Index];
 
-            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+                if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+                {
+                    continue;
+                }
+
+                if (!OreSpawnPointsById.TryGetValue(State.GetSceneId(), out OreSpawnPoint SpawnPoint) || SpawnPoint == null)
+                {
+                    continue;
+                }
+
+                RestoredSceneIds.Add(State.GetSceneId());
+
+                if (!State.GetIsActive() || string.IsNullOrWhiteSpace(State.GetOreId()))
+                {
+                    SpawnPoint.ClearPoint();
+                    continue;
+                }
+
+                if (!OreDefinitionsById.TryGetValue(State.GetOreId(), out OreDefinition Definition) || Definition == null)
+                {
+                    SpawnPoint.ClearPoint();
+                    continue;
+                }
+
+                bool WasSpawned = SpawnPoint.SpawnVein(Definition, OreRuntimeService);
+
+                if (!WasSpawned)
+                {
+                    continue;
+                }
+
+                OreVein CurrentVein = SpawnPoint.GetCurrentVein();
+
+                if (CurrentVein != null)
+                {
+                    CurrentVein.ApplySavedRuntimeState(
+                        State.GetIsGrowing(),
+                        State.GetHitsRemaining(),
+                        State.GetRespawnTimerRemaining());
+                }
+            }
+        }
+
+        RestoreMissingOreSpawnPointsToConfiguredDefaults(RestoredSceneIds);
+    }
+
+    /// <summary>
+    /// Restores spawn points missing from the save data to their configured deterministic defaults.
+    /// This protects old saves and newly added level-design points from staying empty after load.
+    /// </summary>
+    /// <param name="RestoredSceneIds">Scene ids already restored from save, or null when no save states existed.</param>
+    private void RestoreMissingOreSpawnPointsToConfiguredDefaults(HashSet<string> RestoredSceneIds)
+    {
+        foreach (KeyValuePair<string, OreSpawnPoint> Pair in OreSpawnPointsById)
+        {
+            if (Pair.Value == null)
             {
                 continue;
             }
 
-            if (!OreSpawnPointsById.TryGetValue(State.GetSceneId(), out OreSpawnPoint SpawnPoint) || SpawnPoint == null)
+            if (RestoredSceneIds != null && RestoredSceneIds.Contains(Pair.Key))
             {
                 continue;
             }
 
-            if (!State.GetIsActive() || string.IsNullOrWhiteSpace(State.GetOreId()))
-            {
-                SpawnPoint.ClearPoint();
-                continue;
-            }
-
-            if (!OreDefinitionsById.TryGetValue(State.GetOreId(), out OreDefinition Definition) || Definition == null)
-            {
-                SpawnPoint.ClearPoint();
-                continue;
-            }
-
-            bool WasSpawned = SpawnPoint.SpawnVein(Definition, OreRuntimeService);
-
-            if (!WasSpawned)
-            {
-                continue;
-            }
-
-            OreVein CurrentVein = SpawnPoint.GetCurrentVein();
-
-            if (CurrentVein != null)
-            {
-                CurrentVein.ApplySavedRuntimeState(
-                    State.GetIsGrowing(),
-                    State.GetHitsRemaining(),
-                    State.GetRespawnTimerRemaining());
-            }
+            Pair.Value.SpawnAssignedVein(OreRuntimeService);
         }
     }
 

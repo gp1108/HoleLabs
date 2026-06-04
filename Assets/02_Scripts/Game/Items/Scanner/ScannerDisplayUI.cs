@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// Controls the scanner world-space UI using separate panels for ore and vein targets.
@@ -34,11 +35,12 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     [Tooltip("Text used to display the dropped ore weight.")]
     [SerializeField] private TMP_Text OreWeightText;
 
-    [Tooltip("Text used to display the dropped ore gold value.")]
-    [SerializeField] private TMP_Text OrePriceGoldText;
+    [Tooltip("Text used to display the dropped ore credit value.")]
+    [FormerlySerializedAs("OrePriceGoldText")]
+    [SerializeField] private TMP_Text OreCreditValueText;
 
-    [Tooltip("Text used to display the dropped ore research value.")]
-    [SerializeField] private TMP_Text OrePriceResearchText;
+    [Tooltip("Legacy research value field kept only to preserve scene references during migration. It is cleared by this UI.")]
+    [SerializeField, HideInInspector] private TMP_Text OrePriceResearchText;
 
     [Tooltip("Optional status text placed inside the ore panel.")]
     [SerializeField] private TMP_Text OrePanelStatusText;
@@ -118,10 +120,10 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     /// </summary>
     public void ShowOreResult(
         string MineralType,
-        bool ShowGoldValue,
-        float GoldValue,
-        bool ShowResearchValue,
-        float ResearchValue,
+        bool ShowCreditValue,
+        float CreditValue,
+        bool ShowLegacyResearchValue,
+        float LegacyResearchValue,
         bool ShowPurity,
         float Purity,
         bool ShowSize,
@@ -133,8 +135,8 @@ public sealed class ScannerDisplayUI : MonoBehaviour
         SetVeinPanelVisible(false);
 
         SetText(OreMineralTypeText, "Mineral Type: " + MineralType);
-        SetText(OrePriceGoldText, ShowGoldValue ? "Price Gold: " + GoldValue.ToString("0.00") : "Price Gold: Locked");
-        SetText(OrePriceResearchText, ShowResearchValue ? "Price Research: " + ResearchValue.ToString("0.00") : "Price Research: Locked");
+        SetText(OreCreditValueText, ShowCreditValue ? "Credit Value: " + CreditValue.ToString("0.00") + " C" : "Credit Value: Locked");
+        SetText(OrePriceResearchText, string.Empty);
         SetText(OrePurityText, ShowPurity ? "Purity: " + Purity.ToString("0.00") : "Purity: Locked");
         SetText(OreSizeText, ShowSize ? "Size: " + Size.ToString("0.00") : "Size: Locked");
         SetText(OreWeightText, ShowWeight ? "Weight: " + Weight.ToString("0.00") : "Weight: Locked");
@@ -153,8 +155,8 @@ public sealed class ScannerDisplayUI : MonoBehaviour
         SetText(OrePurityText, "Purity: -");
         SetText(OreSizeText, "Size: -");
         SetText(OreWeightText, "Weight: -");
-        SetText(OrePriceGoldText, "Price Gold: -");
-        SetText(OrePriceResearchText, "Price Research: -");
+        SetText(OreCreditValueText, "Credit Value: -");
+        SetText(OrePriceResearchText, string.Empty);
     }
 
     /// <summary>

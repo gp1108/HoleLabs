@@ -18,13 +18,14 @@ MonoBehaviour:
   VeinPrefab: {fileID: 3375198301939659550, guid: c06e1715c66ad7042a0da421b692dea7, type: 3}
   DroppedOrePrefab: {fileID: 7650305570857503147, guid: d270b648a76e000409c11f4e057be77b, type: 3}
   DroppedOreVisualPrefabs: []
-  BaseHitsRequired: 2
-  BaseRespawnTime: 20
+  RequiredMiningTier: 1
+  BaseMiningDurability: 2
+  BaseRespawnTime: 10
   BaseDropCountMin: 1
   BaseDropCountMax: 2
   BaseWeightValue: 8
-  BaseGoldValueMin: 3
-  BaseGoldValueMax: 6
+  BaseCreditValueMin: 3
+  BaseCreditValueMax: 6
   BaseResearchValueMin: 0
   BaseResearchValueMax: 1
   PropertyRanges:

@@ -8,8 +8,8 @@ public sealed class UpgradeDefinition : ScriptableObject
     [Serializable]
     public sealed class UpgradeLevelCost
     {
-        [Tooltip("Currency required to purchase this level.")]
-        [SerializeField] private CurrencyWallet.CurrencyType CurrencyType = CurrencyWallet.CurrencyType.Research;
+        [Tooltip("Currency required to purchase this level. Use Credits for all new shop or research costs.")]
+        [SerializeField] private CurrencyWallet.CurrencyType CurrencyType = CurrencyWallet.CurrencyType.Credits;
 
         [Tooltip("Amount required to purchase this level.")]
         [SerializeField] private float Cost = 100f;

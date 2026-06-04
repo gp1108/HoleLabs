@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// Manual controller for the upgrade UI.
@@ -21,11 +22,12 @@ public sealed class UpgradePanelUI : MonoBehaviour
     [SerializeField] private GameObject PanelRoot;
 
     [Header("Currencies")]
-    [Tooltip("Text used to display the current gold balance.")]
-    [SerializeField] private TMP_Text GoldAmountText;
+    [Tooltip("Text used to display the current credit balance.")]
+    [FormerlySerializedAs("GoldAmountText")]
+    [SerializeField] private TMP_Text CreditsAmountText;
 
-    [Tooltip("Text used to display the current research balance.")]
-    [SerializeField] private TMP_Text ResearchAmountText;
+    [Tooltip("Legacy research balance text kept only to preserve scene references during migration. It is cleared because research currency is no longer part of the current design.")]
+    [SerializeField, HideInInspector] private TMP_Text ResearchAmountText;
 
     [Header("Discovery")]
     [Tooltip("If true, manual entries and tree groups are discovered during Awake.")]
@@ -161,14 +163,14 @@ public sealed class UpgradePanelUI : MonoBehaviour
             return;
         }
 
-        if (GoldAmountText != null)
+        if (CreditsAmountText != null)
         {
-            GoldAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Gold).ToString("0.00");
+            CreditsAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Credits).ToString("0.00") + " C";
         }
 
         if (ResearchAmountText != null)
         {
-            ResearchAmountText.text = CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research).ToString("0.00");
+            ResearchAmountText.text = string.Empty;
         }
     }
 
