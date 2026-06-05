@@ -26,6 +26,6 @@ MonoBehaviour:
   MiningTier: 2
   ExtractionQualityMultiplier: 4
   UsesDurability: 1
-  DurabilityCostPerAcceptedHit: 30
+  DurabilityCostPerAcceptedHit: 1
   BreaksAtZeroDurability: 1
   MinimumUseInterval: 0

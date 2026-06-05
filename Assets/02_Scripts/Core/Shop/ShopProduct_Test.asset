@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca0b29cd0caeff14e8fca15dd5c783f1, type: 3}
+  m_Name: ShopProduct_Test
+  m_EditorClassIdentifier: Assembly-CSharp::ShopProductDefinition
+  ProductId: 
+  DisplayName: 
+  Description: 
+  Icon: {fileID: 0}
+  CurrencyType: 0
+  Cost: 10
+  RequiresFeatureFlag: 0
+  RequiredFeatureFlagId: 
+  RequiresDeliveredItemUnlock: 0
+  DeliveryMode: 0
+  DeliveredItemDefinition: {fileID: 0}
+  DeliveredAmount: 1
+  AppliedUpgradeDefinition: {fileID: 0}
+  ApplyMode: 0
+  TargetUpgradeLevel: 1
+  UpgradeLevelIncrement: 1

@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8f853d96537a4f8409a8c5461b842a92, type: 3}
+  m_Name: PlaceableItem_Test
+  m_EditorClassIdentifier: Assembly-CSharp::PlaceableItemDefinition
+  ItemId: 
+  DisplayName: 
+  Icon: {fileID: 0}
+  WorldPrefab: {fileID: 0}
+  EquippedPrefab: {fileID: 0}
+  IsStackable: 0
+  MaxStackSize: 1
+  DefaultDurability: 100
+  BaseWeight: 0
+  AutoEquipWhenSelected: 1
+  PlacementId: 
+  GhostPrefab: {fileID: 0}
+  InstalledPrefab: {fileID: 0}
+  AppliedUpgradeDefinition: {fileID: 0}
+  ApplyMode: 1
+  TargetUpgradeLevel: 1
+  UpgradeLevelIncrement: 1

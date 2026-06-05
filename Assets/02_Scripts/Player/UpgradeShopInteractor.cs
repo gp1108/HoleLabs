@@ -2,10 +2,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Player-side upgrade shop state holder.
-/// This component no longer reads interact input directly.
-/// It only tracks nearby stations, opens or closes the current shop on request,
-/// and handles Escape while a shop is open.
+/// Player-side shop state holder.
+/// This component tracks both legacy upgrade stations and new product stations,
+/// opens or closes the current shop on request, and handles Escape while a shop is open.
 /// </summary>
 [DefaultExecutionOrder(-200)]
 public sealed class UpgradeShopInteractor : MonoBehaviour
@@ -23,14 +22,24 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     [SerializeField] private bool DebugLogs = false;
 
     /// <summary>
-    /// Shop station currently in range.
+    /// Legacy upgrade station currently in range.
     /// </summary>
-    private UpgradeShopStation NearbyStation;
+    private UpgradeShopStation NearbyUpgradeStation;
 
     /// <summary>
-    /// Shop station currently opened by this interactor.
+    /// Product shop station currently in range.
     /// </summary>
-    private UpgradeShopStation OpenedStation;
+    private ShopProductStation NearbyProductStation;
+
+    /// <summary>
+    /// Legacy upgrade station currently opened by this interactor.
+    /// </summary>
+    private UpgradeShopStation OpenedUpgradeStation;
+
+    /// <summary>
+    /// Product shop station currently opened by this interactor.
+    /// </summary>
+    private ShopProductStation OpenedProductStation;
 
     /// <summary>
     /// Caches required references.
@@ -48,7 +57,7 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// </summary>
     private void Update()
     {
-        if (!CloseOnEscape || OpenedStation == null)
+        if (!CloseOnEscape || !HasOpenedStation())
         {
             return;
         }
@@ -61,11 +70,11 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns whether the player is currently inside a shop trigger.
+    /// Returns whether the player is currently inside any supported shop trigger.
     /// </summary>
     public bool HasNearbyStation()
     {
-        return NearbyStation != null;
+        return NearbyUpgradeStation != null || NearbyProductStation != null;
     }
 
     /// <summary>
@@ -73,63 +82,192 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// </summary>
     public bool HasOpenedStation()
     {
-        return OpenedStation != null;
+        return OpenedUpgradeStation != null || OpenedProductStation != null;
     }
 
     /// <summary>
-    /// Assigns the currently reachable station.
+    /// Assigns the currently reachable legacy upgrade station.
     /// </summary>
+    /// <param name="Station">Upgrade station in range.</param>
     public void SetNearbyStation(UpgradeShopStation Station)
     {
-        NearbyStation = Station;
-        Log("Nearby station assigned: " + (Station != null ? Station.name : "null"));
+        NearbyUpgradeStation = Station;
+        Log("Nearby upgrade station assigned: " + (Station != null ? Station.name : "null"));
     }
 
     /// <summary>
-    /// Clears the currently reachable station if it matches the provided one.
+    /// Assigns the currently reachable product station.
+    /// </summary>
+    /// <param name="Station">Product station in range.</param>
+    public void SetNearbyProductStation(ShopProductStation Station)
+    {
+        NearbyProductStation = Station;
+        Log("Nearby product station assigned: " + (Station != null ? Station.name : "null"));
+    }
+
+    /// <summary>
+    /// Clears the reachable legacy upgrade station if it matches the provided one.
     /// Also closes the shop if the player leaves the active station trigger.
     /// </summary>
+    /// <param name="Station">Upgrade station leaving range.</param>
     public void ClearNearbyStation(UpgradeShopStation Station)
     {
-        if (NearbyStation == Station)
+        if (NearbyUpgradeStation == Station)
         {
-            NearbyStation = null;
-            Log("Nearby station cleared: " + (Station != null ? Station.name : "null"));
+            NearbyUpgradeStation = null;
+            Log("Nearby upgrade station cleared: " + (Station != null ? Station.name : "null"));
         }
 
-        if (OpenedStation == Station)
+        if (OpenedUpgradeStation == Station)
         {
-            Log("Left opened station trigger. Closing station.");
+            Log("Left opened upgrade station trigger. Closing station.");
+            CloseCurrentStation();
+        }
+    }
+
+    /// <summary>
+    /// Clears the reachable product station if it matches the provided one.
+    /// Also closes the shop if the player leaves the active station trigger.
+    /// </summary>
+    /// <param name="Station">Product station leaving range.</param>
+    public void ClearNearbyProductStation(ShopProductStation Station)
+    {
+        if (NearbyProductStation == Station)
+        {
+            NearbyProductStation = null;
+            Log("Nearby product station cleared: " + (Station != null ? Station.name : "null"));
+        }
+
+        if (OpenedProductStation == Station)
+        {
+            Log("Left opened product station trigger. Closing station.");
             CloseCurrentStation();
         }
     }
 
     /// <summary>
     /// Tries to open the currently nearby station.
+    /// Product stations are prioritized over legacy upgrade stations when both are in range.
     /// </summary>
-    /// <returns>True when the shop was opened successfully.</returns>
+    /// <returns>True when a shop was opened successfully.</returns>
     public bool TryOpenNearbyStation()
     {
-        if (OpenedStation != null)
+        if (HasOpenedStation())
         {
             Log("Ignored open request because a station is already opened.");
             return false;
         }
 
-        if (NearbyStation == null)
+        if (NearbyProductStation != null)
         {
-            Log("Cannot open shop because NearbyStation is null.");
-            return false;
+            return TryOpenProductStation(NearbyProductStation);
         }
 
-        UpgradePanelUI Panel = NearbyStation.GetUpgradePanelUI();
+        if (NearbyUpgradeStation != null)
+        {
+            return TryOpenUpgradeStation(NearbyUpgradeStation);
+        }
+
+        Log("Cannot open shop because no nearby station is available.");
+        return false;
+    }
+
+    /// <summary>
+    /// Closes the currently opened station.
+    /// </summary>
+    public void CloseCurrentStation()
+    {
+        if (OpenedUpgradeStation != null)
+        {
+            UpgradePanelUI Panel = OpenedUpgradeStation.GetUpgradePanelUI();
+
+            if (Panel != null)
+            {
+                Panel.HidePanel();
+            }
+
+            Log("Upgrade shop closed successfully.");
+            OpenedUpgradeStation = null;
+        }
+
+        if (OpenedProductStation != null)
+        {
+            ShopProductPanelUI Panel = OpenedProductStation.GetProductPanelUI();
+
+            if (Panel != null)
+            {
+                Panel.HidePanel();
+            }
+
+            Log("Product shop closed successfully.");
+            OpenedProductStation = null;
+        }
+
+        if (PlayerModalStateController != null)
+        {
+            PlayerModalStateController.CloseModal(this);
+        }
+    }
+
+    /// <summary>
+    /// Attempts to open a legacy upgrade station.
+    /// </summary>
+    /// <param name="Station">Station to open.</param>
+    /// <returns>True when opened successfully.</returns>
+    private bool TryOpenUpgradeStation(UpgradeShopStation Station)
+    {
+        UpgradePanelUI Panel = Station.GetUpgradePanelUI();
 
         if (Panel == null)
         {
-            Log("Cannot open shop because UpgradePanelUI on the station is null.");
+            Log("Cannot open upgrade shop because UpgradePanelUI is null.");
             return false;
         }
 
+        if (!TryOpenModal())
+        {
+            return false;
+        }
+
+        Panel.ShowPanel();
+        OpenedUpgradeStation = Station;
+        Log("Upgrade shop opened successfully.");
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to open a product station.
+    /// </summary>
+    /// <param name="Station">Station to open.</param>
+    /// <returns>True when opened successfully.</returns>
+    private bool TryOpenProductStation(ShopProductStation Station)
+    {
+        ShopProductPanelUI Panel = Station.GetProductPanelUI();
+
+        if (Panel == null)
+        {
+            Log("Cannot open product shop because ProductPanelUI is null.");
+            return false;
+        }
+
+        if (!TryOpenModal())
+        {
+            return false;
+        }
+
+        Panel.Initialize(Station);
+        Panel.ShowPanel();
+        OpenedProductStation = Station;
+        Log("Product shop opened successfully.");
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to open the player modal state for shop UI.
+    /// </summary>
+    /// <returns>True when modal state was opened.</returns>
+    private bool TryOpenModal()
+    {
         if (PlayerModalStateController == null)
         {
             Log("Cannot open shop because PlayerModalStateController is null.");
@@ -142,41 +280,13 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
             return false;
         }
 
-        Panel.ShowPanel();
-        OpenedStation = NearbyStation;
-        Log("Shop opened successfully.");
         return true;
-    }
-
-    /// <summary>
-    /// Closes the currently opened station.
-    /// </summary>
-    public void CloseCurrentStation()
-    {
-        if (OpenedStation == null)
-        {
-            return;
-        }
-
-        UpgradePanelUI Panel = OpenedStation.GetUpgradePanelUI();
-
-        if (Panel != null)
-        {
-            Panel.HidePanel();
-        }
-
-        if (PlayerModalStateController != null)
-        {
-            PlayerModalStateController.CloseModal(this);
-        }
-
-        Log("Shop closed successfully.");
-        OpenedStation = null;
     }
 
     /// <summary>
     /// Writes a shop-interactor-specific debug message.
     /// </summary>
+    /// <param name="Message">Message to write.</param>
     private void Log(string Message)
     {
         if (!DebugLogs)
