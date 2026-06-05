@@ -5,6 +5,7 @@ using UnityEngine;
 /// The same binder can control either vertical travel or self rotation.
 /// It also forces neutral when the elevator is overweighted, when no weight actor
 /// remains inside the elevator trigger, or when the selected subsystem is locked by progression.
+/// Installed lever prefabs can resolve their elevator references automatically at runtime.
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class ElevatorLeverStateBinder : MonoBehaviour
@@ -19,13 +20,13 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
     }
 
     [Header("References")]
-    [Tooltip("Target snap lever controlled by this binder.")]
+    [Tooltip("Target snap lever controlled by this binder. If empty, one is resolved in this hierarchy.")]
     [SerializeField] private SnapLever SnapLever;
 
-    [Tooltip("Target elevator motor controlled by this binder.")]
+    [Tooltip("Target elevator motor controlled by this binder. If empty, the first active motor is resolved at runtime.")]
     [SerializeField] private ElevatorPhysicalMotor ElevatorPhysicalMotor;
 
-    [Tooltip("Weight system used to validate whether the elevator can currently operate.")]
+    [Tooltip("Weight system used to validate whether the elevator can currently operate. If empty, it is resolved from the motor or scene.")]
     [SerializeField] private ElevatorWeightSystem ElevatorWeightSystem;
 
     [Header("Mode")]
@@ -46,8 +47,12 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
     [Tooltip("If true, rotation levers are locked to neutral until the elevator motor reports rotation as unlocked.")]
     [SerializeField] private bool LockRotationLeverUntilUnlocked = true;
 
+    [Header("Auto Resolve")]
+    [Tooltip("If true, missing motor and weight references are resolved automatically. Useful for installed prefabs spawned at runtime.")]
+    [SerializeField] private bool AutoResolveReferences = true;
+
     [Header("Debug")]
-    [Tooltip("Logs received snap indices and forced neutral states.")]
+    [Tooltip("Logs received snap indices, forced neutral states and auto-resolved references.")]
     [SerializeField] private bool DebugLogs = false;
 
     /// <summary>
@@ -61,10 +66,42 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
     private string LastForceNeutralReason;
 
     /// <summary>
+    /// Whether this binder has subscribed to the snap lever runtime event.
+    /// </summary>
+    private bool HasSubscribedToSnapLever;
+
+    /// <summary>
+    /// Resolves references before runtime interaction starts.
+    /// </summary>
+    private void Awake()
+    {
+        ResolveReferences();
+    }
+
+    /// <summary>
+    /// Subscribes to the snap lever so installed prefabs do not require manual UnityEvent wiring.
+    /// </summary>
+    private void OnEnable()
+    {
+        ResolveReferences();
+        SubscribeToSnapLever();
+    }
+
+    /// <summary>
+    /// Unsubscribes from runtime snap events.
+    /// </summary>
+    private void OnDisable()
+    {
+        UnsubscribeFromSnapLever();
+    }
+
+    /// <summary>
     /// Enforces neutral lever state whenever the elevator cannot currently operate.
     /// </summary>
     private void LateUpdate()
     {
+        ResolveReferences();
+
         if (SnapLever == null || ElevatorPhysicalMotor == null || ElevatorWeightSystem == null)
         {
             return;
@@ -83,14 +120,7 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
                 WasForcedNeutralLastFrame = true;
                 LastForceNeutralReason = ForceReason;
 
-                if (DebugLogs)
-                {
-                    Debug.Log(
-                        "[ElevatorLeverStateBinder] Lever forced to neutral. " +
-                        "Mode=" + ControlMode +
-                        " | Reason=" + ForceReason,
-                        this);
-                }
+                Log("Lever forced to neutral. Mode=" + ControlMode + " | Reason=" + ForceReason);
             }
 
             return;
@@ -107,6 +137,8 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
     /// <param name="SnapIndex">Received snap index from the lever.</param>
     public void ApplyLeverState(int SnapIndex)
     {
+        ResolveReferences();
+
         if (SnapLever == null || ElevatorPhysicalMotor == null || ElevatorWeightSystem == null)
         {
             return;
@@ -132,6 +164,93 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
         }
 
         ApplyNeutralStateToMotor();
+    }
+
+    /// <summary>
+    /// Resolves missing references for installed prefab usage.
+    /// </summary>
+    private void ResolveReferences()
+    {
+        if (!AutoResolveReferences)
+        {
+            return;
+        }
+
+        if (SnapLever == null)
+        {
+            SnapLever = GetComponent<SnapLever>();
+
+            if (SnapLever == null)
+            {
+                SnapLever = GetComponentInParent<SnapLever>();
+            }
+
+            if (SnapLever == null)
+            {
+                SnapLever = GetComponentInChildren<SnapLever>(true);
+            }
+        }
+
+        if (ElevatorPhysicalMotor == null)
+        {
+            ElevatorPhysicalMotor = GetComponentInParent<ElevatorPhysicalMotor>();
+
+            if (ElevatorPhysicalMotor == null)
+            {
+                ElevatorPhysicalMotor = FindFirstObjectByType<ElevatorPhysicalMotor>();
+            }
+        }
+
+        if (ElevatorWeightSystem == null)
+        {
+            if (ElevatorPhysicalMotor != null)
+            {
+                ElevatorWeightSystem = ElevatorPhysicalMotor.GetComponentInChildren<ElevatorWeightSystem>(true);
+
+                if (ElevatorWeightSystem == null)
+                {
+                    ElevatorWeightSystem = ElevatorPhysicalMotor.GetComponentInParent<ElevatorWeightSystem>();
+                }
+            }
+
+            if (ElevatorWeightSystem == null)
+            {
+                ElevatorWeightSystem = GetComponentInParent<ElevatorWeightSystem>();
+            }
+
+            if (ElevatorWeightSystem == null)
+            {
+                ElevatorWeightSystem = FindFirstObjectByType<ElevatorWeightSystem>();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Subscribes this binder to the snap lever runtime event.
+    /// </summary>
+    private void SubscribeToSnapLever()
+    {
+        if (SnapLever == null || HasSubscribedToSnapLever)
+        {
+            return;
+        }
+
+        SnapLever.AddSnapChangedListener(ApplyLeverState);
+        HasSubscribedToSnapLever = true;
+    }
+
+    /// <summary>
+    /// Removes this binder from the snap lever runtime event.
+    /// </summary>
+    private void UnsubscribeFromSnapLever()
+    {
+        if (SnapLever == null || !HasSubscribedToSnapLever)
+        {
+            return;
+        }
+
+        SnapLever.RemoveSnapChangedListener(ApplyLeverState);
+        HasSubscribedToSnapLever = false;
     }
 
     /// <summary>
@@ -206,5 +325,19 @@ public sealed class ElevatorLeverStateBinder : MonoBehaviour
         {
             ElevatorPhysicalMotor.StopRotation();
         }
+    }
+
+    /// <summary>
+    /// Writes a debug message when enabled.
+    /// </summary>
+    /// <param name="Message">Message to write.</param>
+    private void Log(string Message)
+    {
+        if (!DebugLogs)
+        {
+            return;
+        }
+
+        Debug.Log("[ElevatorLeverStateBinder] " + Message, this);
     }
 }

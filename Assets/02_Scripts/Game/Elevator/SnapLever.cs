@@ -236,6 +236,36 @@ public sealed class SnapLever : MonoBehaviour
     }
 
     /// <summary>
+    /// Adds a runtime listener to snap index changes.
+    /// This is used by installed prefabs so they do not require manual UnityEvent wiring.
+    /// </summary>
+    /// <param name="Listener">Listener invoked with the new snap index.</param>
+    public void AddSnapChangedListener(UnityAction<int> Listener)
+    {
+        if (Listener == null)
+        {
+            return;
+        }
+
+        OnSnapChanged.RemoveListener(Listener);
+        OnSnapChanged.AddListener(Listener);
+    }
+
+    /// <summary>
+    /// Removes a runtime listener from snap index changes.
+    /// </summary>
+    /// <param name="Listener">Listener to remove.</param>
+    public void RemoveSnapChangedListener(UnityAction<int> Listener)
+    {
+        if (Listener == null)
+        {
+            return;
+        }
+
+        OnSnapChanged.RemoveListener(Listener);
+    }
+
+    /// <summary>
     /// Locks the lever to a specific snap index and prevents drag interaction until unlocked.
     /// </summary>
     /// <param name="IsLocked">True to lock the lever, false to unlock it.</param>
