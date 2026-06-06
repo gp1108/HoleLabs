@@ -132,6 +132,7 @@ MonoBehaviour:
   NeutralIndex: 1
   PositiveIndex: 2
   LockRotationLeverUntilUnlocked: 1
+  AutoResolveReferences: 1
   DebugLogs: 0
 --- !u!1 &2928874728657717274
 GameObject:

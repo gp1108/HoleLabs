@@ -4,6 +4,7 @@ using UnityEngine;
 /// Dedicated world slot where a placeable item can be installed.
 /// Installation consumes the equipped hotbar item, spawns the installed visual and applies the configured upgrade effect.
 /// </summary>
+[RequireComponent(typeof(SceneSaveId))]
 public sealed class PlaceableInstallationSpot : MonoBehaviour
 {
     [Header("Placement")]
@@ -48,6 +49,14 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     /// </summary>
     private void Awake()
     {
+        EnsureReferences();
+    }
+
+    /// <summary>
+    /// Resolves runtime references needed by placement, save restoration and upgrade application.
+    /// </summary>
+    private void EnsureReferences()
+    {
         if (InstallRoot == null)
         {
             InstallRoot = transform;
@@ -75,6 +84,71 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     public bool GetIsOccupied()
     {
         return CurrentInstalledItem != null;
+    }
+
+    /// <summary>
+    /// Gets a cloned runtime item instance representing the currently installed item.
+    /// </summary>
+    /// <returns>Installed item clone, or null when this spot is empty.</returns>
+    public ItemInstance CreateInstalledItemSnapshot()
+    {
+        return CurrentInstalledItem != null ? CurrentInstalledItem.Clone() : null;
+    }
+
+    /// <summary>
+    /// Gets the current installed placeable definition.
+    /// </summary>
+    /// <returns>Installed placeable item definition, or null when this spot is empty or invalid.</returns>
+    public PlaceableItemDefinition GetCurrentInstalledPlaceableDefinition()
+    {
+        return GetPlaceableDefinition(CurrentInstalledItem);
+    }
+
+    /// <summary>
+    /// Clears the installed state without returning a physical item.
+    /// This is used by save/load restoration before applying the saved state.
+    /// </summary>
+    public void ClearInstalledState()
+    {
+        ClearInstalledVisual();
+        CurrentInstalledItem = null;
+    }
+
+    /// <summary>
+    /// Restores this spot from saved placement state.
+    /// The saved item is installed without consuming hotbar content.
+    /// </summary>
+    /// <param name="IsOccupied">Whether the spot should contain an installed item.</param>
+    /// <param name="SavedInstalledItem">Saved installed item payload.</param>
+    /// <param name="ReapplyUpgrade">If true, reapplies the configured upgrade effect after restoring the visual.</param>
+    public void ApplySavedState(bool IsOccupied, ItemInstance SavedInstalledItem, bool ReapplyUpgrade)
+    {
+        EnsureReferences();
+        ClearInstalledState();
+
+        if (!IsOccupied || SavedInstalledItem == null)
+        {
+            Log("Restored empty placement spot state.");
+            return;
+        }
+
+        PlaceableItemDefinition PlaceableDefinition = GetPlaceableDefinition(SavedInstalledItem);
+
+        if (PlaceableDefinition == null || !IsCompatiblePlacementDefinition(PlaceableDefinition))
+        {
+            Log("Saved installed item was not compatible with this spot and was ignored.");
+            return;
+        }
+
+        CurrentInstalledItem = SavedInstalledItem.Clone();
+        SpawnInstalledVisual(PlaceableDefinition);
+
+        if (ReapplyUpgrade)
+        {
+            ApplyInstalledUpgrade(PlaceableDefinition);
+        }
+
+        Log("Restored installed item: " + PlaceableDefinition.GetDisplayName());
     }
 
     /// <summary>
@@ -107,7 +181,7 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
             return false;
         }
 
-        if (!string.Equals(AcceptedPlacementId, PlaceableDefinition.GetPlacementId(), System.StringComparison.Ordinal))
+        if (!IsCompatiblePlacementDefinition(PlaceableDefinition))
         {
             return false;
         }
@@ -182,11 +256,7 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     /// <param name="OwnerHotbar">Hotbar used to spawn the replaced world item.</param>
     private void ReturnOrClearCurrentInstalledItem(HotbarController OwnerHotbar)
     {
-        if (CurrentInstalledVisual != null)
-        {
-            Destroy(CurrentInstalledVisual);
-            CurrentInstalledVisual = null;
-        }
+        ClearInstalledVisual();
 
         if (ReturnReplacedItem && CurrentInstalledItem != null)
         {
@@ -204,11 +274,7 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     /// <param name="PlaceableDefinition">Definition being installed.</param>
     private void SpawnInstalledVisual(PlaceableItemDefinition PlaceableDefinition)
     {
-        if (CurrentInstalledVisual != null)
-        {
-            Destroy(CurrentInstalledVisual);
-            CurrentInstalledVisual = null;
-        }
+        ClearInstalledVisual();
 
         GameObject InstalledPrefab = PlaceableDefinition.GetInstalledPrefab();
 
@@ -222,6 +288,38 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
             InstallRoot.position,
             InstallRoot.rotation,
             InstallRoot);
+    }
+
+    /// <summary>
+    /// Returns whether the provided placeable definition matches this spot placement id.
+    /// </summary>
+    /// <param name="PlaceableDefinition">Placeable definition to validate.</param>
+    /// <returns>True when the definition can be installed into this spot id.</returns>
+    private bool IsCompatiblePlacementDefinition(PlaceableItemDefinition PlaceableDefinition)
+    {
+        if (PlaceableDefinition == null)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            AcceptedPlacementId,
+            PlaceableDefinition.GetPlacementId(),
+            System.StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Destroys the current installed visual object without changing the stored item payload.
+    /// </summary>
+    private void ClearInstalledVisual()
+    {
+        if (CurrentInstalledVisual == null)
+        {
+            return;
+        }
+
+        Destroy(CurrentInstalledVisual);
+        CurrentInstalledVisual = null;
     }
 
     /// <summary>
