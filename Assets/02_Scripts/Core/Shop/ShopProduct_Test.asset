@@ -18,8 +18,8 @@ MonoBehaviour:
   Icon: {fileID: 21300000, guid: 4ca9e709a65faf543a1b376009b64e12, type: 3}
   CurrencyType: 0
   Cost: 100
-  RequiresFeatureFlag: 0
-  RequiredFeatureFlagId: 
+  RequiresFeatureFlag: 1
+  RequiredFeatureFlagId: Shop.Unlock.ElevatorRotationLever
   RequiresDeliveredItemUnlock: 0
   DeliveryMode: 0
   DeliveredItemDefinition: {fileID: 11400000, guid: 077f71ad1d3b6d3468581736a9c224a3, type: 2}
