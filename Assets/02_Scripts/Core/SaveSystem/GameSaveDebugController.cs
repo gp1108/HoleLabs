@@ -254,14 +254,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private sealed class ResearchStationState
     {
         [SerializeField] private string SceneId;
-        [SerializeField] private ResearchStation.ResearchStationSaveData StationData;
+        [SerializeField] private ResearchRuntimeService.ResearchRuntimeSaveData StationData;
 
         /// <summary>
         /// Creates a save payload for one persistent research station.
         /// </summary>
         /// <param name="SceneIdValue">Stable scene id of the research station.</param>
         /// <param name="StationDataValue">Saved station runtime state.</param>
-        public ResearchStationState(string SceneIdValue, ResearchStation.ResearchStationSaveData StationDataValue)
+        public ResearchStationState(string SceneIdValue, ResearchRuntimeService.ResearchRuntimeSaveData StationDataValue)
         {
             SceneId = SceneIdValue;
             StationData = StationDataValue;
@@ -275,7 +275,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         /// <summary>
         /// Gets the saved research station runtime data.
         /// </summary>
-        public ResearchStation.ResearchStationSaveData GetStationData() => StationData;
+        public ResearchRuntimeService.ResearchRuntimeSaveData GetStationData() => StationData;
     }
 
     [Serializable]
@@ -514,7 +514,15 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<OreSpawnPointState> OreSpawnPoints = new();
         [SerializeField] private List<DrillPlacementSpotState> DrillPlacementSpots = new();
         [SerializeField] private List<PlaceableInstallationSpotState> PlaceableInstallationSpots = new();
+
+        [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
+        [SerializeField] private ResearchRuntimeService.ResearchRuntimeSaveData ResearchRuntime;
+
+        [Tooltip("Migration legacy. Older Block 8 saves stored research state per station; new saves use ResearchRuntime.")]
         [SerializeField] private List<ResearchStationState> ResearchStations = new();
+
+        public ResearchRuntimeService.ResearchRuntimeSaveData GetResearchRuntime() => ResearchRuntime;
+        public void SetResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData Value) => ResearchRuntime = Value;
 
         public List<DrillPlacementSpotState> GetDrillPlacementSpots() => DrillPlacementSpots;
         public void SetDrillPlacementSpots(List<DrillPlacementSpotState> Value) => DrillPlacementSpots = Value ?? new List<DrillPlacementSpotState>();
@@ -569,6 +577,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
     [Tooltip("Upgrade manager restored from save.")]
     [SerializeField] private UpgradeManager UpgradeManager;
+
+    [Tooltip("Global research runtime service restored from save. This should live in the scene independently from any placed researcher machine.")]
+    [SerializeField] private ResearchRuntimeService ResearchRuntimeServiceReference;
 
     [Tooltip("Authoritative elevator motor restored from save.")]
     [SerializeField] private ElevatorPhysicalMotor ElevatorPhysicalMotor;
@@ -643,6 +654,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (UpgradeManager == null)
         {
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
+        }
+
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
         }
 
         if (ElevatorPhysicalMotor == null)
@@ -1078,6 +1094,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetOreSpawnPoints(CaptureOreSpawnPoints());
         Data.SetDrillPlacementSpots(CaptureDrillPlacementSpots());
         Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
+        Data.SetResearchRuntime(CaptureResearchRuntime());
         Data.SetResearchStations(CaptureResearchStations());
 
         return Data;
@@ -1141,7 +1158,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreRuntimeWorldItems(Data.GetRuntimeWorldItems());
         RestoreMoneyPickups(Data.GetMoneyPickups());
         RestoreOrePickups(Data.GetOrePickups());
+        RestoreResearchRuntime(Data.GetResearchRuntime(), Data.GetResearchStations());
         RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
+        RebuildLookupCaches();
         RestoreResearchStations(Data.GetResearchStations());
     }
 
@@ -1213,6 +1232,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private void RebuildLookupCaches()
     {
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
         ItemDefinitionsById.Clear();
         OreDefinitionsById.Clear();
         SceneWorldItemsById.Clear();
@@ -2055,6 +2079,69 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         Debug.Log("[GameSaveDebugController] " + Message, this);
+    }
+
+    /// <summary>
+    /// Captures the global research runtime state.
+    /// </summary>
+    private ResearchRuntimeService.ResearchRuntimeSaveData CaptureResearchRuntime()
+    {
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
+        return ResearchRuntimeServiceReference != null
+            ? ResearchRuntimeServiceReference.CreateSaveSnapshot()
+            : new ResearchRuntimeService.ResearchRuntimeSaveData();
+    }
+
+    /// <summary>
+    /// Restores the global research runtime state.
+    /// Falls back to one legacy per-station state when loading a Block 8 save.
+    /// </summary>
+    /// <param name="RuntimeState">Saved global runtime state.</param>
+    /// <param name="LegacyStationStates">Migration legacy per-station states.</param>
+    private void RestoreResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData RuntimeState, List<ResearchStationState> LegacyStationStates)
+    {
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
+        if (ResearchRuntimeServiceReference == null)
+        {
+            Log("Research runtime service was not found. Research progress cannot be restored.");
+            return;
+        }
+
+        if (RuntimeState != null)
+        {
+            ResearchRuntimeServiceReference.ApplySaveState(RuntimeState);
+            return;
+        }
+
+        if (LegacyStationStates == null || LegacyStationStates.Count <= 0)
+        {
+            ResearchRuntimeServiceReference.ApplySaveState(null);
+            return;
+        }
+
+        for (int Index = 0; Index < LegacyStationStates.Count; Index++)
+        {
+            ResearchStationState LegacyState = LegacyStationStates[Index];
+
+            if (LegacyState == null || LegacyState.GetStationData() == null)
+            {
+                continue;
+            }
+
+            ResearchRuntimeServiceReference.ApplySaveState(LegacyState.GetStationData());
+            Log("Imported legacy research station save state into ResearchRuntimeService.");
+            return;
+        }
+
+        ResearchRuntimeServiceReference.ApplySaveState(null);
     }
 
     /// <summary>

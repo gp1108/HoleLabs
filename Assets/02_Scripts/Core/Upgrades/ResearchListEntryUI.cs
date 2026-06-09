@@ -101,17 +101,17 @@ public sealed class ResearchListEntryUI : MonoBehaviour
             return;
         }
 
-        ResearchStation.ResearchBlockReason BlockReason = OwnerStation != null
+        ResearchRuntimeService.ResearchBlockReason BlockReason = OwnerStation != null
             ? OwnerStation.GetResearchBlockReason(ResearchDefinition)
-            : ResearchStation.ResearchBlockReason.MissingResearch;
+            : ResearchRuntimeService.ResearchBlockReason.MissingResearch;
 
-        ResearchStation.ResearchViewState ViewState = OwnerStation != null
+        ResearchRuntimeService.ResearchViewState ViewState = OwnerStation != null
             ? OwnerStation.GetResearchViewState(ResearchDefinition)
-            : ResearchStation.ResearchViewState.Invalid;
+            : ResearchRuntimeService.ResearchViewState.Invalid;
 
-        bool CanActivate = BlockReason == ResearchStation.ResearchBlockReason.None &&
-                           ViewState != ResearchStation.ResearchViewState.Completed &&
-                           ViewState != ResearchStation.ResearchViewState.Active;
+        bool CanActivate = BlockReason == ResearchRuntimeService.ResearchBlockReason.None &&
+                           ViewState != ResearchRuntimeService.ResearchViewState.Completed &&
+                           ViewState != ResearchRuntimeService.ResearchViewState.Active;
 
         if (IconImage != null)
         {
@@ -153,7 +153,7 @@ public sealed class ResearchListEntryUI : MonoBehaviour
 
         if (ActivateButtonText != null)
         {
-            ActivateButtonText.text = ViewState == ResearchStation.ResearchViewState.PaidInactive ? "Resume" : "Activate";
+            ActivateButtonText.text = ViewState == ResearchRuntimeService.ResearchViewState.PaidInactive ? "Resume" : "Activate";
         }
     }
 
@@ -181,7 +181,7 @@ public sealed class ResearchListEntryUI : MonoBehaviour
             return "Ores: -";
         }
 
-        List<ResearchStation.OreRequirementProgress> ProgressEntries = OwnerStation.GetOreRequirementProgress(ResearchDefinition);
+        List<ResearchRuntimeService.OreRequirementProgress> ProgressEntries = OwnerStation.GetOreRequirementProgress(ResearchDefinition);
 
         if (ProgressEntries.Count <= 0)
         {
@@ -193,7 +193,7 @@ public sealed class ResearchListEntryUI : MonoBehaviour
 
         for (int Index = 0; Index < ProgressEntries.Count; Index++)
         {
-            ResearchStation.OreRequirementProgress Progress = ProgressEntries[Index];
+            ResearchRuntimeService.OreRequirementProgress Progress = ProgressEntries[Index];
             string OreLabel = Progress.Requirement != null ? Progress.Requirement.BuildDisplayRequirementLabel() : "Missing Ore";
 
             RequirementsBuilder.Append('\n');
@@ -210,37 +210,37 @@ public sealed class ResearchListEntryUI : MonoBehaviour
     /// <summary>
     /// Builds a compact state label for the current block reason and view state.
     /// </summary>
-    private string BuildStateText(ResearchStation.ResearchBlockReason BlockReason, ResearchStation.ResearchViewState ViewState)
+    private string BuildStateText(ResearchRuntimeService.ResearchBlockReason BlockReason, ResearchRuntimeService.ResearchViewState ViewState)
     {
         switch (ViewState)
         {
-            case ResearchStation.ResearchViewState.Completed:
+            case ResearchRuntimeService.ResearchViewState.Completed:
                 return "Completed";
-            case ResearchStation.ResearchViewState.Active:
+            case ResearchRuntimeService.ResearchViewState.Active:
                 return "Active";
-            case ResearchStation.ResearchViewState.PaidInactive:
+            case ResearchRuntimeService.ResearchViewState.PaidInactive:
                 return "Paid - inactive";
-            case ResearchStation.ResearchViewState.Available:
+            case ResearchRuntimeService.ResearchViewState.Available:
                 return "Available";
         }
 
         switch (BlockReason)
         {
-            case ResearchStation.ResearchBlockReason.NotEnoughCredits:
+            case ResearchRuntimeService.ResearchBlockReason.NotEnoughCredits:
                 return "Not enough credits";
-            case ResearchStation.ResearchBlockReason.MissingFeatureFlag:
+            case ResearchRuntimeService.ResearchBlockReason.MissingFeatureFlag:
                 return "Locked";
-            case ResearchStation.ResearchBlockReason.MissingPrerequisite:
+            case ResearchRuntimeService.ResearchBlockReason.MissingPrerequisite:
                 return "Prerequisite missing";
-            case ResearchStation.ResearchBlockReason.AppliedUpgradeNotRegistered:
+            case ResearchRuntimeService.ResearchBlockReason.AppliedUpgradeNotRegistered:
                 return "Upgrade not registered";
-            case ResearchStation.ResearchBlockReason.MissingAppliedUpgrade:
+            case ResearchRuntimeService.ResearchBlockReason.MissingAppliedUpgrade:
                 return "Missing result upgrade";
-            case ResearchStation.ResearchBlockReason.MissingWallet:
+            case ResearchRuntimeService.ResearchBlockReason.MissingWallet:
                 return "Missing wallet";
-            case ResearchStation.ResearchBlockReason.MissingUpgradeManager:
+            case ResearchRuntimeService.ResearchBlockReason.MissingUpgradeManager:
                 return "Missing upgrade manager";
-            case ResearchStation.ResearchBlockReason.MissingResearchId:
+            case ResearchRuntimeService.ResearchBlockReason.MissingResearchId:
                 return "Missing research id";
             default:
                 return BlockReason.ToString();
@@ -250,16 +250,16 @@ public sealed class ResearchListEntryUI : MonoBehaviour
     /// <summary>
     /// Resolves the visual color used by the state text.
     /// </summary>
-    private Color ResolveStateColor(ResearchStation.ResearchViewState ViewState, bool CanActivate)
+    private Color ResolveStateColor(ResearchRuntimeService.ResearchViewState ViewState, bool CanActivate)
     {
         switch (ViewState)
         {
-            case ResearchStation.ResearchViewState.Completed:
+            case ResearchRuntimeService.ResearchViewState.Completed:
                 return CompletedColor;
-            case ResearchStation.ResearchViewState.Active:
+            case ResearchRuntimeService.ResearchViewState.Active:
                 return ActiveColor;
-            case ResearchStation.ResearchViewState.Available:
-            case ResearchStation.ResearchViewState.PaidInactive:
+            case ResearchRuntimeService.ResearchViewState.Available:
+            case ResearchRuntimeService.ResearchViewState.PaidInactive:
                 return CanActivate ? AvailableColor : BlockedColor;
             default:
                 return BlockedColor;

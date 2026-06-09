@@ -3,360 +3,24 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// World researcher station that activates one research at a time and progressively processes matching physical ores.
-/// Activation spends credits once, progress is retained when switching active research, and completion applies an UpgradeDefinition.
+/// Physical researcher machine installed in the world.
+/// It opens the research UI and processes ores through separate input zones, while global research state lives in ResearchRuntimeService.
 /// </summary>
-[RequireComponent(typeof(Collider))]
+[DisallowMultipleComponent]
 public sealed class ResearchStation : MonoBehaviour
 {
-    /// <summary>
-    /// Describes why a research entry cannot currently be activated.
-    /// </summary>
-    public enum ResearchBlockReason
-    {
-        None = 0,
-        MissingResearch = 1,
-        MissingWallet = 2,
-        MissingUpgradeManager = 3,
-        MissingAppliedUpgrade = 4,
-        AppliedUpgradeNotRegistered = 5,
-        AlreadyCompleted = 6,
-        MissingFeatureFlag = 7,
-        MissingPrerequisite = 8,
-        NotEnoughCredits = 9,
-        MissingResearchId = 10
-    }
-
-    /// <summary>
-    /// High level state used by UI entries.
-    /// </summary>
-    public enum ResearchViewState
-    {
-        Locked = 0,
-        Available = 1,
-        PaidInactive = 2,
-        Active = 3,
-        Completed = 4,
-        Invalid = 5
-    }
-
-    /// <summary>
-    /// Runtime progress for one configured ore requirement.
-    /// </summary>
-    public readonly struct OreRequirementProgress
-    {
-        /// <summary>
-        /// Requirement configured by the research asset.
-        /// </summary>
-        public readonly ResearchDefinition.OreRequirement Requirement;
-
-        /// <summary>
-        /// Amount already processed into this research.
-        /// </summary>
-        public readonly int ProcessedAmount;
-
-        /// <summary>
-        /// Amount required by the research asset.
-        /// </summary>
-        public readonly int RequiredAmount;
-
-        /// <summary>
-        /// Creates one requirement progress value.
-        /// </summary>
-        public OreRequirementProgress(ResearchDefinition.OreRequirement RequirementValue, int ProcessedAmountValue, int RequiredAmountValue)
-        {
-            Requirement = RequirementValue;
-            ProcessedAmount = Mathf.Max(0, ProcessedAmountValue);
-            RequiredAmount = Mathf.Max(0, RequiredAmountValue);
-        }
-
-        /// <summary>
-        /// Returns whether this requirement has been fully processed.
-        /// </summary>
-        public bool IsSatisfied()
-        {
-            return ProcessedAmount >= RequiredAmount;
-        }
-    }
-
-    /// <summary>
-    /// Serializable runtime progress retained while switching active research.
-    /// </summary>
-    [Serializable]
-    public sealed class ResearchProgressState
-    {
-        [Tooltip("Research id this progress belongs to.")]
-        [SerializeField] private string ResearchId;
-
-        [Tooltip("True after the activation credit cost has been paid once.")]
-        [SerializeField] private bool IsActivationPaid;
-
-        [Tooltip("Processed ore counts by requirement index.")]
-        [SerializeField] private List<int> ProcessedAmounts = new();
-
-        /// <summary>
-        /// Creates an empty progress state for serialization.
-        /// </summary>
-        public ResearchProgressState()
-        {
-        }
-
-        /// <summary>
-        /// Creates a new progress state for the provided research id.
-        /// </summary>
-        public ResearchProgressState(string ResearchIdValue)
-        {
-            ResearchId = ResearchIdValue;
-        }
-
-        /// <summary>
-        /// Gets the research id.
-        /// </summary>
-        public string GetResearchId()
-        {
-            return ResearchId;
-        }
-
-        /// <summary>
-        /// Gets whether activation credits have already been paid.
-        /// </summary>
-        public bool GetIsActivationPaid()
-        {
-            return IsActivationPaid;
-        }
-
-        /// <summary>
-        /// Sets whether activation credits have already been paid.
-        /// </summary>
-        public void SetIsActivationPaid(bool Value)
-        {
-            IsActivationPaid = Value;
-        }
-
-        /// <summary>
-        /// Gets the processed amount for a requirement index.
-        /// </summary>
-        public int GetProcessedAmount(int RequirementIndex)
-        {
-            if (RequirementIndex < 0 || RequirementIndex >= ProcessedAmounts.Count)
-            {
-                return 0;
-            }
-
-            return Mathf.Max(0, ProcessedAmounts[RequirementIndex]);
-        }
-
-        /// <summary>
-        /// Adds one processed ore to a requirement index.
-        /// </summary>
-        public void AddProcessedAmount(int RequirementIndex, int Amount)
-        {
-            EnsureRequirementIndex(RequirementIndex);
-            ProcessedAmounts[RequirementIndex] = Mathf.Max(0, ProcessedAmounts[RequirementIndex] + Mathf.Max(0, Amount));
-        }
-
-        /// <summary>
-        /// Gets a read-only view of all processed amounts by requirement index.
-        /// </summary>
-        public IReadOnlyList<int> GetProcessedAmounts()
-        {
-            return ProcessedAmounts;
-        }
-
-        /// <summary>
-        /// Replaces the processed amount list with a sanitized saved value.
-        /// </summary>
-        /// <param name="SavedAmounts">Saved processed amount values by requirement index.</param>
-        public void SetProcessedAmounts(IReadOnlyList<int> SavedAmounts)
-        {
-            ProcessedAmounts.Clear();
-
-            if (SavedAmounts == null)
-            {
-                return;
-            }
-
-            for (int Index = 0; Index < SavedAmounts.Count; Index++)
-            {
-                ProcessedAmounts.Add(Mathf.Max(0, SavedAmounts[Index]));
-            }
-        }
-
-        /// <summary>
-        /// Creates a deep copy of this progress state for safe save snapshots.
-        /// </summary>
-        public ResearchProgressState Clone()
-        {
-            ResearchProgressState Result = new ResearchProgressState(ResearchId);
-            Result.SetIsActivationPaid(IsActivationPaid);
-            Result.SetProcessedAmounts(ProcessedAmounts);
-            return Result;
-        }
-
-        /// <summary>
-        /// Ensures the processed amount list can store the provided requirement index.
-        /// </summary>
-        private void EnsureRequirementIndex(int RequirementIndex)
-        {
-            if (RequirementIndex < 0)
-            {
-                return;
-            }
-
-            while (ProcessedAmounts.Count <= RequirementIndex)
-            {
-                ProcessedAmounts.Add(0);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Serializable save payload for one research progress entry.
-    /// This is intentionally plain data so Easy Save does not need to serialize runtime object references.
-    /// </summary>
-    [Serializable]
-    public sealed class ResearchProgressSaveData
-    {
-        [Tooltip("Research id this progress belongs to.")]
-        [SerializeField] private string ResearchId;
-
-        [Tooltip("True after the activation credit cost has been paid once.")]
-        [SerializeField] private bool IsActivationPaid;
-
-        [Tooltip("Processed ore counts by requirement index.")]
-        [SerializeField] private List<int> ProcessedAmounts = new();
-
-        /// <summary>
-        /// Creates an empty save payload for serialization.
-        /// </summary>
-        public ResearchProgressSaveData()
-        {
-        }
-
-        /// <summary>
-        /// Creates a save payload from one runtime progress state.
-        /// </summary>
-        /// <param name="RuntimeState">Runtime progress state to capture.</param>
-        public ResearchProgressSaveData(ResearchProgressState RuntimeState)
-        {
-            if (RuntimeState == null)
-            {
-                ResearchId = string.Empty;
-                IsActivationPaid = false;
-                return;
-            }
-
-            ResearchId = RuntimeState.GetResearchId();
-            IsActivationPaid = RuntimeState.GetIsActivationPaid();
-
-            IReadOnlyList<int> RuntimeAmounts = RuntimeState.GetProcessedAmounts();
-            for (int Index = 0; Index < RuntimeAmounts.Count; Index++)
-            {
-                ProcessedAmounts.Add(Mathf.Max(0, RuntimeAmounts[Index]));
-            }
-        }
-
-        /// <summary>
-        /// Gets the saved research id.
-        /// </summary>
-        public string GetResearchId()
-        {
-            return ResearchId;
-        }
-
-        /// <summary>
-        /// Converts this save payload back into a runtime progress state.
-        /// </summary>
-        public ResearchProgressState ToRuntimeState()
-        {
-            ResearchProgressState Result = new ResearchProgressState(ResearchId);
-            Result.SetIsActivationPaid(IsActivationPaid);
-            Result.SetProcessedAmounts(ProcessedAmounts);
-            return Result;
-        }
-    }
-
-    /// <summary>
-    /// Serializable save payload for the entire research station runtime state.
-    /// </summary>
-    [Serializable]
-    public sealed class ResearchStationSaveData
-    {
-        [Tooltip("Research id that was active when the game was saved.")]
-        [SerializeField] private string ActiveResearchId;
-
-        [Tooltip("Saved progress states for paid or partially processed researches.")]
-        [SerializeField] private List<ResearchProgressSaveData> ProgressStates = new();
-
-        /// <summary>
-        /// Creates an empty save payload for serialization.
-        /// </summary>
-        public ResearchStationSaveData()
-        {
-        }
-
-        /// <summary>
-        /// Creates a save payload with the provided active research id.
-        /// </summary>
-        /// <param name="ActiveResearchIdValue">Research id that should remain active after loading.</param>
-        public ResearchStationSaveData(string ActiveResearchIdValue)
-        {
-            ActiveResearchId = ActiveResearchIdValue;
-        }
-
-        /// <summary>
-        /// Gets the saved active research id.
-        /// </summary>
-        public string GetActiveResearchId()
-        {
-            return ActiveResearchId;
-        }
-
-        /// <summary>
-        /// Gets the saved research progress entries.
-        /// </summary>
-        public List<ResearchProgressSaveData> GetProgressStates()
-        {
-            return ProgressStates;
-        }
-
-        /// <summary>
-        /// Adds one progress entry to this save payload.
-        /// </summary>
-        /// <param name="ProgressState">Progress entry to store.</param>
-        public void AddProgressState(ResearchProgressSaveData ProgressState)
-        {
-            if (ProgressState == null || string.IsNullOrWhiteSpace(ProgressState.GetResearchId()))
-            {
-                return;
-            }
-
-            ProgressStates.Add(ProgressState);
-        }
-    }
-
     [Header("References")]
-    [Tooltip("Panel controlled by this research station.")]
+    [Tooltip("Panel controlled by this research station. If empty, the first scene ResearchPanelUI is used.")]
     [SerializeField] private ResearchPanelUI ResearchPanelUI;
 
-    [Tooltip("Wallet used to spend research activation credit costs.")]
-    [SerializeField] private CurrencyWallet CurrencyWallet;
+    [Tooltip("Global research runtime authority. It persists active research and partial progress independently from this physical machine.")]
+    [SerializeField] private ResearchRuntimeService ResearchRuntimeServiceReference;
 
-    [Tooltip("Upgrade manager used for prerequisites and final research application.")]
-    [SerializeField] private UpgradeManager UpgradeManager;
-
-    [Header("Research Lookup")]
-    [Tooltip("Optional explicit research definitions known by this station. UI entries also register their definitions automatically at runtime.")]
-    [SerializeField] private List<ResearchDefinition> ResearchDefinitions = new();
-
-    [Tooltip("Optional prompt root enabled only while the player is inside the station range.")]
+    [Tooltip("Optional prompt root enabled only while the player is inside this station interaction range.")]
     [SerializeField] private GameObject PromptRoot;
 
-    [Header("Ore Input")]
-    [Tooltip("Layer mask used by the station input zone. Keep this broad unless you have a dedicated ore layer.")]
-    [SerializeField] private LayerMask OreInputLayers = ~0;
-
-    [Tooltip("If true, held or magnetized ore pickups inside the trigger are ignored and cannot be consumed.")]
+    [Header("Ore Processing")]
+    [Tooltip("If true, held or magnetized ore pickups inside input zones are ignored and cannot be consumed.")]
     [SerializeField] private bool IgnoreControlledCarryables = true;
 
     [Tooltip("Seconds between ore processing attempts while a research is active.")]
@@ -365,29 +29,23 @@ public sealed class ResearchStation : MonoBehaviour
     [Tooltip("Maximum number of matching ores consumed per processing tick.")]
     [SerializeField] private int MaxOresProcessedPerTick = 1;
 
-    [Header("Runtime State")]
-    [Tooltip("Research currently active. Only this research consumes matching ores.")]
-    [SerializeField] private ResearchDefinition ActiveResearchDefinition;
-
-    [Tooltip("Runtime progress retained while switching active research. This is prepared for future save integration.")]
-    [SerializeField] private List<ResearchProgressState> ResearchProgressStates = new();
-
     [Header("Debug")]
-    [Tooltip("Logs research station flow and ore consumption.")]
+    [Tooltip("Logs research station interaction and ore-zone flow.")]
     [SerializeField] private bool DebugLogs = false;
 
     /// <summary>
-    /// Player currently inside this station trigger.
+    /// Player interactor currently inside this station interaction trigger.
     /// </summary>
     private UpgradeShopInteractor CurrentInteractor;
 
     /// <summary>
-    /// Colliders currently overlapping the research input trigger.
+    /// Colliders currently overlapping one or more registered research ore input zones.
+    /// The integer value is a reference count so overlapping input zones cannot prematurely unregister a collider.
     /// </summary>
-    private readonly HashSet<Collider> LiveInputColliders = new();
+    private readonly Dictionary<Collider, int> LiveInputColliderCounts = new();
 
     /// <summary>
-    /// Reusable list used to resolve unique ore pickups inside the input zone.
+    /// Reusable list used to resolve unique ore pickups inside input zones.
     /// </summary>
     private readonly List<OrePickup> ResolvedOrePickups = new();
 
@@ -395,6 +53,11 @@ public sealed class ResearchStation : MonoBehaviour
     /// Reusable set used to deduplicate ore pickups with multiple colliders.
     /// </summary>
     private readonly HashSet<OrePickup> ResolvedOrePickupSet = new();
+
+    /// <summary>
+    /// Reusable list used to remove invalid input colliders from the counted dictionary safely.
+    /// </summary>
+    private readonly List<Collider> InvalidInputColliders = new();
 
     /// <summary>
     /// Runtime timer used to process active research ores at a controlled pace.
@@ -407,32 +70,53 @@ public sealed class ResearchStation : MonoBehaviour
     public event Action OnResearchStationStateChanged;
 
     /// <summary>
-    /// Resolves missing runtime references and initializes the panel.
+    /// Resolves missing references and initializes the panel.
     /// </summary>
     private void Awake()
     {
-        if (CurrencyWallet == null)
-        {
-            CurrencyWallet = FindFirstObjectByType<CurrencyWallet>();
-        }
-
-        if (UpgradeManager == null)
-        {
-            UpgradeManager = FindFirstObjectByType<UpgradeManager>();
-        }
-
-        RegisterKnownResearchDefinitionsFromScene();
+        ResolveReferences();
 
         if (ResearchPanelUI != null)
         {
             ResearchPanelUI.Initialize(this);
         }
-
-        RegisterKnownResearchDefinitionsFromScene();
     }
 
     /// <summary>
-    /// Cleans invalid collider references and processes the active research over time.
+    /// Subscribes to global research state changes.
+    /// </summary>
+    private void OnEnable()
+    {
+        ResolveReferences();
+
+        if (ResearchRuntimeServiceReference != null)
+        {
+            ResearchRuntimeServiceReference.OnResearchStateChanged -= HandleResearchRuntimeStateChanged;
+            ResearchRuntimeServiceReference.OnResearchStateChanged += HandleResearchRuntimeStateChanged;
+        }
+    }
+
+    /// <summary>
+    /// Unsubscribes from global research state changes.
+    /// </summary>
+    private void OnDisable()
+    {
+        if (ResearchRuntimeServiceReference != null)
+        {
+            ResearchRuntimeServiceReference.OnResearchStateChanged -= HandleResearchRuntimeStateChanged;
+        }
+
+        if (CurrentInteractor != null)
+        {
+            CurrentInteractor.ClearNearbyResearchStation(this);
+            CurrentInteractor = null;
+        }
+
+        LiveInputColliderCounts.Clear();
+    }
+
+    /// <summary>
+    /// Cleans invalid collider references and processes active research over time.
     /// </summary>
     private void Update()
     {
@@ -449,121 +133,38 @@ public sealed class ResearchStation : MonoBehaviour
     }
 
     /// <summary>
+    /// Gets the global research runtime service used by this station.
+    /// </summary>
+    public ResearchRuntimeService GetResearchRuntimeService()
+    {
+        ResolveReferences();
+        return ResearchRuntimeServiceReference;
+    }
+
+    /// <summary>
     /// Gets the currently active research definition.
     /// </summary>
     public ResearchDefinition GetActiveResearchDefinition()
     {
-        return ActiveResearchDefinition;
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null ? RuntimeService.GetActiveResearchDefinition() : null;
     }
 
     /// <summary>
-    /// Registers a research definition so the station can restore active research by id after loading.
-    /// UI entries call this automatically, but explicit registration is also supported.
+    /// Registers a research definition in the global runtime lookup.
     /// </summary>
-    /// <param name="ResearchDefinition">Research definition to register.</param>
     public void RegisterResearchDefinition(ResearchDefinition ResearchDefinition)
     {
-        if (ResearchDefinition == null || string.IsNullOrWhiteSpace(ResearchDefinition.GetResearchId()))
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+
+        if (RuntimeService != null)
         {
-            return;
+            RuntimeService.RegisterResearchDefinition(ResearchDefinition);
         }
-
-        for (int Index = 0; Index < ResearchDefinitions.Count; Index++)
-        {
-            ResearchDefinition ExistingDefinition = ResearchDefinitions[Index];
-
-            if (ExistingDefinition == null)
-            {
-                continue;
-            }
-
-            if (ExistingDefinition == ResearchDefinition ||
-                string.Equals(ExistingDefinition.GetResearchId(), ResearchDefinition.GetResearchId(), StringComparison.Ordinal))
-            {
-                ResearchDefinitions[Index] = ResearchDefinition;
-                return;
-            }
-        }
-
-        ResearchDefinitions.Add(ResearchDefinition);
     }
 
     /// <summary>
-    /// Creates a save snapshot containing the active research id and all retained progress states.
-    /// </summary>
-    public ResearchStationSaveData CreateSaveSnapshot()
-    {
-        string ActiveResearchId = ActiveResearchDefinition != null ? ActiveResearchDefinition.GetResearchId() : string.Empty;
-        ResearchStationSaveData Result = new ResearchStationSaveData(ActiveResearchId);
-
-        for (int Index = 0; Index < ResearchProgressStates.Count; Index++)
-        {
-            ResearchProgressState State = ResearchProgressStates[Index];
-
-            if (State == null || string.IsNullOrWhiteSpace(State.GetResearchId()))
-            {
-                continue;
-            }
-
-            Result.AddProgressState(new ResearchProgressSaveData(State));
-        }
-
-        return Result;
-    }
-
-    /// <summary>
-    /// Restores active research and retained progress states from save data.
-    /// Completed researches still come from UpgradeManager; this only restores unfinished or paid progress.
-    /// </summary>
-    /// <param name="SaveData">Research station save payload.</param>
-    public void ApplySaveState(ResearchStationSaveData SaveData)
-    {
-        RegisterKnownResearchDefinitionsFromScene();
-
-        ResearchProgressStates.Clear();
-        ActiveResearchDefinition = null;
-        ProcessingTimer = 0f;
-
-        if (SaveData == null)
-        {
-            NotifyStateChanged();
-            return;
-        }
-
-        List<ResearchProgressSaveData> SavedProgressStates = SaveData.GetProgressStates();
-
-        if (SavedProgressStates != null)
-        {
-            for (int Index = 0; Index < SavedProgressStates.Count; Index++)
-            {
-                ResearchProgressSaveData SavedState = SavedProgressStates[Index];
-
-                if (SavedState == null || string.IsNullOrWhiteSpace(SavedState.GetResearchId()))
-                {
-                    continue;
-                }
-
-                ResearchProgressStates.Add(SavedState.ToRuntimeState());
-            }
-        }
-
-        string SavedActiveResearchId = SaveData.GetActiveResearchId();
-
-        if (!string.IsNullOrWhiteSpace(SavedActiveResearchId))
-        {
-            ActiveResearchDefinition = ResolveResearchDefinitionById(SavedActiveResearchId);
-
-            if (ActiveResearchDefinition == null)
-            {
-                Log("Saved active research could not be resolved: " + SavedActiveResearchId);
-            }
-        }
-
-        NotifyStateChanged();
-    }
-
-    /// <summary>
-    /// Returns whether the provided interactor is currently registered inside this station range.
+    /// Returns whether the provided interactor is currently registered inside this station interaction range.
     /// </summary>
     public bool IsInteractorRegistered(UpgradeShopInteractor Interactor)
     {
@@ -571,163 +172,141 @@ public sealed class ResearchStation : MonoBehaviour
     }
 
     /// <summary>
+    /// Registers the player interactor that entered this station interaction trigger.
+    /// Called by ResearchStationInteractionTrigger.
+    /// </summary>
+    public void RegisterInteractor(UpgradeShopInteractor Interactor)
+    {
+        if (Interactor == null)
+        {
+            return;
+        }
+
+        CurrentInteractor = Interactor;
+        CurrentInteractor.SetNearbyResearchStation(this);
+
+        if (PromptRoot != null)
+        {
+            PromptRoot.SetActive(true);
+        }
+
+        Log("Interactor registered: " + Interactor.name);
+    }
+
+    /// <summary>
+    /// Clears the player interactor that left this station interaction trigger.
+    /// Called by ResearchStationInteractionTrigger.
+    /// </summary>
+    public void ClearInteractor(UpgradeShopInteractor Interactor)
+    {
+        if (Interactor == null || CurrentInteractor != Interactor)
+        {
+            return;
+        }
+
+        CurrentInteractor.ClearNearbyResearchStation(this);
+        CurrentInteractor = null;
+
+        if (PromptRoot != null)
+        {
+            PromptRoot.SetActive(false);
+        }
+
+        Log("Interactor cleared: " + Interactor.name);
+    }
+
+    /// <summary>
+    /// Registers a collider currently inside one of this station's ore input zones.
+    /// Called by ResearchOreInputZone.
+    /// </summary>
+    public void RegisterOreInputCollider(Collider Other)
+    {
+        if (Other == null)
+        {
+            return;
+        }
+
+        if (Other.GetComponent<OrePickup>() == null && Other.GetComponentInParent<OrePickup>() == null)
+        {
+            return;
+        }
+
+        if (LiveInputColliderCounts.TryGetValue(Other, out int CurrentCount))
+        {
+            LiveInputColliderCounts[Other] = CurrentCount + 1;
+            return;
+        }
+
+        LiveInputColliderCounts[Other] = 1;
+        NotifyStateChanged();
+    }
+
+    /// <summary>
+    /// Unregisters a collider that left one of this station's ore input zones.
+    /// Called by ResearchOreInputZone.
+    /// </summary>
+    public void UnregisterOreInputCollider(Collider Other)
+    {
+        if (Other == null)
+        {
+            return;
+        }
+
+        if (!LiveInputColliderCounts.TryGetValue(Other, out int CurrentCount))
+        {
+            return;
+        }
+
+        CurrentCount--;
+
+        if (CurrentCount > 0)
+        {
+            LiveInputColliderCounts[Other] = CurrentCount;
+            return;
+        }
+
+        LiveInputColliderCounts.Remove(Other);
+        NotifyStateChanged();
+    }
+
+    /// <summary>
     /// Returns whether the provided research is currently active.
     /// </summary>
     public bool IsResearchActive(ResearchDefinition ResearchDefinition)
     {
-        return ResearchDefinition != null && ActiveResearchDefinition == ResearchDefinition;
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null && RuntimeService.IsResearchActive(ResearchDefinition);
     }
 
     /// <summary>
     /// Gets the current UI state for one research entry.
     /// </summary>
-    public ResearchViewState GetResearchViewState(ResearchDefinition ResearchDefinition)
+    public ResearchRuntimeService.ResearchViewState GetResearchViewState(ResearchDefinition ResearchDefinition)
     {
-        ResearchBlockReason BlockReason = GetResearchBlockReason(ResearchDefinition);
-
-        if (BlockReason == ResearchBlockReason.AlreadyCompleted)
-        {
-            return ResearchViewState.Completed;
-        }
-
-        if (BlockReason != ResearchBlockReason.None && BlockReason != ResearchBlockReason.NotEnoughCredits)
-        {
-            return ResearchViewState.Locked;
-        }
-
-        if (ResearchDefinition == null)
-        {
-            return ResearchViewState.Invalid;
-        }
-
-        ResearchProgressState ProgressState = GetProgressState(ResearchDefinition, false);
-
-        if (ActiveResearchDefinition == ResearchDefinition)
-        {
-            return ResearchViewState.Active;
-        }
-
-        if (ProgressState != null && ProgressState.GetIsActivationPaid())
-        {
-            return ResearchViewState.PaidInactive;
-        }
-
-        return BlockReason == ResearchBlockReason.NotEnoughCredits ? ResearchViewState.Locked : ResearchViewState.Available;
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null
+            ? RuntimeService.GetResearchViewState(ResearchDefinition)
+            : ResearchRuntimeService.ResearchViewState.Invalid;
     }
 
     /// <summary>
     /// Gets the current reason why a research entry cannot currently be activated.
-    /// Ores are not checked here because ores are processed progressively after activation.
     /// </summary>
-    public ResearchBlockReason GetResearchBlockReason(ResearchDefinition ResearchDefinition)
+    public ResearchRuntimeService.ResearchBlockReason GetResearchBlockReason(ResearchDefinition ResearchDefinition)
     {
-        if (ResearchDefinition == null)
-        {
-            return ResearchBlockReason.MissingResearch;
-        }
-
-        if (string.IsNullOrWhiteSpace(ResearchDefinition.GetResearchId()))
-        {
-            return ResearchBlockReason.MissingResearchId;
-        }
-
-        if (CurrencyWallet == null)
-        {
-            return ResearchBlockReason.MissingWallet;
-        }
-
-        if (UpgradeManager == null)
-        {
-            return ResearchBlockReason.MissingUpgradeManager;
-        }
-
-        UpgradeDefinition AppliedUpgradeDefinition = ResearchDefinition.GetAppliedUpgradeDefinition();
-
-        if (AppliedUpgradeDefinition == null)
-        {
-            return ResearchBlockReason.MissingAppliedUpgrade;
-        }
-
-        UpgradeDefinition RegisteredUpgradeDefinition = UpgradeManager.GetUpgradeDefinition(AppliedUpgradeDefinition.GetUpgradeId());
-
-        if (RegisteredUpgradeDefinition != AppliedUpgradeDefinition)
-        {
-            return ResearchBlockReason.AppliedUpgradeNotRegistered;
-        }
-
-        int CurrentLevel = UpgradeManager.GetUpgradeLevel(AppliedUpgradeDefinition);
-        int TargetLevel = ResearchDefinition.GetResolvedTargetLevel(UpgradeManager);
-
-        if (TargetLevel <= CurrentLevel)
-        {
-            return ResearchBlockReason.AlreadyCompleted;
-        }
-
-        if (ResearchDefinition.GetRequiresFeatureFlag() &&
-            !UpgradeManager.IsFeatureUnlocked(ResearchDefinition.GetRequiredFeatureFlagId()))
-        {
-            return ResearchBlockReason.MissingFeatureFlag;
-        }
-
-        if (!ArePrerequisitesMet(ResearchDefinition))
-        {
-            return ResearchBlockReason.MissingPrerequisite;
-        }
-
-        ResearchProgressState ProgressState = GetProgressState(ResearchDefinition, false);
-
-        if ((ProgressState == null || !ProgressState.GetIsActivationPaid()) &&
-            !CurrencyWallet.HasEnoughCredits(ResearchDefinition.GetCreditCost()))
-        {
-            return ResearchBlockReason.NotEnoughCredits;
-        }
-
-        return ResearchBlockReason.None;
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null
+            ? RuntimeService.GetResearchBlockReason(ResearchDefinition)
+            : ResearchRuntimeService.ResearchBlockReason.MissingUpgradeManager;
     }
 
     /// <summary>
-    /// Attempts to activate the provided research entry.
-    /// Credits are spent only the first time this research is activated; progress remains when switching away.
+    /// Attempts to activate the provided research entry through the global runtime service.
     /// </summary>
-    /// <param name="ResearchDefinition">Research to activate.</param>
-    /// <returns>True when the research became active.</returns>
     public bool TryActivateResearch(ResearchDefinition ResearchDefinition)
     {
-        ResearchBlockReason BlockReason = GetResearchBlockReason(ResearchDefinition);
-
-        if (BlockReason != ResearchBlockReason.None)
-        {
-            Log("Research activation blocked: " + BlockReason);
-            NotifyStateChanged();
-            return false;
-        }
-
-        ResearchProgressState ProgressState = GetProgressState(ResearchDefinition, true);
-
-        if (ProgressState == null)
-        {
-            Log("Research activation failed because progress state could not be created.");
-            NotifyStateChanged();
-            return false;
-        }
-
-        if (!ProgressState.GetIsActivationPaid())
-        {
-            if (!CurrencyWallet.TrySpendCredits(ResearchDefinition.GetCreditCost()))
-            {
-                Log("Research activation failed while spending credits: " + ResearchDefinition.GetDisplayName());
-                NotifyStateChanged();
-                return false;
-            }
-
-            ProgressState.SetIsActivationPaid(true);
-        }
-
-        ActiveResearchDefinition = ResearchDefinition;
-        ProcessingTimer = 0f;
-        NotifyStateChanged();
-        Log("Research activated: " + ResearchDefinition.GetDisplayName());
-        return true;
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null && RuntimeService.TryActivateResearch(ResearchDefinition);
     }
 
     /// <summary>
@@ -735,62 +314,55 @@ public sealed class ResearchStation : MonoBehaviour
     /// </summary>
     public void ClearActiveResearch()
     {
-        ActiveResearchDefinition = null;
-        ProcessingTimer = 0f;
-        NotifyStateChanged();
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+
+        if (RuntimeService != null)
+        {
+            RuntimeService.ClearActiveResearch();
+        }
     }
 
     /// <summary>
     /// Gets progress for every ore requirement of the provided research entry.
     /// </summary>
-    public List<OreRequirementProgress> GetOreRequirementProgress(ResearchDefinition ResearchDefinition)
+    public List<ResearchRuntimeService.OreRequirementProgress> GetOreRequirementProgress(ResearchDefinition ResearchDefinition)
     {
-        List<OreRequirementProgress> Result = new();
-
-        if (ResearchDefinition == null)
-        {
-            return Result;
-        }
-
-        ResearchProgressState ProgressState = GetProgressState(ResearchDefinition, false);
-        IReadOnlyList<ResearchDefinition.OreRequirement> Requirements = ResearchDefinition.GetOreRequirements();
-
-        for (int Index = 0; Index < Requirements.Count; Index++)
-        {
-            ResearchDefinition.OreRequirement Requirement = Requirements[Index];
-
-            if (Requirement == null || !Requirement.IsValid())
-            {
-                continue;
-            }
-
-            int ProcessedAmount = ProgressState != null ? ProgressState.GetProcessedAmount(Index) : 0;
-            Result.Add(new OreRequirementProgress(Requirement, ProcessedAmount, Requirement.GetAmount()));
-        }
-
-        return Result;
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null
+            ? RuntimeService.GetOreRequirementProgress(ResearchDefinition)
+            : new List<ResearchRuntimeService.OreRequirementProgress>();
     }
 
     /// <summary>
-    /// Processes matching physical ore pickups into the active research.
+    /// Legacy facade kept for save migration safety. New saves should use ResearchRuntimeService directly.
+    /// </summary>
+    public ResearchRuntimeService.ResearchRuntimeSaveData CreateSaveSnapshot()
+    {
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null ? RuntimeService.CreateSaveSnapshot() : new ResearchRuntimeService.ResearchRuntimeSaveData();
+    }
+
+    /// <summary>
+    /// Legacy facade kept for save migration safety. New saves should use ResearchRuntimeService directly.
+    /// </summary>
+    public void ApplySaveState(ResearchRuntimeService.ResearchRuntimeSaveData SaveData)
+    {
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+
+        if (RuntimeService != null)
+        {
+            RuntimeService.ApplySaveState(SaveData);
+        }
+    }
+
+    /// <summary>
+    /// Processes matching physical ore pickups from all registered ore input zones.
     /// </summary>
     private void ProcessActiveResearch(float DeltaTime)
     {
-        if (ActiveResearchDefinition == null)
-        {
-            return;
-        }
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
 
-        ResearchBlockReason BlockReason = GetResearchBlockReason(ActiveResearchDefinition);
-
-        if (BlockReason == ResearchBlockReason.AlreadyCompleted)
-        {
-            ActiveResearchDefinition = null;
-            NotifyStateChanged();
-            return;
-        }
-
-        if (BlockReason != ResearchBlockReason.None)
+        if (RuntimeService == null || RuntimeService.GetActiveResearchDefinition() == null)
         {
             return;
         }
@@ -803,292 +375,20 @@ public sealed class ResearchStation : MonoBehaviour
         }
 
         ProcessingTimer = Mathf.Max(0.01f, ProcessingInterval);
+        ResolveCurrentOrePickups();
 
-        int ProcessedThisTick = 0;
-        int MaxToProcess = Mathf.Max(1, MaxOresProcessedPerTick);
+        int ProcessedCount = RuntimeService.ProcessOrePickups(ResolvedOrePickups, Mathf.Max(1, MaxOresProcessedPerTick));
 
-        while (ProcessedThisTick < MaxToProcess && TryProcessOneMatchingOre(ActiveResearchDefinition))
+        if (ProcessedCount > 0)
         {
-            ProcessedThisTick++;
-        }
-
-        if (ProcessedThisTick > 0)
-        {
+            RemoveInvalidOrConsumedInputColliders();
             NotifyStateChanged();
-        }
-
-        if (IsResearchProgressComplete(ActiveResearchDefinition))
-        {
-            CompleteActiveResearch();
+            Log("Processed " + ProcessedCount + " ore pickup(s). ");
         }
     }
 
     /// <summary>
-    /// Attempts to consume one ore pickup that satisfies one remaining requirement of the active research.
-    /// </summary>
-    private bool TryProcessOneMatchingOre(ResearchDefinition ResearchDefinition)
-    {
-        if (ResearchDefinition == null)
-        {
-            return false;
-        }
-
-        ResearchProgressState ProgressState = GetProgressState(ResearchDefinition, true);
-
-        if (ProgressState == null || !ProgressState.GetIsActivationPaid())
-        {
-            return false;
-        }
-
-        ResolveCurrentOrePickups();
-
-        IReadOnlyList<ResearchDefinition.OreRequirement> Requirements = ResearchDefinition.GetOreRequirements();
-
-        for (int RequirementIndex = 0; RequirementIndex < Requirements.Count; RequirementIndex++)
-        {
-            ResearchDefinition.OreRequirement Requirement = Requirements[RequirementIndex];
-
-            if (Requirement == null || !Requirement.IsValid())
-            {
-                continue;
-            }
-
-            if (ProgressState.GetProcessedAmount(RequirementIndex) >= Requirement.GetAmount())
-            {
-                continue;
-            }
-
-            OrePickup MatchingPickup = FindMatchingPickupForRequirement(Requirement);
-
-            if (MatchingPickup == null)
-            {
-                continue;
-            }
-
-            ConsumeOrePickup(MatchingPickup);
-            ProgressState.AddProcessedAmount(RequirementIndex, 1);
-            Log("Processed ore for research: " + ResearchDefinition.GetDisplayName() + " | Requirement=" + Requirement.BuildDisplayRequirementLabel());
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Completes the currently active research and applies its configured upgrade result.
-    /// </summary>
-    private void CompleteActiveResearch()
-    {
-        if (ActiveResearchDefinition == null)
-        {
-            return;
-        }
-
-        ResearchDefinition CompletedResearch = ActiveResearchDefinition;
-        ApplyResearchResult(CompletedResearch);
-        ActiveResearchDefinition = null;
-        ProcessingTimer = 0f;
-        NotifyStateChanged();
-        Log("Research completed: " + CompletedResearch.GetDisplayName());
-    }
-
-    /// <summary>
-    /// Returns whether all ore requirements have been processed.
-    /// </summary>
-    private bool IsResearchProgressComplete(ResearchDefinition ResearchDefinition)
-    {
-        ResearchProgressState ProgressState = GetProgressState(ResearchDefinition, false);
-
-        if (ResearchDefinition == null || ProgressState == null || !ProgressState.GetIsActivationPaid())
-        {
-            return false;
-        }
-
-        IReadOnlyList<ResearchDefinition.OreRequirement> Requirements = ResearchDefinition.GetOreRequirements();
-
-        for (int Index = 0; Index < Requirements.Count; Index++)
-        {
-            ResearchDefinition.OreRequirement Requirement = Requirements[Index];
-
-            if (Requirement == null || !Requirement.IsValid())
-            {
-                continue;
-            }
-
-            if (ProgressState.GetProcessedAmount(Index) < Requirement.GetAmount())
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Finds one currently available ore pickup matching the provided requirement.
-    /// </summary>
-    private OrePickup FindMatchingPickupForRequirement(ResearchDefinition.OreRequirement Requirement)
-    {
-        ResolveCurrentOrePickups();
-
-        for (int Index = 0; Index < ResolvedOrePickups.Count; Index++)
-        {
-            OrePickup Pickup = ResolvedOrePickups[Index];
-
-            if (Requirement != null && Requirement.MatchesPickup(Pickup))
-            {
-                return Pickup;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Resolves a research definition by its stable id from the station lookup.
-    /// </summary>
-    /// <param name="ResearchId">Research id to resolve.</param>
-    /// <returns>Matching research definition, or null when unavailable.</returns>
-    private ResearchDefinition ResolveResearchDefinitionById(string ResearchId)
-    {
-        if (string.IsNullOrWhiteSpace(ResearchId))
-        {
-            return null;
-        }
-
-        RegisterKnownResearchDefinitionsFromScene();
-
-        for (int Index = 0; Index < ResearchDefinitions.Count; Index++)
-        {
-            ResearchDefinition Definition = ResearchDefinitions[Index];
-
-            if (Definition == null)
-            {
-                continue;
-            }
-
-            if (string.Equals(Definition.GetResearchId(), ResearchId, StringComparison.Ordinal))
-            {
-                return Definition;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Registers research definitions currently referenced by the station panel entries.
-    /// This keeps save/load robust even when the explicit list was left empty in the inspector.
-    /// </summary>
-    private void RegisterKnownResearchDefinitionsFromScene()
-    {
-        if (ResearchPanelUI == null)
-        {
-            return;
-        }
-
-        ResearchListEntryUI[] Entries = ResearchPanelUI.GetComponentsInChildren<ResearchListEntryUI>(true);
-
-        for (int Index = 0; Index < Entries.Length; Index++)
-        {
-            if (Entries[Index] == null)
-            {
-                continue;
-            }
-
-            RegisterResearchDefinition(Entries[Index].GetResearchDefinition());
-        }
-    }
-
-    /// <summary>
-    /// Gets or creates runtime progress for a research definition.
-    /// </summary>
-    private ResearchProgressState GetProgressState(ResearchDefinition ResearchDefinition, bool CreateIfMissing)
-    {
-        if (ResearchDefinition == null || string.IsNullOrWhiteSpace(ResearchDefinition.GetResearchId()))
-        {
-            return null;
-        }
-
-        string ResearchId = ResearchDefinition.GetResearchId();
-
-        for (int Index = 0; Index < ResearchProgressStates.Count; Index++)
-        {
-            ResearchProgressState State = ResearchProgressStates[Index];
-
-            if (State != null && string.Equals(State.GetResearchId(), ResearchId, StringComparison.Ordinal))
-            {
-                return State;
-            }
-        }
-
-        if (!CreateIfMissing)
-        {
-            return null;
-        }
-
-        ResearchProgressState NewState = new ResearchProgressState(ResearchId);
-        ResearchProgressStates.Add(NewState);
-        return NewState;
-    }
-
-    /// <summary>
-    /// Returns whether all upgrade prerequisites are currently met.
-    /// </summary>
-    private bool ArePrerequisitesMet(ResearchDefinition ResearchDefinition)
-    {
-        IReadOnlyList<ResearchDefinition.ResearchPrerequisite> Prerequisites = ResearchDefinition.GetPrerequisites();
-
-        if (Prerequisites == null || Prerequisites.Count <= 0)
-        {
-            return true;
-        }
-
-        for (int Index = 0; Index < Prerequisites.Count; Index++)
-        {
-            ResearchDefinition.ResearchPrerequisite Prerequisite = Prerequisites[Index];
-
-            if (Prerequisite == null || Prerequisite.GetRequiredUpgradeDefinition() == null)
-            {
-                return false;
-            }
-
-            int CurrentLevel = UpgradeManager.GetUpgradeLevel(Prerequisite.GetRequiredUpgradeDefinition());
-
-            if (CurrentLevel < Prerequisite.GetRequiredLevel())
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Applies the upgrade level change configured by the research asset.
-    /// </summary>
-    private void ApplyResearchResult(ResearchDefinition ResearchDefinition)
-    {
-        UpgradeDefinition UpgradeDefinition = ResearchDefinition.GetAppliedUpgradeDefinition();
-        int CurrentLevel = UpgradeManager.GetUpgradeLevel(UpgradeDefinition);
-        int TargetLevel = CurrentLevel;
-
-        switch (ResearchDefinition.GetApplyMode())
-        {
-            case ResearchDefinition.ResearchApplyMode.SetToLevel:
-                TargetLevel = ResearchDefinition.GetTargetUpgradeLevel();
-                break;
-
-            case ResearchDefinition.ResearchApplyMode.AddLevels:
-                TargetLevel = CurrentLevel + ResearchDefinition.GetUpgradeLevelIncrement();
-                break;
-        }
-
-        UpgradeManager.SetUpgradeLevel(UpgradeDefinition, TargetLevel);
-    }
-
-    /// <summary>
-    /// Rebuilds the unique current ore pickup list from live trigger colliders.
+    /// Rebuilds the unique current ore pickup list from live input-zone colliders.
     /// </summary>
     private void ResolveCurrentOrePickups()
     {
@@ -1096,14 +396,9 @@ public sealed class ResearchStation : MonoBehaviour
         ResolvedOrePickupSet.Clear();
         CleanupInvalidInputColliders();
 
-        foreach (Collider LiveCollider in LiveInputColliders)
+        foreach (Collider LiveCollider in LiveInputColliderCounts.Keys)
         {
             if (LiveCollider == null || !LiveCollider.enabled || !LiveCollider.gameObject.activeInHierarchy)
-            {
-                continue;
-            }
-
-            if ((OreInputLayers.value & (1 << LiveCollider.gameObject.layer)) == 0)
             {
                 continue;
             }
@@ -1148,104 +443,88 @@ public sealed class ResearchStation : MonoBehaviour
     }
 
     /// <summary>
-    /// Permanently consumes one ore pickup for research.
-    /// </summary>
-    private void ConsumeOrePickup(OrePickup Pickup)
-    {
-        if (Pickup == null)
-        {
-            return;
-        }
-
-        LiveInputColliders.RemoveWhere(ColliderValue => ColliderValue == null || ColliderValue.GetComponentInParent<OrePickup>() == Pickup);
-
-        if (Pickup.ReturnToPool())
-        {
-            return;
-        }
-
-        Transform Root = Pickup.GetRuntimeRoot();
-        Destroy(Root != null ? Root.gameObject : Pickup.gameObject);
-    }
-
-    /// <summary>
-    /// Registers incoming colliders inside the research station input zone.
-    /// </summary>
-    private void OnTriggerEnter(Collider Other)
-    {
-        if (Other == null)
-        {
-            return;
-        }
-
-        UpgradeShopInteractor Interactor = Other.GetComponentInParent<UpgradeShopInteractor>();
-
-        if (Interactor != null)
-        {
-            CurrentInteractor = Interactor;
-            CurrentInteractor.SetNearbyResearchStation(this);
-
-            if (PromptRoot != null)
-            {
-                PromptRoot.SetActive(true);
-            }
-        }
-
-        if (Other.GetComponent<OrePickup>() != null || Other.GetComponentInParent<OrePickup>() != null)
-        {
-            LiveInputColliders.Add(Other);
-            NotifyStateChanged();
-        }
-    }
-
-    /// <summary>
-    /// Unregisters outgoing colliders from the research station input zone.
-    /// </summary>
-    private void OnTriggerExit(Collider Other)
-    {
-        if (Other == null)
-        {
-            return;
-        }
-
-        UpgradeShopInteractor Interactor = Other.GetComponentInParent<UpgradeShopInteractor>();
-
-        if (Interactor != null && CurrentInteractor == Interactor)
-        {
-            CurrentInteractor.ClearNearbyResearchStation(this);
-
-            if (PromptRoot != null)
-            {
-                PromptRoot.SetActive(false);
-            }
-
-            CurrentInteractor = null;
-        }
-
-        if (LiveInputColliders.Remove(Other))
-        {
-            NotifyStateChanged();
-        }
-    }
-
-    /// <summary>
     /// Removes invalid collider references from the input set.
     /// </summary>
     private void CleanupInvalidInputColliders()
     {
-        int RemovedCount = LiveInputColliders.RemoveWhere(ColliderValue =>
-            ColliderValue == null ||
-            !ColliderValue.enabled ||
-            !ColliderValue.gameObject.activeInHierarchy);
+        InvalidInputColliders.Clear();
 
-        if (RemovedCount > 0)
+        foreach (Collider ColliderValue in LiveInputColliderCounts.Keys)
+        {
+            if (ColliderValue == null ||
+                !ColliderValue.enabled ||
+                !ColliderValue.gameObject.activeInHierarchy)
+            {
+                InvalidInputColliders.Add(ColliderValue);
+            }
+        }
+
+        for (int Index = 0; Index < InvalidInputColliders.Count; Index++)
+        {
+            LiveInputColliderCounts.Remove(InvalidInputColliders[Index]);
+        }
+
+        if (InvalidInputColliders.Count > 0)
         {
             NotifyStateChanged();
         }
     }
 
     /// <summary>
-    /// Notifies bound UI that station contents or state changed.
+    /// Removes colliders belonging to pickups that have been consumed or disabled.
+    /// </summary>
+    private void RemoveInvalidOrConsumedInputColliders()
+    {
+        InvalidInputColliders.Clear();
+
+        foreach (Collider ColliderValue in LiveInputColliderCounts.Keys)
+        {
+            if (ColliderValue == null ||
+                !ColliderValue.enabled ||
+                !ColliderValue.gameObject.activeInHierarchy ||
+                ColliderValue.GetComponentInParent<OrePickup>() == null)
+            {
+                InvalidInputColliders.Add(ColliderValue);
+            }
+        }
+
+        for (int Index = 0; Index < InvalidInputColliders.Count; Index++)
+        {
+            LiveInputColliderCounts.Remove(InvalidInputColliders[Index]);
+        }
+
+        if (InvalidInputColliders.Count > 0)
+        {
+            NotifyStateChanged();
+        }
+    }
+
+    /// <summary>
+    /// Resolves scene references if they were not assigned manually.
+    /// </summary>
+    private void ResolveReferences()
+    {
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
+        if (ResearchPanelUI == null)
+        {
+            ResearchPanelUI = FindFirstObjectByType<ResearchPanelUI>();
+        }
+    }
+
+    /// <summary>
+    /// Handles global research runtime changes and refreshes station-bound UI.
+    /// </summary>
+    private void HandleResearchRuntimeStateChanged()
+    {
+        NotifyStateChanged();
+    }
+
+    /// <summary>
+    /// Notifies bound UI that station contents or research state changed.
     /// </summary>
     private void NotifyStateChanged()
     {
