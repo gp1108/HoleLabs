@@ -69,6 +69,11 @@ public sealed class ResearchListEntryUI : MonoBehaviour
     {
         OwnerStation = Station;
 
+        if (OwnerStation != null)
+        {
+            OwnerStation.RegisterResearchDefinition(ResearchDefinition);
+        }
+
         if (ActivateButton != null)
         {
             ActivateButton.onClick.RemoveListener(HandleActivateButtonClicked);
@@ -76,6 +81,14 @@ public sealed class ResearchListEntryUI : MonoBehaviour
         }
 
         RefreshView();
+    }
+
+    /// <summary>
+    /// Gets the research definition assigned to this manual UI entry.
+    /// </summary>
+    public ResearchDefinition GetResearchDefinition()
+    {
+        return ResearchDefinition;
     }
 
     /// <summary>

@@ -156,6 +156,44 @@ public sealed class ResearchStation : MonoBehaviour
         }
 
         /// <summary>
+        /// Gets a read-only view of all processed amounts by requirement index.
+        /// </summary>
+        public IReadOnlyList<int> GetProcessedAmounts()
+        {
+            return ProcessedAmounts;
+        }
+
+        /// <summary>
+        /// Replaces the processed amount list with a sanitized saved value.
+        /// </summary>
+        /// <param name="SavedAmounts">Saved processed amount values by requirement index.</param>
+        public void SetProcessedAmounts(IReadOnlyList<int> SavedAmounts)
+        {
+            ProcessedAmounts.Clear();
+
+            if (SavedAmounts == null)
+            {
+                return;
+            }
+
+            for (int Index = 0; Index < SavedAmounts.Count; Index++)
+            {
+                ProcessedAmounts.Add(Mathf.Max(0, SavedAmounts[Index]));
+            }
+        }
+
+        /// <summary>
+        /// Creates a deep copy of this progress state for safe save snapshots.
+        /// </summary>
+        public ResearchProgressState Clone()
+        {
+            ResearchProgressState Result = new ResearchProgressState(ResearchId);
+            Result.SetIsActivationPaid(IsActivationPaid);
+            Result.SetProcessedAmounts(ProcessedAmounts);
+            return Result;
+        }
+
+        /// <summary>
         /// Ensures the processed amount list can store the provided requirement index.
         /// </summary>
         private void EnsureRequirementIndex(int RequirementIndex)
@@ -172,6 +210,131 @@ public sealed class ResearchStation : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Serializable save payload for one research progress entry.
+    /// This is intentionally plain data so Easy Save does not need to serialize runtime object references.
+    /// </summary>
+    [Serializable]
+    public sealed class ResearchProgressSaveData
+    {
+        [Tooltip("Research id this progress belongs to.")]
+        [SerializeField] private string ResearchId;
+
+        [Tooltip("True after the activation credit cost has been paid once.")]
+        [SerializeField] private bool IsActivationPaid;
+
+        [Tooltip("Processed ore counts by requirement index.")]
+        [SerializeField] private List<int> ProcessedAmounts = new();
+
+        /// <summary>
+        /// Creates an empty save payload for serialization.
+        /// </summary>
+        public ResearchProgressSaveData()
+        {
+        }
+
+        /// <summary>
+        /// Creates a save payload from one runtime progress state.
+        /// </summary>
+        /// <param name="RuntimeState">Runtime progress state to capture.</param>
+        public ResearchProgressSaveData(ResearchProgressState RuntimeState)
+        {
+            if (RuntimeState == null)
+            {
+                ResearchId = string.Empty;
+                IsActivationPaid = false;
+                return;
+            }
+
+            ResearchId = RuntimeState.GetResearchId();
+            IsActivationPaid = RuntimeState.GetIsActivationPaid();
+
+            IReadOnlyList<int> RuntimeAmounts = RuntimeState.GetProcessedAmounts();
+            for (int Index = 0; Index < RuntimeAmounts.Count; Index++)
+            {
+                ProcessedAmounts.Add(Mathf.Max(0, RuntimeAmounts[Index]));
+            }
+        }
+
+        /// <summary>
+        /// Gets the saved research id.
+        /// </summary>
+        public string GetResearchId()
+        {
+            return ResearchId;
+        }
+
+        /// <summary>
+        /// Converts this save payload back into a runtime progress state.
+        /// </summary>
+        public ResearchProgressState ToRuntimeState()
+        {
+            ResearchProgressState Result = new ResearchProgressState(ResearchId);
+            Result.SetIsActivationPaid(IsActivationPaid);
+            Result.SetProcessedAmounts(ProcessedAmounts);
+            return Result;
+        }
+    }
+
+    /// <summary>
+    /// Serializable save payload for the entire research station runtime state.
+    /// </summary>
+    [Serializable]
+    public sealed class ResearchStationSaveData
+    {
+        [Tooltip("Research id that was active when the game was saved.")]
+        [SerializeField] private string ActiveResearchId;
+
+        [Tooltip("Saved progress states for paid or partially processed researches.")]
+        [SerializeField] private List<ResearchProgressSaveData> ProgressStates = new();
+
+        /// <summary>
+        /// Creates an empty save payload for serialization.
+        /// </summary>
+        public ResearchStationSaveData()
+        {
+        }
+
+        /// <summary>
+        /// Creates a save payload with the provided active research id.
+        /// </summary>
+        /// <param name="ActiveResearchIdValue">Research id that should remain active after loading.</param>
+        public ResearchStationSaveData(string ActiveResearchIdValue)
+        {
+            ActiveResearchId = ActiveResearchIdValue;
+        }
+
+        /// <summary>
+        /// Gets the saved active research id.
+        /// </summary>
+        public string GetActiveResearchId()
+        {
+            return ActiveResearchId;
+        }
+
+        /// <summary>
+        /// Gets the saved research progress entries.
+        /// </summary>
+        public List<ResearchProgressSaveData> GetProgressStates()
+        {
+            return ProgressStates;
+        }
+
+        /// <summary>
+        /// Adds one progress entry to this save payload.
+        /// </summary>
+        /// <param name="ProgressState">Progress entry to store.</param>
+        public void AddProgressState(ResearchProgressSaveData ProgressState)
+        {
+            if (ProgressState == null || string.IsNullOrWhiteSpace(ProgressState.GetResearchId()))
+            {
+                return;
+            }
+
+            ProgressStates.Add(ProgressState);
+        }
+    }
+
     [Header("References")]
     [Tooltip("Panel controlled by this research station.")]
     [SerializeField] private ResearchPanelUI ResearchPanelUI;
@@ -181,6 +344,10 @@ public sealed class ResearchStation : MonoBehaviour
 
     [Tooltip("Upgrade manager used for prerequisites and final research application.")]
     [SerializeField] private UpgradeManager UpgradeManager;
+
+    [Header("Research Lookup")]
+    [Tooltip("Optional explicit research definitions known by this station. UI entries also register their definitions automatically at runtime.")]
+    [SerializeField] private List<ResearchDefinition> ResearchDefinitions = new();
 
     [Tooltip("Optional prompt root enabled only while the player is inside the station range.")]
     [SerializeField] private GameObject PromptRoot;
@@ -254,10 +421,14 @@ public sealed class ResearchStation : MonoBehaviour
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
         }
 
+        RegisterKnownResearchDefinitionsFromScene();
+
         if (ResearchPanelUI != null)
         {
             ResearchPanelUI.Initialize(this);
         }
+
+        RegisterKnownResearchDefinitionsFromScene();
     }
 
     /// <summary>
@@ -283,6 +454,112 @@ public sealed class ResearchStation : MonoBehaviour
     public ResearchDefinition GetActiveResearchDefinition()
     {
         return ActiveResearchDefinition;
+    }
+
+    /// <summary>
+    /// Registers a research definition so the station can restore active research by id after loading.
+    /// UI entries call this automatically, but explicit registration is also supported.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition to register.</param>
+    public void RegisterResearchDefinition(ResearchDefinition ResearchDefinition)
+    {
+        if (ResearchDefinition == null || string.IsNullOrWhiteSpace(ResearchDefinition.GetResearchId()))
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < ResearchDefinitions.Count; Index++)
+        {
+            ResearchDefinition ExistingDefinition = ResearchDefinitions[Index];
+
+            if (ExistingDefinition == null)
+            {
+                continue;
+            }
+
+            if (ExistingDefinition == ResearchDefinition ||
+                string.Equals(ExistingDefinition.GetResearchId(), ResearchDefinition.GetResearchId(), StringComparison.Ordinal))
+            {
+                ResearchDefinitions[Index] = ResearchDefinition;
+                return;
+            }
+        }
+
+        ResearchDefinitions.Add(ResearchDefinition);
+    }
+
+    /// <summary>
+    /// Creates a save snapshot containing the active research id and all retained progress states.
+    /// </summary>
+    public ResearchStationSaveData CreateSaveSnapshot()
+    {
+        string ActiveResearchId = ActiveResearchDefinition != null ? ActiveResearchDefinition.GetResearchId() : string.Empty;
+        ResearchStationSaveData Result = new ResearchStationSaveData(ActiveResearchId);
+
+        for (int Index = 0; Index < ResearchProgressStates.Count; Index++)
+        {
+            ResearchProgressState State = ResearchProgressStates[Index];
+
+            if (State == null || string.IsNullOrWhiteSpace(State.GetResearchId()))
+            {
+                continue;
+            }
+
+            Result.AddProgressState(new ResearchProgressSaveData(State));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores active research and retained progress states from save data.
+    /// Completed researches still come from UpgradeManager; this only restores unfinished or paid progress.
+    /// </summary>
+    /// <param name="SaveData">Research station save payload.</param>
+    public void ApplySaveState(ResearchStationSaveData SaveData)
+    {
+        RegisterKnownResearchDefinitionsFromScene();
+
+        ResearchProgressStates.Clear();
+        ActiveResearchDefinition = null;
+        ProcessingTimer = 0f;
+
+        if (SaveData == null)
+        {
+            NotifyStateChanged();
+            return;
+        }
+
+        List<ResearchProgressSaveData> SavedProgressStates = SaveData.GetProgressStates();
+
+        if (SavedProgressStates != null)
+        {
+            for (int Index = 0; Index < SavedProgressStates.Count; Index++)
+            {
+                ResearchProgressSaveData SavedState = SavedProgressStates[Index];
+
+                if (SavedState == null || string.IsNullOrWhiteSpace(SavedState.GetResearchId()))
+                {
+                    continue;
+                }
+
+                ResearchProgressStates.Add(SavedState.ToRuntimeState());
+            }
+        }
+
+        string SavedActiveResearchId = SaveData.GetActiveResearchId();
+
+        if (!string.IsNullOrWhiteSpace(SavedActiveResearchId))
+        {
+            ActiveResearchDefinition = ResolveResearchDefinitionById(SavedActiveResearchId);
+
+            if (ActiveResearchDefinition == null)
+            {
+                Log("Saved active research could not be resolved: " + SavedActiveResearchId);
+            }
+        }
+
+        NotifyStateChanged();
     }
 
     /// <summary>
@@ -665,6 +942,62 @@ public sealed class ResearchStation : MonoBehaviour
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves a research definition by its stable id from the station lookup.
+    /// </summary>
+    /// <param name="ResearchId">Research id to resolve.</param>
+    /// <returns>Matching research definition, or null when unavailable.</returns>
+    private ResearchDefinition ResolveResearchDefinitionById(string ResearchId)
+    {
+        if (string.IsNullOrWhiteSpace(ResearchId))
+        {
+            return null;
+        }
+
+        RegisterKnownResearchDefinitionsFromScene();
+
+        for (int Index = 0; Index < ResearchDefinitions.Count; Index++)
+        {
+            ResearchDefinition Definition = ResearchDefinitions[Index];
+
+            if (Definition == null)
+            {
+                continue;
+            }
+
+            if (string.Equals(Definition.GetResearchId(), ResearchId, StringComparison.Ordinal))
+            {
+                return Definition;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Registers research definitions currently referenced by the station panel entries.
+    /// This keeps save/load robust even when the explicit list was left empty in the inspector.
+    /// </summary>
+    private void RegisterKnownResearchDefinitionsFromScene()
+    {
+        if (ResearchPanelUI == null)
+        {
+            return;
+        }
+
+        ResearchListEntryUI[] Entries = ResearchPanelUI.GetComponentsInChildren<ResearchListEntryUI>(true);
+
+        for (int Index = 0; Index < Entries.Length; Index++)
+        {
+            if (Entries[Index] == null)
+            {
+                continue;
+            }
+
+            RegisterResearchDefinition(Entries[Index].GetResearchDefinition());
+        }
     }
 
     /// <summary>

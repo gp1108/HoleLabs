@@ -251,6 +251,34 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
+    private sealed class ResearchStationState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private ResearchStation.ResearchStationSaveData StationData;
+
+        /// <summary>
+        /// Creates a save payload for one persistent research station.
+        /// </summary>
+        /// <param name="SceneIdValue">Stable scene id of the research station.</param>
+        /// <param name="StationDataValue">Saved station runtime state.</param>
+        public ResearchStationState(string SceneIdValue, ResearchStation.ResearchStationSaveData StationDataValue)
+        {
+            SceneId = SceneIdValue;
+            StationData = StationDataValue;
+        }
+
+        /// <summary>
+        /// Gets the stable scene id of the research station.
+        /// </summary>
+        public string GetSceneId() => SceneId;
+
+        /// <summary>
+        /// Gets the saved research station runtime data.
+        /// </summary>
+        public ResearchStation.ResearchStationSaveData GetStationData() => StationData;
+    }
+
+    [Serializable]
     private sealed class PlayerSaveData
     {
         [SerializeField] private Vector3 Position;
@@ -486,12 +514,15 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<OreSpawnPointState> OreSpawnPoints = new();
         [SerializeField] private List<DrillPlacementSpotState> DrillPlacementSpots = new();
         [SerializeField] private List<PlaceableInstallationSpotState> PlaceableInstallationSpots = new();
+        [SerializeField] private List<ResearchStationState> ResearchStations = new();
 
         public List<DrillPlacementSpotState> GetDrillPlacementSpots() => DrillPlacementSpots;
         public void SetDrillPlacementSpots(List<DrillPlacementSpotState> Value) => DrillPlacementSpots = Value ?? new List<DrillPlacementSpotState>();
 
         public List<PlaceableInstallationSpotState> GetPlaceableInstallationSpots() => PlaceableInstallationSpots;
         public void SetPlaceableInstallationSpots(List<PlaceableInstallationSpotState> Value) => PlaceableInstallationSpots = Value ?? new List<PlaceableInstallationSpotState>();
+        public List<ResearchStationState> GetResearchStations() => ResearchStations;
+        public void SetResearchStations(List<ResearchStationState> Value) => ResearchStations = Value ?? new List<ResearchStationState>();
 
         public PlayerSaveData GetPlayer() => Player;
         public void SetPlayer(PlayerSaveData Value) => Player = Value;
@@ -587,6 +618,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private readonly Dictionary<string, OreSpawnPoint> OreSpawnPointsById = new();
     private readonly Dictionary<string, DrillPlacementSpot> DrillPlacementSpotsById = new();
     private readonly Dictionary<string, PlaceableInstallationSpot> PlaceableInstallationSpotsById = new();
+    private readonly Dictionary<string, ResearchStation> ResearchStationsById = new();
 
     /// <summary>
     /// Resolves missing scene references and builds lookup caches.
@@ -1046,6 +1078,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetOreSpawnPoints(CaptureOreSpawnPoints());
         Data.SetDrillPlacementSpots(CaptureDrillPlacementSpots());
         Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
+        Data.SetResearchStations(CaptureResearchStations());
 
         return Data;
     }
@@ -1109,6 +1142,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreMoneyPickups(Data.GetMoneyPickups());
         RestoreOrePickups(Data.GetOrePickups());
         RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
+        RestoreResearchStations(Data.GetResearchStations());
     }
 
     /// <summary>
@@ -1185,6 +1219,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         OreSpawnPointsById.Clear();
         DrillPlacementSpotsById.Clear();
         PlaceableInstallationSpotsById.Clear();
+        ResearchStationsById.Clear();
 
         for (int Index = 0; Index < ItemDefinitions.Count; Index++)
         {
@@ -1306,6 +1341,29 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             PlaceableInstallationSpotsById[SaveId.GetId()] = Spot;
+        }
+
+        ResearchStation[] ResearchStations = FindObjectsByType<ResearchStation>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < ResearchStations.Length; Index++)
+        {
+            ResearchStation Station = ResearchStations[Index];
+
+            if (Station == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Station.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            ResearchStationsById[SaveId.GetId()] = Station;
         }
     }
 
@@ -1997,6 +2055,61 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         Debug.Log("[GameSaveDebugController] " + Message, this);
+    }
+
+    /// <summary>
+    /// Captures every persistent research station runtime state in the scene.
+    /// </summary>
+    private List<ResearchStationState> CaptureResearchStations()
+    {
+        List<ResearchStationState> Result = new List<ResearchStationState>();
+
+        foreach (KeyValuePair<string, ResearchStation> Pair in ResearchStationsById)
+        {
+            ResearchStation Station = Pair.Value;
+
+            if (Station == null)
+            {
+                continue;
+            }
+
+            Result.Add(new ResearchStationState(Pair.Key, Station.CreateSaveSnapshot()));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores every persistent research station runtime state from save.
+    /// </summary>
+    /// <param name="States">Saved research station states.</param>
+    private void RestoreResearchStations(List<ResearchStationState> States)
+    {
+        if (States == null)
+        {
+            Log("No research station states were found in the save.");
+            return;
+        }
+
+        Log("Restoring " + States.Count + " research station states.");
+
+        for (int Index = 0; Index < States.Count; Index++)
+        {
+            ResearchStationState State = States[Index];
+
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!ResearchStationsById.TryGetValue(State.GetSceneId(), out ResearchStation Station) || Station == null)
+            {
+                Log("Saved research station id was not found in the scene: " + State.GetSceneId());
+                continue;
+            }
+
+            Station.ApplySaveState(State.GetStationData());
+        }
     }
 
     /// <summary>

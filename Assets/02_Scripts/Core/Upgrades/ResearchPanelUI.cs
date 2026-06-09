@@ -102,6 +102,7 @@ public sealed class ResearchPanelUI : MonoBehaviour
             OwnerStation.OnResearchStationStateChanged += HandleResearchStationStateChanged;
         }
 
+        DiscoverManualUi();
         InitializeManualUi();
         RefreshAll();
     }
@@ -179,6 +180,31 @@ public sealed class ResearchPanelUI : MonoBehaviour
                 RegisteredResearchEntries.Add(Entries[Index]);
             }
         }
+    }
+
+    /// <summary>
+    /// Gets the research definitions currently assigned to registered entries.
+    /// </summary>
+    public List<ResearchDefinition> GetRegisteredResearchDefinitions()
+    {
+        List<ResearchDefinition> Result = new();
+
+        for (int Index = 0; Index < RegisteredResearchEntries.Count; Index++)
+        {
+            if (RegisteredResearchEntries[Index] == null)
+            {
+                continue;
+            }
+
+            ResearchDefinition Definition = RegisteredResearchEntries[Index].GetResearchDefinition();
+
+            if (Definition != null && !Result.Contains(Definition))
+            {
+                Result.Add(Definition);
+            }
+        }
+
+        return Result;
     }
 
     /// <summary>
