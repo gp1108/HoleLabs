@@ -118,7 +118,7 @@ MonoBehaviour:
     _optionLabels: []
     _overrideConnectionLabels: 0
     ConnectionObject: {fileID: 11400000, guid: 12aae2cfe94bba543975059d47f4e6d8, type: 2}
-  - _isActive: 0
+  - _isActive: 1
     ID: frameRate
     ApplyImmediately: 1
     _groups: []
