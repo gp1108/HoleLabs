@@ -108,6 +108,20 @@ MonoBehaviour:
   PlacementLayers:
     serializedVersion: 2
     m_Bits: 8192
+  RequireDirectTargetForInstall: 1
+  ShowNearbySpotGhost: 1
+  SpotPreviewRadius: 50
+  SpotPreviewRefreshInterval: 0.1
+  MaxPreviewOverlapResults: 64
   HideGhostWhenInvalid: 1
+  GhostIdleMaterial: {fileID: 0}
+  GhostValidMaterial: {fileID: 0}
+  GhostInvalidMaterial: {fileID: 0}
+  ApplyGhostTint: 1
+  GhostIdleTint: {r: 1, g: 1, b: 1, a: 0.45}
+  GhostValidTint: {r: 0.15, g: 1, b: 0.25, a: 0.55}
+  GhostInvalidTint: {r: 1, g: 0.1, b: 0.05, a: 0.55}
+  BaseColorPropertyName: _BaseColor
+  ColorPropertyName: _Color
   DrawDebugRay: 0
   DebugLogs: 0

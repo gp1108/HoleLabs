@@ -3,10 +3,22 @@ using UnityEngine;
 /// <summary>
 /// Dedicated world slot where a placeable item can be installed.
 /// Installation consumes the equipped hotbar item, spawns the installed visual and applies the configured upgrade effect.
+/// The spot also owns final placement validation so visual previews and real installation use the same rules.
 /// </summary>
-[RequireComponent(typeof(SceneSaveId))]
 public sealed class PlaceableInstallationSpot : MonoBehaviour
 {
+    /// <summary>
+    /// Describes the evaluated installation state for a candidate placeable item.
+    /// </summary>
+    public enum PlacementEvaluationStatus
+    {
+        InvalidItem = 0,
+        IncompatibleSpot = 1,
+        Occupied = 2,
+        Obstructed = 3,
+        Ready = 4
+    }
+
     [Header("Placement")]
     [Tooltip("Placement id accepted by this spot. It must match the placeable item definition.")]
     [SerializeField] private string AcceptedPlacementId;
@@ -26,6 +38,31 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     [Tooltip("Point where replaced items are dropped. If empty, this transform is used.")]
     [SerializeField] private Transform ReplacementDropPoint;
 
+    [Header("Placement Occupancy")]
+    [Tooltip("If true, installation is blocked when the configured final placement volume overlaps obstruction colliders.")]
+    [SerializeField] private bool UseOccupancyCheck = true;
+
+    [Tooltip("Layers considered blockers for final placement. Use object, ore, carryable and player layers. Do not include the placement spot layer or static floor layer unless intended.")]
+    [SerializeField] private LayerMask ObstructionLayers = 0;
+
+    [Tooltip("Transform that defines the local orientation of the placement obstruction box. If empty, Install Root is used.")]
+    [SerializeField] private Transform OccupancyCheckRoot;
+
+    [Tooltip("Local center offset of the placement obstruction box, relative to Occupancy Check Root.")]
+    [SerializeField] private Vector3 OccupancyCheckLocalCenter = Vector3.zero;
+
+    [Tooltip("World-space size of the placement obstruction box before rotation is applied.")]
+    [SerializeField] private Vector3 OccupancyCheckSize = new Vector3(1f, 1f, 1f);
+
+    [Tooltip("If true, trigger colliders are ignored by the placement obstruction test.")]
+    [SerializeField] private bool IgnoreTriggerObstructions = true;
+
+    [Tooltip("If true, colliders belonging to this spot hierarchy and the currently installed visual are ignored by the obstruction test.")]
+    [SerializeField] private bool IgnoreOwnHierarchyObstructions = true;
+
+    [Tooltip("Maximum number of obstruction colliders that can be checked per placement evaluation.")]
+    [SerializeField] private int MaxObstructionResults = 64;
+
     [Header("References")]
     [Tooltip("Upgrade manager used to apply installed upgrade effects.")]
     [SerializeField] private UpgradeManager UpgradeManager;
@@ -33,6 +70,9 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     [Header("Debug")]
     [Tooltip("Logs placement operations.")]
     [SerializeField] private bool DebugLogs = false;
+
+    [Tooltip("Draws the configured placement occupancy volume when this spot is selected.")]
+    [SerializeField] private bool DrawOccupancyGizmo = true;
 
     /// <summary>
     /// Current installed item instance stored by this spot.
@@ -45,11 +85,17 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     private GameObject CurrentInstalledVisual;
 
     /// <summary>
+    /// Reusable overlap buffer used by the placement obstruction check.
+    /// </summary>
+    private Collider[] ObstructionResults;
+
+    /// <summary>
     /// Resolves missing references.
     /// </summary>
     private void Awake()
     {
         EnsureReferences();
+        EnsureObstructionBuffer();
     }
 
     /// <summary>
@@ -67,6 +113,11 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
             PreviewRoot = InstallRoot;
         }
 
+        if (OccupancyCheckRoot == null)
+        {
+            OccupancyCheckRoot = InstallRoot;
+        }
+
         if (ReplacementDropPoint == null)
         {
             ReplacementDropPoint = transform;
@@ -75,6 +126,19 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
         if (UpgradeManager == null)
         {
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
+        }
+    }
+
+    /// <summary>
+    /// Ensures the non-alloc obstruction buffer matches the configured capacity.
+    /// </summary>
+    private void EnsureObstructionBuffer()
+    {
+        int TargetSize = Mathf.Max(1, MaxObstructionResults);
+
+        if (ObstructionResults == null || ObstructionResults.Length != TargetSize)
+        {
+            ObstructionResults = new Collider[TargetSize];
         }
     }
 
@@ -168,14 +232,13 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     }
 
     /// <summary>
-    /// Returns whether this spot can currently accept the provided item instance.
+    /// Gets whether the provided placeable definition belongs to this spot id and is worth showing as a nearby preview.
+    /// Occupancy obstruction is not treated as incompatibility because blocked spots must still be able to show a red ghost.
     /// </summary>
-    /// <param name="ItemInstance">Candidate item instance.</param>
-    /// <returns>True when the item can be installed here.</returns>
-    public bool CanInstall(ItemInstance ItemInstance)
+    /// <param name="PlaceableDefinition">Candidate placeable definition.</param>
+    /// <returns>True when this spot is compatible enough to display a ghost preview.</returns>
+    public bool CanPreview(PlaceableItemDefinition PlaceableDefinition)
     {
-        PlaceableItemDefinition PlaceableDefinition = GetPlaceableDefinition(ItemInstance);
-
         if (PlaceableDefinition == null)
         {
             return false;
@@ -192,6 +255,56 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Evaluates whether this spot can currently install the provided item instance.
+    /// </summary>
+    /// <param name="ItemInstance">Candidate item instance.</param>
+    /// <returns>Detailed placement evaluation status.</returns>
+    public PlacementEvaluationStatus EvaluatePlacement(ItemInstance ItemInstance)
+    {
+        return EvaluatePlacementDefinition(GetPlaceableDefinition(ItemInstance));
+    }
+
+    /// <summary>
+    /// Evaluates whether this spot can currently install the provided placeable definition.
+    /// </summary>
+    /// <param name="PlaceableDefinition">Candidate placeable definition.</param>
+    /// <returns>Detailed placement evaluation status.</returns>
+    public PlacementEvaluationStatus EvaluatePlacementDefinition(PlaceableItemDefinition PlaceableDefinition)
+    {
+        if (PlaceableDefinition == null)
+        {
+            return PlacementEvaluationStatus.InvalidItem;
+        }
+
+        if (!IsCompatiblePlacementDefinition(PlaceableDefinition))
+        {
+            return PlacementEvaluationStatus.IncompatibleSpot;
+        }
+
+        if (CurrentInstalledItem != null && !AllowReplacement)
+        {
+            return PlacementEvaluationStatus.Occupied;
+        }
+
+        if (HasBlockingObstruction())
+        {
+            return PlacementEvaluationStatus.Obstructed;
+        }
+
+        return PlacementEvaluationStatus.Ready;
+    }
+
+    /// <summary>
+    /// Returns whether this spot can currently accept the provided item instance.
+    /// </summary>
+    /// <param name="ItemInstance">Candidate item instance.</param>
+    /// <returns>True when the item can be installed here.</returns>
+    public bool CanInstall(ItemInstance ItemInstance)
+    {
+        return EvaluatePlacement(ItemInstance) == PlacementEvaluationStatus.Ready;
     }
 
     /// <summary>
@@ -212,6 +325,7 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
 
         if (PlaceableDefinition == null || !CanInstall(ItemInstance))
         {
+            Log("Installation rejected. Status=" + EvaluatePlacement(ItemInstance));
             return false;
         }
 
@@ -291,6 +405,120 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     }
 
     /// <summary>
+    /// Returns whether the configured obstruction volume currently overlaps any blocking collider.
+    /// </summary>
+    /// <returns>True when installation should be blocked.</returns>
+    private bool HasBlockingObstruction()
+    {
+        if (!UseOccupancyCheck || ObstructionLayers.value == 0)
+        {
+            return false;
+        }
+
+        EnsureReferences();
+        EnsureObstructionBuffer();
+
+        Vector3 HalfExtents = GetOccupancyHalfExtents();
+
+        if (HalfExtents.x <= 0f || HalfExtents.y <= 0f || HalfExtents.z <= 0f)
+        {
+            return false;
+        }
+
+        QueryTriggerInteraction TriggerInteraction = IgnoreTriggerObstructions
+            ? QueryTriggerInteraction.Ignore
+            : QueryTriggerInteraction.Collide;
+
+        int HitCount = Physics.OverlapBoxNonAlloc(
+            GetOccupancyWorldCenter(),
+            HalfExtents,
+            ObstructionResults,
+            GetOccupancyWorldRotation(),
+            ObstructionLayers,
+            TriggerInteraction);
+
+        for (int Index = 0; Index < HitCount; Index++)
+        {
+            Collider Candidate = ObstructionResults[Index];
+            ObstructionResults[Index] = null;
+
+            if (ShouldIgnoreObstruction(Candidate))
+            {
+                continue;
+            }
+
+            Log("Placement blocked by obstruction: " + Candidate.name);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Gets the world center used by the placement obstruction volume.
+    /// </summary>
+    private Vector3 GetOccupancyWorldCenter()
+    {
+        Transform Root = OccupancyCheckRoot != null ? OccupancyCheckRoot : transform;
+        return Root.TransformPoint(OccupancyCheckLocalCenter);
+    }
+
+    /// <summary>
+    /// Gets the world rotation used by the placement obstruction volume.
+    /// </summary>
+    private Quaternion GetOccupancyWorldRotation()
+    {
+        Transform Root = OccupancyCheckRoot != null ? OccupancyCheckRoot : transform;
+        return Root.rotation;
+    }
+
+    /// <summary>
+    /// Gets the half extents used by the placement obstruction volume.
+    /// </summary>
+    private Vector3 GetOccupancyHalfExtents()
+    {
+        return new Vector3(
+            Mathf.Max(0f, OccupancyCheckSize.x * 0.5f),
+            Mathf.Max(0f, OccupancyCheckSize.y * 0.5f),
+            Mathf.Max(0f, OccupancyCheckSize.z * 0.5f));
+    }
+
+    /// <summary>
+    /// Returns whether the obstruction collider should be ignored by this spot.
+    /// </summary>
+    /// <param name="Candidate">Collider found by the overlap test.</param>
+    /// <returns>True when the collider should not block placement.</returns>
+    private bool ShouldIgnoreObstruction(Collider Candidate)
+    {
+        if (Candidate == null || !Candidate.enabled)
+        {
+            return true;
+        }
+
+        if (IgnoreTriggerObstructions && Candidate.isTrigger)
+        {
+            return true;
+        }
+
+        if (!IgnoreOwnHierarchyObstructions)
+        {
+            return false;
+        }
+
+        if (Candidate.transform == transform || Candidate.transform.IsChildOf(transform))
+        {
+            return true;
+        }
+
+        if (CurrentInstalledVisual != null && Candidate.transform.IsChildOf(CurrentInstalledVisual.transform))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Returns whether the provided placeable definition matches this spot placement id.
     /// </summary>
     /// <param name="PlaceableDefinition">Placeable definition to validate.</param>
@@ -352,6 +580,27 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
         }
 
         UpgradeManager.SetUpgradeLevel(UpgradeDefinition, TargetLevel);
+    }
+
+    /// <summary>
+    /// Draws the final placement obstruction volume for scene-authoring validation.
+    /// </summary>
+    private void OnDrawGizmosSelected()
+    {
+        if (!DrawOccupancyGizmo || !UseOccupancyCheck)
+        {
+            return;
+        }
+
+        EnsureReferences();
+
+        Matrix4x4 PreviousMatrix = Gizmos.matrix;
+        Gizmos.matrix = Matrix4x4.TRS(GetOccupancyWorldCenter(), GetOccupancyWorldRotation(), Vector3.one);
+        Gizmos.color = new Color(1f, 0.2f, 0.1f, 0.25f);
+        Gizmos.DrawCube(Vector3.zero, OccupancyCheckSize);
+        Gizmos.color = new Color(1f, 0.2f, 0.1f, 0.9f);
+        Gizmos.DrawWireCube(Vector3.zero, OccupancyCheckSize);
+        Gizmos.matrix = PreviousMatrix;
     }
 
     /// <summary>
