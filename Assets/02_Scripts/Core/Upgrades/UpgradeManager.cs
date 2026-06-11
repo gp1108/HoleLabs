@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Central runtime service for upgrade ownership, purchases, stat evaluation and unlock rewards.
+/// Central runtime service for upgrade ownership, stat evaluation and unlock rewards.
 /// Gameplay systems should query this manager instead of storing upgrade logic locally.
 /// </summary>
 public sealed class UpgradeManager : MonoBehaviour
@@ -14,7 +14,7 @@ public sealed class UpgradeManager : MonoBehaviour
         [Tooltip("Upgrade id saved in the slot.")]
         [SerializeField] private string UpgradeId;
 
-        [Tooltip("Purchased level saved for this upgrade.")]
+        [Tooltip("Runtime level saved for this upgrade.")]
         [SerializeField] private int Level;
 
         /// <summary>
@@ -35,7 +35,7 @@ public sealed class UpgradeManager : MonoBehaviour
         }
 
         /// <summary>
-        /// Gets the saved purchased level.
+        /// Gets the saved runtime level.
         /// </summary>
         public int GetLevel()
         {
@@ -140,7 +140,7 @@ public sealed class UpgradeManager : MonoBehaviour
         [Tooltip("Upgrade definition represented by this runtime debug entry.")]
         [SerializeField] private UpgradeDefinition Definition;
 
-        [Tooltip("Current purchased level stored for debug inspection.")]
+        [Tooltip("Current runtime level stored for debug inspection.")]
         [SerializeField] private int CurrentLevel = 0;
 
         /// <summary>
@@ -168,10 +168,6 @@ public sealed class UpgradeManager : MonoBehaviour
         }
     }
 
-    [Header("References")]
-    [Tooltip("Central wallet used to validate and spend upgrade costs.")]
-    [SerializeField] private CurrencyWallet CurrencyWallet;
-
     [Header("Definitions")]
     [Tooltip("All upgrade definitions available in this runtime.")]
     [SerializeField] private List<UpgradeDefinition> UpgradeDefinitions = new();
@@ -180,7 +176,7 @@ public sealed class UpgradeManager : MonoBehaviour
     [Tooltip("Inspector-visible mirror of runtime levels used only for debugging.")]
     [SerializeField] private List<UpgradeLevelEntry> DebugRuntimeLevels = new();
 
-    [Tooltip("Logs upgrade validation and purchase operations.")]
+    [Tooltip("Logs upgrade state, save and stat evaluation operations.")]
     [SerializeField] private bool DebugLogs = false;
 
     private readonly Dictionary<string, UpgradeDefinition> DefinitionsById = new();
@@ -205,11 +201,6 @@ public sealed class UpgradeManager : MonoBehaviour
     /// </summary>
     private void Awake()
     {
-        if (CurrencyWallet == null)
-        {
-            CurrencyWallet = FindFirstObjectByType<CurrencyWallet>();
-        }
-
         RebuildDefinitionCache();
         RebuildRewardCache();
     }
@@ -223,7 +214,7 @@ public sealed class UpgradeManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Gets the purchased level of the provided upgrade definition.
+    /// Gets the runtime level of the provided upgrade definition.
     /// </summary>
     public int GetUpgradeLevel(UpgradeDefinition UpgradeDefinition)
     {
@@ -236,7 +227,7 @@ public sealed class UpgradeManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Gets the purchased level of the upgrade with the provided id.
+    /// Gets the runtime level of the upgrade with the provided id.
     /// </summary>
     public int GetUpgradeLevelById(string UpgradeId)
     {
@@ -328,86 +319,6 @@ public sealed class UpgradeManager : MonoBehaviour
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// Gets the current reason why this upgrade cannot be purchased.
-    /// Returns None when the upgrade is purchasable right now.
-    /// </summary>
-    public UpgradePurchaseBlockReason GetPurchaseBlockReason(UpgradeDefinition UpgradeDefinition)
-    {
-        if (UpgradeDefinition == null)
-        {
-            return UpgradePurchaseBlockReason.MissingDefinition;
-        }
-
-        if (CurrencyWallet == null)
-        {
-            return UpgradePurchaseBlockReason.MissingCurrencyWallet;
-        }
-
-        int CurrentLevel = GetUpgradeLevel(UpgradeDefinition);
-
-        if (CurrentLevel >= UpgradeDefinition.GetMaxLevel())
-        {
-            return UpgradePurchaseBlockReason.AlreadyMaxLevel;
-        }
-
-        int NextLevel = CurrentLevel + 1;
-        UpgradeDefinition.UpgradeLevelCost NextCost = UpgradeDefinition.GetCostForLevel(NextLevel);
-
-        if (NextCost == null)
-        {
-            return UpgradePurchaseBlockReason.MissingLevelCost;
-        }
-
-        if (TryGetFirstUnmetPrerequisite(UpgradeDefinition, out _))
-        {
-            return UpgradePurchaseBlockReason.MissingPrerequisite;
-        }
-
-        if (!CurrencyWallet.HasEnough(NextCost.GetCurrencyType(), NextCost.GetCost()))
-        {
-            return UpgradePurchaseBlockReason.NotEnoughCurrency;
-        }
-
-        return UpgradePurchaseBlockReason.None;
-    }
-
-    /// <summary>
-    /// Returns whether the provided upgrade can currently be purchased.
-    /// </summary>
-    public bool CanPurchaseUpgrade(UpgradeDefinition UpgradeDefinition)
-    {
-        return GetPurchaseBlockReason(UpgradeDefinition) == UpgradePurchaseBlockReason.None;
-    }
-
-    /// <summary>
-    /// Attempts to purchase the next level of the provided upgrade.
-    /// </summary>
-    public bool TryPurchaseUpgrade(UpgradeDefinition UpgradeDefinition)
-    {
-        UpgradePurchaseBlockReason BlockReason = GetPurchaseBlockReason(UpgradeDefinition);
-
-        if (BlockReason != UpgradePurchaseBlockReason.None)
-        {
-            LogPurchaseBlocked(UpgradeDefinition, BlockReason);
-            return false;
-        }
-
-        int CurrentLevel = GetUpgradeLevel(UpgradeDefinition);
-        int NextLevel = CurrentLevel + 1;
-        UpgradeDefinition.UpgradeLevelCost NextCost = UpgradeDefinition.GetCostForLevel(NextLevel);
-
-        if (!CurrencyWallet.TrySpendCurrency(NextCost.GetCurrencyType(), NextCost.GetCost()))
-        {
-            Log("Purchase failed during spend attempt for upgrade " + UpgradeDefinition.GetDisplayName());
-            return false;
-        }
-
-        SetUpgradeLevel(UpgradeDefinition, NextLevel);
-        Log("Purchased upgrade " + UpgradeDefinition.GetDisplayName() + " to level " + NextLevel);
-        return true;
     }
 
     /// <summary>
@@ -745,61 +656,6 @@ public sealed class UpgradeManager : MonoBehaviour
 
             default:
                 return CurrentValue;
-        }
-    }
-
-    /// <summary>
-    /// Logs a purchase rejection with the most relevant context for the current block reason.
-    /// </summary>
-    private void LogPurchaseBlocked(UpgradeDefinition UpgradeDefinition, UpgradePurchaseBlockReason BlockReason)
-    {
-        if (UpgradeDefinition == null)
-        {
-            Log("Purchase blocked because the provided upgrade definition is null.");
-            return;
-        }
-
-        switch (BlockReason)
-        {
-            case UpgradePurchaseBlockReason.MissingCurrencyWallet:
-                Log("Purchase blocked for " + UpgradeDefinition.GetDisplayName() + " because CurrencyWallet is missing.");
-                break;
-
-            case UpgradePurchaseBlockReason.AlreadyMaxLevel:
-                Log("Upgrade is already at max level: " + UpgradeDefinition.GetDisplayName());
-                break;
-
-            case UpgradePurchaseBlockReason.MissingLevelCost:
-                Log("Missing configured cost for next level on upgrade " + UpgradeDefinition.GetDisplayName());
-                break;
-
-            case UpgradePurchaseBlockReason.MissingPrerequisite:
-                if (TryGetFirstUnmetPrerequisite(UpgradeDefinition, out UpgradeDefinition.UpgradePrerequisiteDefinition UnmetPrerequisite) &&
-                    UnmetPrerequisite != null)
-                {
-                    UpgradeDefinition RequiredDefinition = UnmetPrerequisite.GetRequiredUpgradeDefinition();
-                    string RequiredName = RequiredDefinition != null ? RequiredDefinition.GetDisplayName() : "Missing Upgrade Reference";
-
-                    Log(
-                        "Purchase blocked for " + UpgradeDefinition.GetDisplayName() +
-                        " because prerequisite is not met: " +
-                        RequiredName +
-                        " level " + UnmetPrerequisite.GetRequiredLevel()
-                    );
-                }
-                else
-                {
-                    Log("Purchase blocked for " + UpgradeDefinition.GetDisplayName() + " because prerequisites are not met.");
-                }
-                break;
-
-            case UpgradePurchaseBlockReason.NotEnoughCurrency:
-                Log("Not enough currency to purchase upgrade " + UpgradeDefinition.GetDisplayName());
-                break;
-
-            default:
-                Log("Purchase blocked for " + UpgradeDefinition.GetDisplayName() + " due to " + BlockReason);
-                break;
         }
     }
 

@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b86dd781775dac14ab2fc28d6d0ba90b, type: 3}
+  m_Name: PickaxeDefinition_Tier1
+  m_EditorClassIdentifier: Assembly-CSharp::PickaxeItemDefinition
+  ItemId: FreePickaxe
+  DisplayName: FreePickaxe
+  Icon: {fileID: 21300000, guid: 6fd0b649401ca5b419a5ebf5df170c0f, type: 3}
+  WorldPrefab: {fileID: 2838507164606574361, guid: f5d8846f09015834a93410f58183d7ef, type: 3}
+  EquippedPrefab: {fileID: 2634897519947290856, guid: 9e8c6ab92835f784d8ea2cdf1f6f05ef, type: 3}
+  IsStackable: 0
+  MaxStackSize: 1
+  DefaultDurability: 10
+  BaseWeight: 10
+  AutoEquipWhenSelected: 1
+  MiningDamage: 1
+  MiningTier: 1
+  ExtractionQualityMultiplier: 0.2
+  UsesDurability: 1
+  DurabilityCostPerAcceptedHit: 3
+  BreaksAtZeroDurability: 1
+  MinimumUseInterval: 0

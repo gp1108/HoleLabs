@@ -20,4 +20,5 @@ MonoBehaviour:
   IsStackable: 0
   MaxStackSize: 1
   DefaultDurability: -1
+  BaseWeight: 100
   AutoEquipWhenSelected: 1

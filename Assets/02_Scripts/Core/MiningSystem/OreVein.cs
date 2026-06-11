@@ -28,11 +28,17 @@ public sealed class OreVein : MonoBehaviour, IMineable
     [Tooltip("Feel player triggered when this vein breaks after the final mining hit.")]
     [SerializeField] private MMF_Player BreakFeedbacks;
 
+    [Tooltip("Feel player triggered when a mining hit is rejected because the tool tier is too low.")]
+    [SerializeField] private MMF_Player RejectedHitFeedbacks;
+
     [Tooltip("Intensity passed to the hit feedback player.")]
     [SerializeField] private float HitFeedbackIntensity = 1f;
 
     [Tooltip("Intensity passed to the break feedback player.")]
     [SerializeField] private float BreakFeedbackIntensity = 1f;
+
+    [Tooltip("Intensity passed to the rejected hit feedback player.")]
+    [SerializeField] private float RejectedHitFeedbackIntensity = 1f;
 
     [Tooltip("If true, the regular hit feedback also plays on the final hit that breaks the vein.")]
     [SerializeField] private bool PlayHitFeedbackOnBreakingHit = true;
@@ -109,9 +115,9 @@ public sealed class OreVein : MonoBehaviour, IMineable
     private VeinState CurrentState = VeinState.Ready;
 
     /// <summary>
-    /// Remaining hits required before the vein breaks.
+    /// Remaining mining durability required before the vein breaks.
     /// </summary>
-    private int CurrentHitsRemaining;
+    private int CurrentMiningDurabilityRemaining;
 
     /// <summary>
     /// Remaining respawn time while the vein is regrowing.
@@ -123,6 +129,12 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// The context that actually causes the break is the one consumed by the drop logic.
     /// </summary>
     private MiningHitContext LastMiningHitContext = default;
+
+    /// <summary>
+    /// Extraction quality multiplier captured from the hit that breaks this vein.
+    /// This multiplier is applied to generated ore purity when drops are created.
+    /// </summary>
+    private float LastExtractionQualityMultiplier = 1f;
 
     /// <summary>
     /// Soft cached reference to the elevator magnet resolved for recent spawns.
@@ -139,6 +151,15 @@ public sealed class OreVein : MonoBehaviour, IMineable
     }
 
     /// <summary>
+    /// Gets the mining tier required to damage this vein.
+    /// </summary>
+    /// <returns>Required mining tier, or TierI when no definition is available.</returns>
+    public MiningTier GetRequiredMiningTier()
+    {
+        return OreDefinition != null ? OreDefinition.GetRequiredMiningTier() : MiningTier.TierI;
+    }
+
+    /// <summary>
     /// Gets whether this vein is currently regrowing.
     /// </summary>
     public bool GetIsGrowing()
@@ -147,12 +168,13 @@ public sealed class OreVein : MonoBehaviour, IMineable
     }
 
     /// <summary>
-    /// Gets the current remaining hit count for this vein.
+    /// Gets the current remaining mining durability for this vein.
     /// </summary>
-    public int GetCurrentHitsRemaining()
+    public int GetCurrentMiningDurabilityRemaining()
     {
-        return Mathf.Max(0, CurrentHitsRemaining);
+        return Mathf.Max(0, CurrentMiningDurabilityRemaining);
     }
+
 
     /// <summary>
     /// Gets the remaining regrowth timer for this vein.
@@ -166,9 +188,9 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// Restores the runtime state of this vein after it has been spawned from its saved ore definition.
     /// </summary>
     /// <param name="IsGrowingValue">True if the vein should be regrowing.</param>
-    /// <param name="HitsRemainingValue">Saved remaining hit count for ready veins.</param>
+    /// <param name="MiningDurabilityRemainingValue">Saved remaining mining durability for ready veins.</param>
     /// <param name="RespawnTimerRemainingValue">Saved remaining regrowth timer.</param>
-    public void ApplySavedRuntimeState(bool IsGrowingValue, int HitsRemainingValue, float RespawnTimerRemainingValue)
+    public void ApplySavedRuntimeState(bool IsGrowingValue, int MiningDurabilityRemainingValue, float RespawnTimerRemainingValue)
     {
         if (OreDefinition == null || OreRuntimeService == null)
         {
@@ -179,7 +201,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
         {
             CurrentState = VeinState.Growing;
             CurrentRespawnTimer = Mathf.Max(0f, RespawnTimerRemainingValue);
-            CurrentHitsRemaining = 0;
+            CurrentMiningDurabilityRemaining = 0;
 
             float RespawnDuration = Mathf.Max(0.01f, OreRuntimeService.ResolveRespawnTime(OreDefinition));
             float NormalizedProgress = 1f - Mathf.Clamp01(CurrentRespawnTimer / RespawnDuration);
@@ -195,10 +217,10 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         CurrentState = VeinState.Ready;
         CurrentRespawnTimer = 0f;
-        CurrentHitsRemaining = Mathf.Clamp(
-            HitsRemainingValue,
+        CurrentMiningDurabilityRemaining = Mathf.Clamp(
+            MiningDurabilityRemainingValue,
             1,
-            Mathf.Max(1, OreRuntimeService.ResolveHitsRequired(OreDefinition)));
+            Mathf.Max(1, OreRuntimeService.ResolveMiningDurability(OreDefinition)));
 
         UpdateGrowthVisual(1f);
     }
@@ -215,6 +237,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
         OreRuntimeService = OreRuntimeServiceValue;
         OwnerSpawnPoint = OwnerSpawnPointValue;
         LastMiningHitContext = MiningHitContext.CreateUnknown();
+        LastExtractionQualityMultiplier = 1f;
 
         if (VisualRoot == null)
         {
@@ -252,49 +275,57 @@ public sealed class OreVein : MonoBehaviour, IMineable
         }
     }
 
-    /// <summary>
-    /// Attempts to apply one mining hit through the generic mineable interface.
-    /// </summary>
-    /// <param name="MiningPower">Power value of the mining hit.</param>
-    /// <param name="HitContext">Explicit source context that caused the hit.</param>
-    /// <returns>True when the vein accepted the mining hit.</returns>
-    public bool TryMine(float MiningPower, MiningHitContext HitContext)
-    {
-        return ApplyHit(HitContext);
-    }
 
     /// <summary>
-    /// Applies one mining hit to this ore vein.
-    /// Returns true if the vein was successfully hit.
+    /// Attempts to apply one complete mining request to this ore vein.
+    /// This validates state, tier and damage before modifying the vein.
     /// </summary>
-    /// <param name="HitContext">Explicit source context that caused the hit.</param>
-    /// <returns>True when the hit was accepted.</returns>
-    public bool ApplyHit(MiningHitContext HitContext)
+    /// <param name="MiningRequest">Complete mining request containing damage, tier, extraction quality and hit context.</param>
+    /// <returns>Detailed mining result.</returns>
+    public MiningHitResult TryMine(MiningHitRequest MiningRequest)
     {
         if (CurrentState != VeinState.Ready || OreDefinition == null || OreRuntimeService == null)
         {
-            return false;
+            return MiningHitResult.TargetUnavailable();
         }
 
-        LastMiningHitContext = HitContext;
-        CurrentHitsRemaining--;
+        MiningTier RequiredTier = OreDefinition.GetRequiredMiningTier();
 
-        bool IsBreakingHit = CurrentHitsRemaining <= 0;
+        if ((int)MiningRequest.MiningTier < (int)RequiredTier)
+        {
+            PlayRejectedHitFeedback(MiningRequest.HitContext);
+            Log("Mining hit rejected. Required tier: " + RequiredTier + " | Source tier: " + MiningRequest.MiningTier);
+            return MiningHitResult.InsufficientTier(RequiredTier, MiningRequest.MiningTier, CurrentMiningDurabilityRemaining);
+        }
+
+        int DamageToApply = Mathf.CeilToInt(MiningRequest.MiningDamage);
+
+        if (DamageToApply <= 0)
+        {
+            return MiningHitResult.NoDamage(CurrentMiningDurabilityRemaining);
+        }
+
+        LastMiningHitContext = MiningRequest.HitContext;
+        LastExtractionQualityMultiplier = Mathf.Max(0.01f, MiningRequest.ExtractionQualityMultiplier);
+        CurrentMiningDurabilityRemaining -= DamageToApply;
+
+        bool IsBreakingHit = CurrentMiningDurabilityRemaining <= 0;
 
         if (PlayHitFeedbackOnBreakingHit || !IsBreakingHit)
         {
-            PlayHitFeedback(HitContext);
+            PlayHitFeedback(MiningRequest.HitContext);
         }
 
-        Log("Ore vein hit. Remaining hits: " + CurrentHitsRemaining);
+        Log("Ore vein hit. Damage: " + DamageToApply + " | Remaining mining durability: " + CurrentMiningDurabilityRemaining);
 
         if (IsBreakingHit)
         {
             BreakVein();
         }
 
-        return true;
+        return MiningHitResult.Accepted(DamageToApply, Mathf.Max(0, CurrentMiningDurabilityRemaining));
     }
+
 
     /// <summary>
     /// Gets whether this vein is currently mineable.
@@ -317,7 +348,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         for (int Index = 0; Index < DropCount; Index++)
         {
-            OreItemData OreItemData = OreRuntimeService.CreateOreItemData(OreDefinition);
+            OreItemData OreItemData = OreRuntimeService.CreateOreItemData(OreDefinition, LastExtractionQualityMultiplier);
 
             if (OreItemData == null)
             {
@@ -332,6 +363,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
         }
 
         LastMiningHitContext = MiningHitContext.CreateUnknown();
+        LastExtractionQualityMultiplier = 1f;
         StartRegrowth();
         Log("Ore vein broken and " + DropCount + " drops were spawned.");
     }
@@ -556,8 +588,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
     {
         CurrentState = VeinState.Ready;
         CurrentRespawnTimer = 0f;
-        CurrentHitsRemaining = OreRuntimeService != null && OreDefinition != null
-            ? OreRuntimeService.ResolveHitsRequired(OreDefinition)
+        CurrentMiningDurabilityRemaining = OreRuntimeService != null && OreDefinition != null
+            ? OreRuntimeService.ResolveMiningDurability(OreDefinition)
             : 1;
 
         UpdateGrowthVisual(1f);
@@ -608,6 +640,21 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         Vector3 FeedbackPosition = HitContext.GetFeedbackPosition(transform.position);
         BreakFeedbacks.PlayFeedbacks(FeedbackPosition, Mathf.Max(0f, BreakFeedbackIntensity));
+    }
+
+    /// <summary>
+    /// Plays the configured rejected hit feedback at the mining impact position.
+    /// </summary>
+    /// <param name="HitContext">Context that contains source and optional impact data.</param>
+    private void PlayRejectedHitFeedback(MiningHitContext HitContext)
+    {
+        if (RejectedHitFeedbacks == null)
+        {
+            return;
+        }
+
+        Vector3 FeedbackPosition = HitContext.GetFeedbackPosition(transform.position);
+        RejectedHitFeedbacks.PlayFeedbacks(FeedbackPosition, Mathf.Max(0f, RejectedHitFeedbackIntensity));
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine.SceneManagement;
@@ -82,8 +83,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private sealed class OreItemDataSaveData
     {
         [SerializeField] private string OreId;
-        [SerializeField] private float GoldValue;
-        [SerializeField] private float ResearchValue;
+        [SerializeField] private float CreditValue;
         [SerializeField] private float WeightValue;
         [SerializeField] private List<OrePropertyValueData> Properties = new();
 
@@ -97,8 +97,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             OreItemDataSaveData Result = new OreItemDataSaveData
             {
                 OreId = RuntimeData.GetOreDefinition().GetOreId(),
-                GoldValue = RuntimeData.GetGoldValue(),
-                ResearchValue = RuntimeData.GetResearchValue(),
+                CreditValue = RuntimeData.GetCreditValue(),
                 WeightValue = RuntimeData.GetWeightValue()
             };
 
@@ -134,8 +133,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             OreItemData Result = new OreItemData(Definition);
-            Result.SetGoldValue(GoldValue);
-            Result.SetResearchValue(ResearchValue);
+            Result.SetCreditValue(CreditValue);
             Result.SetWeightValue(WeightValue);
 
             for (int Index = 0; Index < Properties.Count; Index++)
@@ -185,6 +183,72 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
+    private sealed class PlaceableInstallationSpotState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private bool IsOccupied;
+        [SerializeField] private string InstalledItemId;
+        [SerializeField] private int InstalledAmount;
+        [SerializeField] private int InstalledUpgradeLevel;
+        [SerializeField] private float InstalledDurability;
+
+        /// <summary>
+        /// Creates a save payload for one placeable installation spot using primitive fields only.
+        /// This keeps Easy Save restoration stable even when the installed item definition is a derived ScriptableObject type.
+        /// </summary>
+        /// <param name="SceneIdValue">Stable scene id of the placement spot.</param>
+        /// <param name="IsOccupiedValue">Whether the placement spot is occupied.</param>
+        /// <param name="RuntimeItem">Installed runtime item, if any.</param>
+        public PlaceableInstallationSpotState(string SceneIdValue, bool IsOccupiedValue, ItemInstance RuntimeItem)
+        {
+            SceneId = SceneIdValue;
+            IsOccupied = IsOccupiedValue && RuntimeItem != null && RuntimeItem.GetDefinition() != null;
+
+            if (!IsOccupied)
+            {
+                InstalledItemId = string.Empty;
+                InstalledAmount = 0;
+                InstalledUpgradeLevel = 0;
+                InstalledDurability = 0f;
+                return;
+            }
+
+            InstalledItemId = RuntimeItem.GetDefinition().GetItemId();
+            InstalledAmount = RuntimeItem.GetAmount();
+            InstalledUpgradeLevel = RuntimeItem.GetUpgradeLevel();
+            InstalledDurability = RuntimeItem.GetDurability();
+        }
+
+        public string GetSceneId() => SceneId;
+        public bool GetIsOccupied() => IsOccupied;
+        public string GetInstalledItemId() => InstalledItemId;
+
+        /// <summary>
+        /// Restores the installed item runtime payload from the registered item definition table.
+        /// </summary>
+        /// <param name="DefinitionsById">Runtime item definition lookup.</param>
+        /// <returns>Restored runtime item, or null when the definition is unavailable.</returns>
+        public ItemInstance ToRuntime(Dictionary<string, ItemDefinition> DefinitionsById)
+        {
+            if (!IsOccupied || DefinitionsById == null || string.IsNullOrWhiteSpace(InstalledItemId))
+            {
+                return null;
+            }
+
+            if (!DefinitionsById.TryGetValue(InstalledItemId, out ItemDefinition Definition) || Definition == null)
+            {
+                return null;
+            }
+
+            return new ItemInstance(
+                Definition,
+                Mathf.Max(1, InstalledAmount),
+                Mathf.Max(0, InstalledUpgradeLevel),
+                InstalledDurability);
+        }
+    }
+
+    [Serializable]
     private sealed class PlayerSaveData
     {
         [SerializeField] private Vector3 Position;
@@ -203,17 +267,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Serializable]
     private sealed class WalletSaveData
     {
-        [SerializeField] private float Gold;
-        [SerializeField] private float Research;
+        [SerializeField] private float Credits;
 
-        public WalletSaveData(float GoldValue, float ResearchValue)
+        public WalletSaveData(float CreditsValue)
         {
-            Gold = GoldValue;
-            Research = ResearchValue;
+            Credits = CreditsValue;
         }
 
-        public float GetGold() => Gold;
-        public float GetResearch() => Research;
+        public float GetCredits() => Credits;
     }
 
     [Serializable]
@@ -378,7 +439,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private bool IsActive;
         [SerializeField] private string OreId;
         [SerializeField] private bool IsGrowing;
-        [SerializeField] private int HitsRemaining;
+        [SerializeField] private int MiningDurabilityRemaining;
         [SerializeField] private float RespawnTimerRemaining;
 
         public OreSpawnPointState(
@@ -386,14 +447,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
             bool IsActiveValue,
             string OreIdValue,
             bool IsGrowingValue,
-            int HitsRemainingValue,
+            int MiningDurabilityRemainingValue,
             float RespawnTimerRemainingValue)
         {
             SceneId = SceneIdValue;
             IsActive = IsActiveValue;
             OreId = OreIdValue;
             IsGrowing = IsGrowingValue;
-            HitsRemaining = HitsRemainingValue;
+            MiningDurabilityRemaining = MiningDurabilityRemainingValue;
             RespawnTimerRemaining = RespawnTimerRemainingValue;
         }
 
@@ -401,7 +462,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         public bool GetIsActive() => IsActive;
         public string GetOreId() => OreId;
         public bool GetIsGrowing() => IsGrowing;
-        public int GetHitsRemaining() => HitsRemaining;
+        public int GetMiningDurabilityRemaining() => MiningDurabilityRemaining;
         public float GetRespawnTimerRemaining() => RespawnTimerRemaining;
     }
 
@@ -419,10 +480,19 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<OrePickupState> OrePickups = new();
         [SerializeField] private List<OreSpawnPointState> OreSpawnPoints = new();
         [SerializeField] private List<DrillPlacementSpotState> DrillPlacementSpots = new();
+        [SerializeField] private List<PlaceableInstallationSpotState> PlaceableInstallationSpots = new();
+
+        [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
+        [SerializeField] private ResearchRuntimeService.ResearchRuntimeSaveData ResearchRuntime;
+
+        public ResearchRuntimeService.ResearchRuntimeSaveData GetResearchRuntime() => ResearchRuntime;
+        public void SetResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData Value) => ResearchRuntime = Value;
 
         public List<DrillPlacementSpotState> GetDrillPlacementSpots() => DrillPlacementSpots;
         public void SetDrillPlacementSpots(List<DrillPlacementSpotState> Value) => DrillPlacementSpots = Value ?? new List<DrillPlacementSpotState>();
 
+        public List<PlaceableInstallationSpotState> GetPlaceableInstallationSpots() => PlaceableInstallationSpots;
+        public void SetPlaceableInstallationSpots(List<PlaceableInstallationSpotState> Value) => PlaceableInstallationSpots = Value ?? new List<PlaceableInstallationSpotState>();
         public PlayerSaveData GetPlayer() => Player;
         public void SetPlayer(PlayerSaveData Value) => Player = Value;
 
@@ -469,6 +539,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Tooltip("Upgrade manager restored from save.")]
     [SerializeField] private UpgradeManager UpgradeManager;
 
+    [Tooltip("Global research runtime service restored from save. This should live in the scene independently from any placed researcher machine.")]
+    [SerializeField] private ResearchRuntimeService ResearchRuntimeServiceReference;
+
     [Tooltip("Authoritative elevator motor restored from save.")]
     [SerializeField] private ElevatorPhysicalMotor ElevatorPhysicalMotor;
 
@@ -491,6 +564,12 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Tooltip("All item definitions available in this gameplay scene.")]
     [SerializeField] private List<ItemDefinition> ItemDefinitions = new();
 
+    [Tooltip("Specialized pickaxe item definitions available in this gameplay scene. Register them explicitly to make save/load reconstruction deterministic.")]
+    [SerializeField] private List<PickaxeItemDefinition> PickaxeItemDefinitions = new();
+
+    [Tooltip("Placeable item definitions available in this gameplay scene. Register installable products explicitly for deterministic save/load restoration.")]
+    [SerializeField] private List<PlaceableItemDefinition> PlaceableItemDefinitions = new();
+
     [Tooltip("All ore definitions available in this gameplay scene.")]
     [SerializeField] private List<OreDefinition> OreDefinitions = new();
 
@@ -501,6 +580,10 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Tooltip("Optional gameplay scene loaded when Continue or Load is requested from a non-gameplay menu scene. Leave empty to reload the currently active scene.")]
     [SerializeField] private string GameplaySceneName = string.Empty;
 
+    [Header("Debug Hotkeys")]
+    [Tooltip("If true, F5 saves to slot one and F4 loads from slot one. Keep disabled for normal gameplay builds.")]
+    [SerializeField] private bool EnableDebugHotkeys = false;
+
     [Header("Debug")]
     [Tooltip("Logs save and load operations.")]
     [SerializeField] private bool DebugLogs = true;
@@ -510,7 +593,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private readonly Dictionary<string, ScenePlacedWorldItemPersistence> SceneWorldItemsById = new();
     private readonly Dictionary<string, OreSpawnPoint> OreSpawnPointsById = new();
     private readonly Dictionary<string, DrillPlacementSpot> DrillPlacementSpotsById = new();
-
+    private readonly Dictionary<string, PlaceableInstallationSpot> PlaceableInstallationSpotsById = new();
     /// <summary>
     /// Resolves missing scene references and builds lookup caches.
     /// </summary>
@@ -534,6 +617,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (UpgradeManager == null)
         {
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
+        }
+
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
         }
 
         if (ElevatorPhysicalMotor == null)
@@ -565,8 +653,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
-    /// Applies a pending deferred load after the scene has been recreated from a clean state.
-    /// This avoids restoring save data on top of a live runtime scene.
+    /// Starts a pending deferred load after the scene has been recreated from a clean state.
+    /// The actual restore is delayed by one frame so every scene Start method can finish its default initialization first.
     /// </summary>
     private void Start()
     {
@@ -575,16 +663,29 @@ public sealed class GameSaveDebugController : MonoBehaviour
             return;
         }
 
+        StartCoroutine(ApplyPendingLoadAfterSceneStart());
+    }
+
+    /// <summary>
+    /// Applies a pending deferred load after all scene Start methods had one chance to run.
+    /// This prevents default ore generation from overriding saved damaged vein states.
+    /// </summary>
+    private IEnumerator ApplyPendingLoadAfterSceneStart()
+    {
+        yield return null;
+
+        RebuildLookupCaches();
+
         if (string.IsNullOrWhiteSpace(PendingLoadFileName) || string.IsNullOrWhiteSpace(PendingLoadRootKey))
         {
             ClearPendingLoadRequest();
-            return;
+            yield break;
         }
 
         if (!ES3.KeyExists(PendingLoadRootKey, PendingLoadFileName))
         {
             ClearPendingLoadRequest();
-            return;
+            yield break;
         }
 
         int LoadedSlotIndex = PendingLoadSlotIndex;
@@ -595,14 +696,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (Data == null)
         {
             Log("Deferred load failed because loaded save data was null.");
-            return;
+            yield break;
         }
 
         ApplySaveData(Data);
         CurrentActiveSlotIndex = LoadedSlotIndex;
         Physics.SyncTransforms();
 
-        Log("Deferred load applied after clean scene reload from slot " + (CurrentActiveSlotIndex + 1) + ".");
+        Log("Deferred load applied after clean scene initialization from slot " + (CurrentActiveSlotIndex + 1) + ".");
     }
 
     /// <summary>
@@ -610,7 +711,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private void Update()
     {
-        //@TODO:QUITAR ESTAS TECLAS PARA QUE NO SALTEN ERROR
+        if (!EnableDebugHotkeys)
+        {
+            return;
+        }
+
         if (Input.GetKeyDown(KeyCode.F5))
         {
             SaveGame();
@@ -912,6 +1017,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private SaveData BuildSaveData()
     {
+        RebuildLookupCaches();
+
         SaveData Data = new SaveData();
 
         if (PlayerController != null)
@@ -924,8 +1031,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (CurrencyWallet != null)
         {
             Data.SetWallet(new WalletSaveData(
-                CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Gold),
-                CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Research)));
+                CurrencyWallet.GetCredits()));
         }
 
         if (HotbarController != null)
@@ -953,6 +1059,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetOrePickups(CaptureOrePickups());
         Data.SetOreSpawnPoints(CaptureOreSpawnPoints());
         Data.SetDrillPlacementSpots(CaptureDrillPlacementSpots());
+        Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
+        Data.SetResearchRuntime(CaptureResearchRuntime());
 
         return Data;
     }
@@ -969,8 +1077,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         if (CurrencyWallet != null && Data.GetWallet() != null)
         {
-            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Gold, Data.GetWallet().GetGold());
-            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Research, Data.GetWallet().GetResearch());
+            CurrencyWallet.SetCredits(Data.GetWallet().GetCredits());
         }
 
         if (UpgradeManager != null)
@@ -1016,6 +1123,72 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreRuntimeWorldItems(Data.GetRuntimeWorldItems());
         RestoreMoneyPickups(Data.GetMoneyPickups());
         RestoreOrePickups(Data.GetOrePickups());
+        RestoreResearchRuntime(Data.GetResearchRuntime());
+        RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
+        RebuildLookupCaches();
+    }
+
+    /// <summary>
+    /// Registers one item definition in the save lookup cache.
+    /// Specialized definitions, such as pickaxes, override base definitions with the same id.
+    /// </summary>
+    /// <param name="Definition">Definition to register.</param>
+    private void RegisterItemDefinition(ItemDefinition Definition)
+    {
+        if (Definition == null || string.IsNullOrWhiteSpace(Definition.GetItemId()))
+        {
+            return;
+        }
+
+        string ItemId = Definition.GetItemId();
+
+        if (ItemDefinitionsById.TryGetValue(ItemId, out ItemDefinition ExistingDefinition) && ExistingDefinition != null)
+        {
+            bool NewDefinitionIsSpecialized = Definition.GetType() != typeof(ItemDefinition);
+            bool ExistingDefinitionIsBase = ExistingDefinition.GetType() == typeof(ItemDefinition);
+
+            if (!NewDefinitionIsSpecialized || !ExistingDefinitionIsBase)
+            {
+                return;
+            }
+        }
+
+        ItemDefinitionsById[ItemId] = Definition;
+    }
+
+    /// <summary>
+    /// Registers every loaded item definition asset that Unity currently knows about.
+    /// This is a safety net for derived ScriptableObjects not added manually to the save controller list.
+    /// </summary>
+    private void RegisterLoadedItemDefinitions()
+    {
+        ItemDefinition[] LoadedDefinitions = Resources.FindObjectsOfTypeAll<ItemDefinition>();
+
+        for (int Index = 0; Index < LoadedDefinitions.Length; Index++)
+        {
+            RegisterItemDefinition(LoadedDefinitions[Index]);
+        }
+    }
+
+    /// <summary>
+    /// Registers item definitions referenced by world items already present in the scene.
+    /// This ensures scene pickaxes using PickaxeItemDefinition can be restored even when not assigned manually.
+    /// </summary>
+    private void RegisterSceneWorldItemDefinitions()
+    {
+        WorldItem[] WorldItems = FindObjectsByType<WorldItem>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < WorldItems.Length; Index++)
+        {
+            if (WorldItems[Index] == null)
+            {
+                continue;
+            }
+
+            RegisterItemDefinition(WorldItems[Index].GetDefinition());
+        }
     }
 
     /// <summary>
@@ -1023,23 +1196,35 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private void RebuildLookupCaches()
     {
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
         ItemDefinitionsById.Clear();
         OreDefinitionsById.Clear();
         SceneWorldItemsById.Clear();
         OreSpawnPointsById.Clear();
         DrillPlacementSpotsById.Clear();
+        PlaceableInstallationSpotsById.Clear();
 
         for (int Index = 0; Index < ItemDefinitions.Count; Index++)
         {
-            ItemDefinition Definition = ItemDefinitions[Index];
-
-            if (Definition == null || string.IsNullOrWhiteSpace(Definition.GetItemId()))
-            {
-                continue;
-            }
-
-            ItemDefinitionsById[Definition.GetItemId()] = Definition;
+            RegisterItemDefinition(ItemDefinitions[Index]);
         }
+
+        for (int Index = 0; Index < PickaxeItemDefinitions.Count; Index++)
+        {
+            RegisterItemDefinition(PickaxeItemDefinitions[Index]);
+        }
+
+        for (int Index = 0; Index < PlaceableItemDefinitions.Count; Index++)
+        {
+            RegisterItemDefinition(PlaceableItemDefinitions[Index]);
+        }
+
+        RegisterLoadedItemDefinitions();
+        RegisterSceneWorldItemDefinitions();
 
         for (int Index = 0; Index < OreDefinitions.Count; Index++)
         {
@@ -1121,6 +1306,30 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
             DrillPlacementSpotsById[SaveId.GetId()] = Spot;
         }
+
+        PlaceableInstallationSpot[] PlaceableSpots = FindObjectsByType<PlaceableInstallationSpot>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < PlaceableSpots.Length; Index++)
+        {
+            PlaceableInstallationSpot Spot = PlaceableSpots[Index];
+
+            if (Spot == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Spot.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            PlaceableInstallationSpotsById[SaveId.GetId()] = Spot;
+        }
+
     }
 
     /// <summary>
@@ -1211,6 +1420,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             if (WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>() != null)
+            {
+                continue;
+            }
+
+            if (WorldItem.GetComponentInParent<PlaceableInstallationSpot>() != null)
             {
                 continue;
             }
@@ -1338,7 +1552,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 true,
                 CurrentVein.GetOreDefinition().GetOreId(),
                 CurrentVein.GetIsGrowing(),
-                CurrentVein.GetCurrentHitsRemaining(),
+                CurrentVein.GetCurrentMiningDurabilityRemaining(),
                 CurrentVein.GetCurrentRespawnTimer()));
         }
 
@@ -1582,6 +1796,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
     /// <summary>
     /// Restores every ore spawn point in the scene from saved state.
+    /// Saved points keep their damaged or regrowing runtime state, while points missing from the save return to their configured deterministic defaults.
     /// </summary>
     private void RestoreOreSpawnPoints(List<OreSpawnPointState> States)
     {
@@ -1593,53 +1808,85 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
         }
 
-        if (States == null || OreRuntimeService == null)
+        if (OreRuntimeService == null)
         {
             return;
         }
 
-        for (int Index = 0; Index < States.Count; Index++)
+        HashSet<string> RestoredSceneIds = new HashSet<string>();
+
+        if (States != null)
         {
-            OreSpawnPointState State = States[Index];
+            for (int Index = 0; Index < States.Count; Index++)
+            {
+                OreSpawnPointState State = States[Index];
 
-            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+                if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+                {
+                    continue;
+                }
+
+                if (!OreSpawnPointsById.TryGetValue(State.GetSceneId(), out OreSpawnPoint SpawnPoint) || SpawnPoint == null)
+                {
+                    continue;
+                }
+
+                RestoredSceneIds.Add(State.GetSceneId());
+
+                if (!State.GetIsActive() || string.IsNullOrWhiteSpace(State.GetOreId()))
+                {
+                    SpawnPoint.ClearPoint();
+                    continue;
+                }
+
+                if (!OreDefinitionsById.TryGetValue(State.GetOreId(), out OreDefinition Definition) || Definition == null)
+                {
+                    SpawnPoint.ClearPoint();
+                    continue;
+                }
+
+                bool WasSpawned = SpawnPoint.SpawnVein(Definition, OreRuntimeService);
+
+                if (!WasSpawned)
+                {
+                    continue;
+                }
+
+                OreVein CurrentVein = SpawnPoint.GetCurrentVein();
+
+                if (CurrentVein != null)
+                {
+                    CurrentVein.ApplySavedRuntimeState(
+                        State.GetIsGrowing(),
+                        State.GetMiningDurabilityRemaining(),
+                        State.GetRespawnTimerRemaining());
+                }
+            }
+        }
+
+        RestoreMissingOreSpawnPointsToConfiguredDefaults(RestoredSceneIds);
+    }
+
+    /// <summary>
+    /// Restores spawn points missing from the save data to their configured deterministic defaults.
+    /// This protects old saves and newly added level-design points from staying empty after load.
+    /// </summary>
+    /// <param name="RestoredSceneIds">Scene ids already restored from save, or null when no save states existed.</param>
+    private void RestoreMissingOreSpawnPointsToConfiguredDefaults(HashSet<string> RestoredSceneIds)
+    {
+        foreach (KeyValuePair<string, OreSpawnPoint> Pair in OreSpawnPointsById)
+        {
+            if (Pair.Value == null)
             {
                 continue;
             }
 
-            if (!OreSpawnPointsById.TryGetValue(State.GetSceneId(), out OreSpawnPoint SpawnPoint) || SpawnPoint == null)
+            if (RestoredSceneIds != null && RestoredSceneIds.Contains(Pair.Key))
             {
                 continue;
             }
 
-            if (!State.GetIsActive() || string.IsNullOrWhiteSpace(State.GetOreId()))
-            {
-                SpawnPoint.ClearPoint();
-                continue;
-            }
-
-            if (!OreDefinitionsById.TryGetValue(State.GetOreId(), out OreDefinition Definition) || Definition == null)
-            {
-                SpawnPoint.ClearPoint();
-                continue;
-            }
-
-            bool WasSpawned = SpawnPoint.SpawnVein(Definition, OreRuntimeService);
-
-            if (!WasSpawned)
-            {
-                continue;
-            }
-
-            OreVein CurrentVein = SpawnPoint.GetCurrentVein();
-
-            if (CurrentVein != null)
-            {
-                CurrentVein.ApplySavedRuntimeState(
-                    State.GetIsGrowing(),
-                    State.GetHitsRemaining(),
-                    State.GetRespawnTimerRemaining());
-            }
+            Pair.Value.SpawnAssignedVein(OreRuntimeService);
         }
     }
 
@@ -1661,6 +1908,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             if (WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>() != null)
+            {
+                continue;
+            }
+
+            if (WorldItem.GetComponentInParent<PlaceableInstallationSpot>() != null)
             {
                 continue;
             }
@@ -1734,11 +1986,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            GameObject LegacyPrefab = Definition.GetDroppedOrePrefab();
+            GameObject FallbackPrefab = Definition.GetDroppedOrePrefab();
 
-            if (LegacyPrefab != null && LegacyPrefab.name == PrefabName)
+            if (FallbackPrefab != null && FallbackPrefab.name == PrefabName)
             {
-                return LegacyPrefab;
+                return FallbackPrefab;
             }
 
             IReadOnlyList<GameObject> VisualPrefabs = Definition.GetDroppedOreVisualPrefabs();
@@ -1768,6 +2020,121 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         Debug.Log("[GameSaveDebugController] " + Message, this);
+    }
+
+    /// <summary>
+    /// Captures the global research runtime state.
+    /// </summary>
+    private ResearchRuntimeService.ResearchRuntimeSaveData CaptureResearchRuntime()
+    {
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
+        return ResearchRuntimeServiceReference != null
+            ? ResearchRuntimeServiceReference.CreateSaveSnapshot()
+            : new ResearchRuntimeService.ResearchRuntimeSaveData();
+    }
+
+    /// <summary>
+    /// Restores the global research runtime state.
+    /// </summary>
+    /// <param name="RuntimeState">Saved global runtime state.</param>
+    private void RestoreResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData RuntimeState)
+    {
+        if (ResearchRuntimeServiceReference == null)
+        {
+            ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
+        if (ResearchRuntimeServiceReference == null)
+        {
+            Log("Research runtime service was not found. Research progress cannot be restored.");
+            return;
+        }
+
+        ResearchRuntimeServiceReference.ApplySaveState(RuntimeState);
+    }
+
+    /// <summary>
+    /// Captures every generic placeable installation spot runtime state in the scene.
+    /// </summary>
+    private List<PlaceableInstallationSpotState> CapturePlaceableInstallationSpots()
+    {
+        List<PlaceableInstallationSpotState> Result = new List<PlaceableInstallationSpotState>();
+
+        foreach (KeyValuePair<string, PlaceableInstallationSpot> Pair in PlaceableInstallationSpotsById)
+        {
+            PlaceableInstallationSpot Spot = Pair.Value;
+
+            if (Spot == null)
+            {
+                continue;
+            }
+
+            ItemInstance InstalledItem = Spot.CreateInstalledItemSnapshot();
+
+            Result.Add(new PlaceableInstallationSpotState(
+                Pair.Key,
+                Spot.GetIsOccupied(),
+                InstalledItem));
+
+            if (Spot.GetIsOccupied() && InstalledItem == null)
+            {
+                Log("Placeable spot '" + Pair.Key + "' is occupied but produced no installed item snapshot.");
+            }
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores every generic placeable installation spot runtime state from save.
+    /// </summary>
+    /// <param name="States">Saved placement spot states.</param>
+    private void RestorePlaceableInstallationSpots(List<PlaceableInstallationSpotState> States)
+    {
+        foreach (KeyValuePair<string, PlaceableInstallationSpot> Pair in PlaceableInstallationSpotsById)
+        {
+            if (Pair.Value != null)
+            {
+                Pair.Value.ClearInstalledState();
+            }
+        }
+
+        if (States == null)
+        {
+            Log("No placeable installation spot states were found in the save.");
+            return;
+        }
+
+        Log("Restoring " + States.Count + " placeable installation spot states.");
+
+        for (int Index = 0; Index < States.Count; Index++)
+        {
+            PlaceableInstallationSpotState State = States[Index];
+
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!PlaceableInstallationSpotsById.TryGetValue(State.GetSceneId(), out PlaceableInstallationSpot Spot) || Spot == null)
+            {
+                Log("Saved placeable spot id was not found in the scene: " + State.GetSceneId());
+                continue;
+            }
+
+            ItemInstance InstalledItem = State.ToRuntime(ItemDefinitionsById);
+
+            if (State.GetIsOccupied() && InstalledItem == null)
+            {
+                Log("Could not restore installed placeable item '" + State.GetInstalledItemId() + "' for spot '" + State.GetSceneId() + "'. Register its PlaceableItemDefinition in the save controller.");
+            }
+
+            Spot.ApplySavedState(State.GetIsOccupied(), InstalledItem, true);
+        }
     }
 
     /// <summary>

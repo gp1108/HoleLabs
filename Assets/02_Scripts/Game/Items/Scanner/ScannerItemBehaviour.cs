@@ -70,11 +70,9 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     [Tooltip("Feature flag required to show the vein drop amount range.")]
     [SerializeField] private string VeinDropRangeUnlockId = "Scanner.Unlock.VeinDropRange";
 
-    [Tooltip("Feature flag required to show dropped ore gold value.")]
-    [SerializeField] private string OreGoldUnlockId = "Scanner.Unlock.GoldValue";
+    [Tooltip("Feature flag required to show dropped ore credit value.")]
+    [SerializeField] private string OreCreditUnlockId = "Scanner.Unlock.CreditValue";
 
-    [Tooltip("Feature flag required to show dropped ore research value.")]
-    [SerializeField] private string OreResearchUnlockId = "Scanner.Unlock.ResearchValue";
 
     [Tooltip("Feature flag required to show dropped ore purity.")]
     [SerializeField] private string OrePurityUnlockId = "Scanner.Unlock.Purity";
@@ -443,8 +441,7 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         }
 
         string MineralType = OreItemData.GetOreDefinition().GetDisplayName();
-        float GoldValue = OreItemData.GetGoldValue();
-        float ResearchValue = OreItemData.GetResearchValue();
+        float CreditValue = OreItemData.GetCreditValue();
         float Purity = OreItemData.GetPropertyValue(OrePropertyType.Purity, 0f);
         float Size = OreItemData.GetPropertyValue(OrePropertyType.Size, 0f);
         float Weight = OreItemData.GetWeightValue();
@@ -453,10 +450,8 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         {
             ScannerDisplayUI.ShowOreResult(
                 MineralType,
-                IsFeatureUnlocked(OreGoldUnlockId),
-                GoldValue,
-                IsFeatureUnlocked(OreResearchUnlockId),
-                ResearchValue,
+                IsFeatureUnlocked(OreCreditUnlockId),
+                CreditValue,
                 IsFeatureUnlocked(OrePurityUnlockId),
                 Purity,
                 IsFeatureUnlocked(OreSizeUnlockId),

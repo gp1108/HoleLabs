@@ -209,6 +209,34 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
+    /// Notifies listeners that the currently selected runtime item changed internally, for example after durability loss.
+    /// </summary>
+    public void NotifySelectedItemRuntimeChanged()
+    {
+        EnsureSlotListSize(SlotCount);
+        NotifySlotChanged(SelectedIndex);
+    }
+
+    /// <summary>
+    /// Removes the selected item only if the provided runtime instance is still the selected slot instance.
+    /// This prevents an equipped item from deleting a different item after a fast slot change.
+    /// </summary>
+    /// <param name="ExpectedItemInstance">Runtime item instance expected to be selected.</param>
+    /// <returns>True when the expected item was removed.</returns>
+    public bool TryRemoveSelectedItemInstance(ItemInstance ExpectedItemInstance)
+    {
+        EnsureSlotListSize(SlotCount);
+
+        if (ExpectedItemInstance == null || Slots[SelectedIndex] != ExpectedItemInstance)
+        {
+            return false;
+        }
+
+        RemoveSelectedItem();
+        return true;
+    }
+
+    /// <summary>
     /// Allows external systems to block or restore hotbar runtime input.
     /// </summary>
     /// <param name="IsBlocked">True to block hotbar input, false to restore it.</param>
@@ -617,6 +645,7 @@ public sealed class HotbarController : MonoBehaviour
 
     /// <summary>
     /// Routes primary and secondary use input to the equipped item using the centralized input reader.
+    /// This method is robust against equipped items consuming themselves during an input callback.
     /// </summary>
     private void HandleUseInput()
     {
@@ -627,6 +656,7 @@ public sealed class HotbarController : MonoBehaviour
             return;
         }
 
+        EquippedItemBehaviour BehaviourAtFrameStart = CurrentEquippedBehaviour;
         bool IsPrimaryHeldNow = PlayerInputReader.IsUsePrimaryHeld;
         bool IsSecondaryHeldNow = PlayerInputReader.IsUseSecondaryHeld;
 
@@ -634,7 +664,7 @@ public sealed class HotbarController : MonoBehaviour
         {
             if (!WasItemUseBlockedLastFrame)
             {
-                CurrentEquippedBehaviour.ForceStopItemUsage();
+                BehaviourAtFrameStart.ForceStopItemUsage();
                 WasItemUseBlockedLastFrame = true;
                 Log("Blocked equipped item use because a higher-priority interaction captured input.");
             }
@@ -648,36 +678,83 @@ public sealed class HotbarController : MonoBehaviour
 
         if (IsPrimaryHeldNow && !WasPrimaryHeldLastFrame)
         {
-            CurrentEquippedBehaviour.OnPrimaryUseStarted();
+            BehaviourAtFrameStart.OnPrimaryUseStarted();
+
+            if (HasEquippedBehaviourChangedDuringInput(BehaviourAtFrameStart))
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
         if (IsPrimaryHeldNow)
         {
-            CurrentEquippedBehaviour.OnPrimaryUseHeld();
+            BehaviourAtFrameStart.OnPrimaryUseHeld();
+
+            if (HasEquippedBehaviourChangedDuringInput(BehaviourAtFrameStart))
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
         if (!IsPrimaryHeldNow && WasPrimaryHeldLastFrame)
         {
-            CurrentEquippedBehaviour.OnPrimaryUseEnded();
+            BehaviourAtFrameStart.OnPrimaryUseEnded();
+
+            if (HasEquippedBehaviourChangedDuringInput(BehaviourAtFrameStart))
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
         if (IsSecondaryHeldNow && !WasSecondaryHeldLastFrame)
         {
-            CurrentEquippedBehaviour.OnSecondaryUseStarted();
+            BehaviourAtFrameStart.OnSecondaryUseStarted();
+
+            if (HasEquippedBehaviourChangedDuringInput(BehaviourAtFrameStart))
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
         if (IsSecondaryHeldNow)
         {
-            CurrentEquippedBehaviour.OnSecondaryUseHeld();
+            BehaviourAtFrameStart.OnSecondaryUseHeld();
+
+            if (HasEquippedBehaviourChangedDuringInput(BehaviourAtFrameStart))
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
         if (!IsSecondaryHeldNow && WasSecondaryHeldLastFrame)
         {
-            CurrentEquippedBehaviour.OnSecondaryUseEnded();
+            BehaviourAtFrameStart.OnSecondaryUseEnded();
+
+            if (HasEquippedBehaviourChangedDuringInput(BehaviourAtFrameStart))
+            {
+                ResetUseTracking();
+                return;
+            }
         }
 
         WasPrimaryHeldLastFrame = IsPrimaryHeldNow;
         WasSecondaryHeldLastFrame = IsSecondaryHeldNow;
+    }
+
+    /// <summary>
+    /// Returns true if an equipped item callback changed or removed the currently equipped behaviour.
+    /// This happens when consumable or placeable items remove themselves from the selected slot.
+    /// </summary>
+    /// <param name="ExpectedBehaviour">Behaviour that was active before the input callback.</param>
+    /// <returns>True when the active equipped behaviour changed during input routing.</returns>
+    private bool HasEquippedBehaviourChangedDuringInput(EquippedItemBehaviour ExpectedBehaviour)
+    {
+        return CurrentEquippedBehaviour != ExpectedBehaviour;
     }
 
     /// <summary>

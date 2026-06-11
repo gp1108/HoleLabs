@@ -4,6 +4,7 @@ using UnityEngine;
 /// <summary>
 /// Stores idle PhysicsCarryable objects inside an elevator by switching them to external kinematic carry
 /// after they remain inside the storage trigger for a configurable amount of time.
+/// This version tracks overlapping colliders per carryable so multi-collider objects are not released by a single partial exit.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Collider))]
@@ -16,6 +17,9 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
     [Header("Timing")]
     [Tooltip("Time a carryable must remain eligible inside the trigger before it is stored.")]
     [SerializeField] private float MountDelay = 1.25f;
+
+    [Tooltip("Grace time after the last tracked collider exits before a carryable stored by this zone is released. This prevents noisy trigger exits on moving platforms.")]
+    [SerializeField] private float ExitReleaseDelay = 0.08f;
 
     [Header("Eligibility")]
     [Tooltip("Maximum linear speed allowed before a carryable can be stored.")]
@@ -38,6 +42,11 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
     private readonly Dictionary<PhysicsCarryable, CandidateState> CandidateStates = new Dictionary<PhysicsCarryable, CandidateState>();
 
     /// <summary>
+    /// Temporary key list used to remove invalid candidates without modifying the dictionary during iteration.
+    /// </summary>
+    private readonly List<PhysicsCarryable> CandidatesToRemove = new List<PhysicsCarryable>();
+
+    /// <summary>
     /// Cached trigger collider.
     /// </summary>
     private Collider TriggerCollider;
@@ -53,9 +62,22 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
         public float EligibleTime;
 
         /// <summary>
-        /// Whether the carryable is currently inside the trigger according to enter/exit callbacks.
+        /// Remaining time before releasing the carryable after all tracked colliders have left the zone.
         /// </summary>
-        public bool IsInside;
+        public float ExitReleaseTimer;
+
+        /// <summary>
+        /// Colliders currently considered to be overlapping this storage zone for this carryable.
+        /// </summary>
+        public readonly HashSet<Collider> OverlappingColliders = new HashSet<Collider>();
+
+        /// <summary>
+        /// Returns whether at least one valid active collider is still inside the trigger.
+        /// </summary>
+        public bool HasInsideCollider()
+        {
+            return OverlappingColliders.Count > 0;
+        }
     }
 
     /// <summary>
@@ -88,6 +110,7 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
         }
 
         MountDelay = Mathf.Max(0f, MountDelay);
+        ExitReleaseDelay = Mathf.Max(0f, ExitReleaseDelay);
         MaxMountLinearSpeed = Mathf.Max(0f, MaxMountLinearSpeed);
         MaxMountAngularSpeed = Mathf.Max(0f, MaxMountAngularSpeed);
     }
@@ -107,7 +130,7 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
             return;
         }
 
-        List<PhysicsCarryable> KeysToRemove = null;
+        CandidatesToRemove.Clear();
 
         foreach (KeyValuePair<PhysicsCarryable, CandidateState> Pair in CandidateStates)
         {
@@ -116,50 +139,34 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
 
             if (Carryable == null)
             {
-                if (KeysToRemove == null)
-                {
-                    KeysToRemove = new List<PhysicsCarryable>();
-                }
-
-                KeysToRemove.Add(Carryable);
+                CandidatesToRemove.Add(Carryable);
                 continue;
             }
 
-            if (!State.IsInside)
-            {
-                if (KeysToRemove == null)
-                {
-                    KeysToRemove = new List<PhysicsCarryable>();
-                }
+            PruneInvalidTrackedColliders(State);
 
-                KeysToRemove.Add(Carryable);
+            if (!State.HasInsideCollider())
+            {
+                HandleCandidateOutsideStorage(Carryable, State);
+                continue;
+            }
+
+            State.ExitReleaseTimer = ExitReleaseDelay;
+
+            if (IsStoredByThisZone(Carryable))
+            {
                 continue;
             }
 
             if (Carryable.IsExternallyCarried)
             {
+                State.EligibleTime = 0f;
                 continue;
             }
 
             if (!IsCarryableEligibleForStorage(Carryable))
             {
-                if (DebugLogs)
-                {
-                    Rigidbody CarryableRigidbody = Carryable.Rigidbody;
-                    if (CarryableRigidbody != null)
-                    {
-                        Debug.LogWarning(
-                            "[ElevatorCarryableStorageZone] Not eligible :: " +
-                            Carryable.name +
-                            " | Held: " + Carryable.GetIsHeld() +
-                            " | Magnetized: " + Carryable.GetIsMagnetized() +
-                            " | External: " + Carryable.IsExternallyCarried +
-                            " | LinearSpeed: " + CarryableRigidbody.linearVelocity.magnitude.ToString("F3") +
-                            " | AngularSpeed: " + CarryableRigidbody.angularVelocity.magnitude.ToString("F3"),
-                            this);
-                    }
-                }
-
+                LogIneligibleCarryable(Carryable);
                 State.EligibleTime = 0f;
                 continue;
             }
@@ -173,18 +180,14 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
 
             Carryable.BeginExternalCarry(StorageRoot);
             State.EligibleTime = 0f;
+            State.ExitReleaseTimer = ExitReleaseDelay;
 
             Log("Stored carryable: " + Carryable.name);
         }
 
-        if (KeysToRemove == null)
+        for (int Index = 0; Index < CandidatesToRemove.Count; Index++)
         {
-            return;
-        }
-
-        for (int Index = 0; Index < KeysToRemove.Count; Index++)
-        {
-            CandidateStates.Remove(KeysToRemove[Index]);
+            CandidateStates.Remove(CandidatesToRemove[Index]);
         }
     }
 
@@ -194,21 +197,7 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
     /// <param name="Other">Collider entering the trigger.</param>
     private void OnTriggerEnter(Collider Other)
     {
-        PhysicsCarryable Carryable = ResolveCarryable(Other);
-
-        if (Carryable == null)
-        {
-            return;
-        }
-
-        if (!CandidateStates.TryGetValue(Carryable, out CandidateState State))
-        {
-            State = new CandidateState();
-            CandidateStates.Add(Carryable, State);
-        }
-
-        State.IsInside = true;
-        State.EligibleTime = 0f;
+        RegisterOverlappingCollider(Other);
     }
 
     /// <summary>
@@ -218,12 +207,17 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
     /// <param name="Other">Collider staying inside the trigger.</param>
     private void OnTriggerStay(Collider Other)
     {
-        PhysicsCarryable Carryable = ResolveCarryable(Other);
+        RegisterOverlappingCollider(Other);
+    }
 
-        //Debug.Log(
-        //    "[ElevatorCarryableStorageZone] Stay :: Collider=" + Other.name +
-        //    " | Carryable=" + (Carryable != null ? Carryable.name : "NULL"),
-        //    this);
+    /// <summary>
+    /// Unregisters one collider from the carryable candidate when it exits the storage trigger.
+    /// The carryable itself is only released when all tracked colliders have left.
+    /// </summary>
+    /// <param name="Other">Collider exiting the trigger.</param>
+    private void OnTriggerExit(Collider Other)
+    {
+        PhysicsCarryable Carryable = ResolveCarryable(Other);
 
         if (Carryable == null)
         {
@@ -232,35 +226,105 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
 
         if (!CandidateStates.TryGetValue(Carryable, out CandidateState State))
         {
-            State = new CandidateState();
-            CandidateStates.Add(Carryable, State);
+            return;
         }
 
-        State.IsInside = true;
+        State.OverlappingColliders.Remove(Other);
+        State.EligibleTime = 0f;
+
+        if (!State.HasInsideCollider())
+        {
+            State.ExitReleaseTimer = ExitReleaseDelay;
+        }
     }
 
     /// <summary>
-    /// Releases a carryable automatically if it leaves the storage zone while still externally carried by this zone.
+    /// Registers one collider as currently overlapping this zone for its owning carryable.
     /// </summary>
-    /// <param name="Other">Collider exiting the trigger.</param>
-    private void OnTriggerExit(Collider Other)
+    /// <param name="Other">Collider reported by Unity trigger callbacks.</param>
+    private void RegisterOverlappingCollider(Collider Other)
     {
         PhysicsCarryable Carryable = ResolveCarryable(Other);
-
-        //Debug.Log(
-        //    "[ElevatorCarryableStorageZone] Exit :: Collider=" + Other.name +
-        //    " | Carryable=" + (Carryable != null ? Carryable.name : "NULL"),
-        //    this);
 
         if (Carryable == null)
         {
             return;
         }
 
-        if (CandidateStates.TryGetValue(Carryable, out CandidateState State))
+        if (!CandidateStates.TryGetValue(Carryable, out CandidateState State))
         {
-            State.IsInside = false;
-            State.EligibleTime = 0f;
+            State = new CandidateState
+            {
+                ExitReleaseTimer = ExitReleaseDelay
+            };
+
+            CandidateStates.Add(Carryable, State);
+        }
+
+        State.OverlappingColliders.Add(Other);
+        State.ExitReleaseTimer = ExitReleaseDelay;
+    }
+
+    /// <summary>
+    /// Handles a carryable candidate that no longer has any tracked collider inside the storage zone.
+    /// </summary>
+    /// <param name="Carryable">Carryable being evaluated.</param>
+    /// <param name="State">Runtime candidate state.</param>
+    private void HandleCandidateOutsideStorage(PhysicsCarryable Carryable, CandidateState State)
+    {
+        State.EligibleTime = 0f;
+        State.ExitReleaseTimer -= Time.fixedDeltaTime;
+
+        if (State.ExitReleaseTimer > 0f)
+        {
+            return;
+        }
+
+        if (IsStoredByThisZone(Carryable))
+        {
+            Carryable.EndExternalCarry(ExitInheritedVelocity);
+            Log("Released carryable after leaving storage zone: " + Carryable.name);
+        }
+
+        CandidatesToRemove.Add(Carryable);
+    }
+
+    /// <summary>
+    /// Removes disabled or destroyed colliders from a candidate state.
+    /// </summary>
+    /// <param name="State">Candidate state to clean.</param>
+    private void PruneInvalidTrackedColliders(CandidateState State)
+    {
+        if (State == null || State.OverlappingColliders.Count == 0)
+        {
+            return;
+        }
+
+        List<Collider> CollidersToRemove = null;
+
+        foreach (Collider TrackedCollider in State.OverlappingColliders)
+        {
+            if (TrackedCollider != null && TrackedCollider.enabled && TrackedCollider.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            if (CollidersToRemove == null)
+            {
+                CollidersToRemove = new List<Collider>();
+            }
+
+            CollidersToRemove.Add(TrackedCollider);
+        }
+
+        if (CollidersToRemove == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < CollidersToRemove.Count; Index++)
+        {
+            State.OverlappingColliders.Remove(CollidersToRemove[Index]);
         }
     }
 
@@ -277,6 +341,21 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
         }
 
         return Other.GetComponentInParent<PhysicsCarryable>();
+    }
+
+    /// <summary>
+    /// Returns whether the carryable is currently stored by this exact storage zone.
+    /// </summary>
+    /// <param name="Carryable">Carryable to inspect.</param>
+    /// <returns>True when the carryable is externally carried and parented under this zone storage root.</returns>
+    private bool IsStoredByThisZone(PhysicsCarryable Carryable)
+    {
+        if (Carryable == null || StorageRoot == null)
+        {
+            return false;
+        }
+
+        return Carryable.IsExternallyCarried && Carryable.transform.IsChildOf(StorageRoot);
     }
 
     /// <summary>
@@ -318,6 +397,34 @@ public sealed class ElevatorCarryableStorageZone : MonoBehaviour
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Logs detailed ineligibility data for a carryable when debug logging is enabled.
+    /// </summary>
+    /// <param name="Carryable">Carryable that failed eligibility.</param>
+    private void LogIneligibleCarryable(PhysicsCarryable Carryable)
+    {
+        if (!DebugLogs || Carryable == null)
+        {
+            return;
+        }
+
+        Rigidbody CarryableRigidbody = Carryable.Rigidbody;
+        if (CarryableRigidbody == null)
+        {
+            return;
+        }
+
+        Debug.LogWarning(
+            "[ElevatorCarryableStorageZone] Not eligible :: " +
+            Carryable.name +
+            " | Held: " + Carryable.GetIsHeld() +
+            " | Magnetized: " + Carryable.GetIsMagnetized() +
+            " | External: " + Carryable.IsExternallyCarried +
+            " | LinearSpeed: " + CarryableRigidbody.linearVelocity.magnitude.ToString("F3") +
+            " | AngularSpeed: " + CarryableRigidbody.angularVelocity.magnitude.ToString("F3"),
+            this);
     }
 
     /// <summary>

@@ -6,32 +6,6 @@ using UnityEngine;
 public sealed class UpgradeDefinition : ScriptableObject
 {
     [Serializable]
-    public sealed class UpgradeLevelCost
-    {
-        [Tooltip("Currency required to purchase this level.")]
-        [SerializeField] private CurrencyWallet.CurrencyType CurrencyType = CurrencyWallet.CurrencyType.Research;
-
-        [Tooltip("Amount required to purchase this level.")]
-        [SerializeField] private float Cost = 100f;
-
-        /// <summary>
-        /// Gets the currency type used by this level cost.
-        /// </summary>
-        public CurrencyWallet.CurrencyType GetCurrencyType()
-        {
-            return CurrencyType;
-        }
-
-        /// <summary>
-        /// Gets the numeric amount required by this level cost.
-        /// </summary>
-        public float GetCost()
-        {
-            return CurrencyMath.RoundCurrency(Mathf.Max(0f, Cost));
-        }
-    }
-
-    [Serializable]
     public sealed class StatModifierDefinition
     {
         [Tooltip("Stat affected by this modifier.")]
@@ -43,7 +17,7 @@ public sealed class UpgradeDefinition : ScriptableObject
         [Tooltip("Base value applied by this modifier.")]
         [SerializeField] private float BaseValue = 0f;
 
-        [Tooltip("Extra value added to the modifier for each purchased level.")]
+        [Tooltip("Extra value added to the modifier for each runtime level.")]
         [SerializeField] private float ValuePerLevel = 0f;
 
         [Tooltip("If true, level zero contributes nothing and level one starts at BaseValue.")]
@@ -158,7 +132,7 @@ public sealed class UpgradeDefinition : ScriptableObject
         }
 
         /// <summary>
-        /// Gets the minimum purchased level required for this reward to become active.
+        /// Gets the minimum runtime level required for this reward to become active.
         /// </summary>
         public int GetRequiredLevel()
         {
@@ -169,7 +143,7 @@ public sealed class UpgradeDefinition : ScriptableObject
     [Serializable]
     public sealed class UpgradePrerequisiteDefinition
     {
-        [Tooltip("Upgrade asset that must be owned before this upgrade can be purchased.")]
+        [Tooltip("Upgrade asset that must be active before this upgrade can be applied.")]
         [SerializeField] private UpgradeDefinition RequiredUpgradeDefinition;
 
         [Tooltip("Minimum level required on the referenced upgrade.")]
@@ -196,32 +170,29 @@ public sealed class UpgradeDefinition : ScriptableObject
     [Tooltip("Unique runtime identifier used by systems to query this upgrade.")]
     [SerializeField] private string UpgradeId;
 
-    [Tooltip("User-facing title shown in the upgrade UI.")]
+    [Tooltip("User-facing title shown by systems that display this upgrade.")]
     [SerializeField] private string DisplayName;
 
     [Tooltip("User-facing description shown in the upgrade UI.")]
     [TextArea]
     [SerializeField] private string Description;
 
-    [Tooltip("Optional icon shown in the upgrade UI.")]
+    [Tooltip("Optional icon shown by systems that display this upgrade.")]
     [SerializeField] private Sprite Icon;
 
     [Header("Progression Metadata")]
-    [Tooltip("Logical shop identifier used by UI panels or other systems to group this upgrade into a specific store.")]
+    [Tooltip("Logical grouping identifier used by UI panels or progression systems.")]
     [SerializeField] private string ShopId;
 
-    [Tooltip("Optional prerequisite upgrades required before this upgrade can be purchased.")]
+    [Tooltip("Optional prerequisite upgrades required before this upgrade can be applied by progression systems.")]
     [SerializeField] private List<UpgradePrerequisiteDefinition> Prerequisites = new();
 
     [Header("Leveling")]
-    [Tooltip("Maximum level that can be purchased for this upgrade.")]
+    [Tooltip("Maximum runtime level supported by this upgrade.")]
     [SerializeField] private int MaxLevel = 1;
 
-    [Tooltip("Configured purchase cost per level.")]
-    [SerializeField] private List<UpgradeLevelCost> LevelCosts = new();
-
     [Header("Stat Modifiers")]
-    [Tooltip("Stat changes applied by this upgrade while it has purchased levels.")]
+    [Tooltip("Stat changes applied while this upgrade has runtime levels.")]
     [SerializeField] private List<StatModifierDefinition> StatModifiers = new();
 
     [Header("Unlock Rewards")]
@@ -269,27 +240,11 @@ public sealed class UpgradeDefinition : ScriptableObject
     }
 
     /// <summary>
-    /// Gets the configured maximum purchasable level.
+    /// Gets the configured maximum runtime level.
     /// </summary>
     public int GetMaxLevel()
     {
         return Mathf.Max(1, MaxLevel);
-    }
-
-    /// <summary>
-    /// Gets the configured cost definition for the provided target level.
-    /// </summary>
-    public UpgradeLevelCost GetCostForLevel(int Level)
-    {
-        int ClampedLevel = Mathf.Clamp(Level, 1, GetMaxLevel());
-        int CostIndex = ClampedLevel - 1;
-
-        if (CostIndex < 0 || CostIndex >= LevelCosts.Count)
-        {
-            return null;
-        }
-
-        return LevelCosts[CostIndex];
     }
 
     /// <summary>

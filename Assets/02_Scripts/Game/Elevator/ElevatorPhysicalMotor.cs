@@ -57,6 +57,9 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     [Tooltip("Base movement speed in meters per second before upgrades are applied.")]
     [SerializeField] private float BaseMoveSpeed = 2f;
 
+    [Tooltip("If true, the motor also evaluates directional up/down speed upgrade stats after the global speed stat.")]
+    [SerializeField] private bool UseDirectionalSpeedUpgradeStats = true;
+
     [Header("Rotation")]
     [Tooltip("Local axis used to rotate the elevator around itself.")]
     [SerializeField] private Vector3 LocalRotationAxis = Vector3.up;
@@ -64,12 +67,21 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     [Tooltip("Rotation speed in degrees per second.")]
     [SerializeField] private float RotationSpeed = 60f;
 
+    [Tooltip("If true, rotation is available even if the rotation unlock feature flag has not been unlocked yet.")]
+    [SerializeField] private bool RotationUnlockedByDefault = false;
+
+    [Tooltip("Feature flag required to allow elevator self rotation when rotation is not unlocked by default.")]
+    [SerializeField] private string RotationUnlockFeatureFlagId = "Elevator.Unlock.Rotation";
+
     [Header("Runtime Debug")]
     [Tooltip("Runtime resolved maximum travel distance after upgrades.")]
     [SerializeField] private float RuntimeMaxDistance;
 
     [Tooltip("Runtime resolved movement speed after upgrades.")]
     [SerializeField] private float RuntimeMoveSpeed;
+
+    [Tooltip("Runtime resolved rotation unlock state after upgrade feature flags are evaluated.")]
+    [SerializeField] private bool RuntimeRotationUnlocked;
 
     /// <summary>
     /// Current world velocity of the elevator in meters per second.
@@ -120,6 +132,71 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     }
 
     /// <summary>
+    /// Gets the current runtime maximum travel distance after upgrades.
+    /// </summary>
+    public float GetRuntimeMaxDistance()
+    {
+        return RuntimeMaxDistance;
+    }
+
+    /// <summary>
+    /// Gets the current runtime movement speed after upgrades.
+    /// </summary>
+    public float GetRuntimeMoveSpeed()
+    {
+        return RuntimeMoveSpeed;
+    }
+
+    /// <summary>
+    /// Gets the configured runtime rotation speed in degrees per second.
+    /// </summary>
+    public float GetRuntimeRotationSpeed()
+    {
+        return Mathf.Max(0f, RotationSpeed);
+    }
+
+    /// <summary>
+    /// Gets whether elevator self rotation is currently unlocked.
+    /// </summary>
+    public bool GetIsRotationUnlocked()
+    {
+        return RuntimeRotationUnlocked;
+    }
+
+    /// <summary>
+    /// Gets the feature flag id required for elevator self rotation.
+    /// </summary>
+    public string GetRotationUnlockFeatureFlagId()
+    {
+        return RotationUnlockFeatureFlagId;
+    }
+
+    /// <summary>
+    /// Gets whether the elevator is currently moving vertically.
+    /// </summary>
+    public bool GetIsMovingVertically()
+    {
+        return CurrentVerticalMoveState != VerticalMoveState.Idle;
+    }
+
+    /// <summary>
+    /// Gets whether the elevator is currently rotating.
+    /// </summary>
+    public bool GetIsRotating()
+    {
+        return CurrentRotationMoveState != RotationMoveState.Idle;
+    }
+
+    /// <summary>
+    /// Gets the normalized travel value between the minimum and maximum distance.
+    /// </summary>
+    public float GetNormalizedTravel()
+    {
+        float Range = Mathf.Max(0.0001f, RuntimeMaxDistance - MinDistance);
+        return Mathf.Clamp01((CurrentDistance - MinDistance) / Range);
+    }
+
+    /// <summary>
     /// Restores the elevator to a saved pose and forces it into a paused state.
     /// </summary>
     /// <param name="SavedDistance">Saved travel distance from the top anchor.</param>
@@ -127,6 +204,8 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     public void ApplySavedPose(float SavedDistance, Quaternion SavedRotation)
     {
         RuntimeMaxDistance = GetResolvedMaxDistance();
+        RuntimeMoveSpeed = GetResolvedMoveSpeed();
+        RuntimeRotationUnlocked = ResolveRotationUnlocked();
         CurrentDistance = Mathf.Clamp(SavedDistance, MinDistance, RuntimeMaxDistance);
 
         StopAll();
@@ -168,6 +247,8 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
 
         BaseMaxDistance = Mathf.Max(MinDistance, BaseMaxDistance);
         RuntimeMaxDistance = GetResolvedMaxDistance();
+        RuntimeMoveSpeed = GetResolvedMoveSpeed();
+        RuntimeRotationUnlocked = ResolveRotationUnlocked();
         CurrentDistance = Mathf.Clamp(CurrentDistance, MinDistance, RuntimeMaxDistance);
         RotationSpeed = Mathf.Max(0f, RotationSpeed);
 
@@ -181,14 +262,30 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     }
 
     /// <summary>
+    /// Sanitizes serialized values in edit mode.
+    /// </summary>
+    private void OnValidate()
+    {
+        BaseMaxDistance = Mathf.Max(MinDistance, BaseMaxDistance);
+        BaseMoveSpeed = Mathf.Max(0f, BaseMoveSpeed);
+        RotationSpeed = Mathf.Max(0f, RotationSpeed);
+    }
+
+    /// <summary>
     /// Advances the elevator motion in the physics loop.
     /// </summary>
     private void FixedUpdate()
     {
         RuntimeMoveSpeed = GetResolvedMoveSpeed();
         RuntimeMaxDistance = GetResolvedMaxDistance();
+        RuntimeRotationUnlocked = ResolveRotationUnlocked();
 
         CurrentDistance = Mathf.Clamp(CurrentDistance, MinDistance, RuntimeMaxDistance);
+
+        if (!RuntimeRotationUnlocked && CurrentRotationMoveState != RotationMoveState.Idle)
+        {
+            StopRotation();
+        }
 
         if (ElevatorWeightSystem != null && ElevatorWeightSystem.IsElevatorOverweighted())
         {
@@ -264,21 +361,57 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     }
 
     /// <summary>
-    /// Starts rotating the elevator to the left.
+    /// Starts rotating the elevator to the left if rotation is unlocked.
     /// </summary>
     [ContextMenu("Rotate Left")]
     public void RotateLeft()
     {
-        CurrentRotationMoveState = RotationMoveState.RotatingLeft;
+        TryRotateLeft();
     }
 
     /// <summary>
-    /// Starts rotating the elevator to the right.
+    /// Starts rotating the elevator to the right if rotation is unlocked.
     /// </summary>
     [ContextMenu("Rotate Right")]
     public void RotateRight()
     {
+        TryRotateRight();
+    }
+
+    /// <summary>
+    /// Attempts to start rotating the elevator to the left.
+    /// </summary>
+    /// <returns>True when rotation was allowed and started.</returns>
+    public bool TryRotateLeft()
+    {
+        RuntimeRotationUnlocked = ResolveRotationUnlocked();
+
+        if (!RuntimeRotationUnlocked)
+        {
+            StopRotation();
+            return false;
+        }
+
+        CurrentRotationMoveState = RotationMoveState.RotatingLeft;
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to start rotating the elevator to the right.
+    /// </summary>
+    /// <returns>True when rotation was allowed and started.</returns>
+    public bool TryRotateRight()
+    {
+        RuntimeRotationUnlocked = ResolveRotationUnlocked();
+
+        if (!RuntimeRotationUnlocked)
+        {
+            StopRotation();
+            return false;
+        }
+
         CurrentRotationMoveState = RotationMoveState.RotatingRight;
+        return true;
     }
 
     /// <summary>
@@ -324,7 +457,7 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
     /// </summary>
     private Quaternion GetNextRotation()
     {
-        if (CurrentRotationMoveState == RotationMoveState.Idle || RotationSpeed <= 0f)
+        if (!RuntimeRotationUnlocked || CurrentRotationMoveState == RotationMoveState.Idle || RotationSpeed <= 0f)
         {
             return RigidbodyComponent.rotation;
         }
@@ -357,6 +490,7 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
 
     /// <summary>
     /// Resolves the final elevator movement speed after upgrades.
+    /// Directional speed stats are applied after the global move speed stat when enabled.
     /// </summary>
     private float GetResolvedMoveSpeed()
     {
@@ -367,10 +501,33 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
             return BaseValue;
         }
 
-        return Mathf.Max(
+        float ResolvedValue = Mathf.Max(
             0f,
             UpgradeManager.GetModifiedFloatStat(UpgradeStatType.ElevatorMoveSpeed, BaseValue)
         );
+
+        if (!UseDirectionalSpeedUpgradeStats)
+        {
+            return ResolvedValue;
+        }
+
+        if (CurrentVerticalMoveState == VerticalMoveState.MovingUp)
+        {
+            return Mathf.Max(
+                0f,
+                UpgradeManager.GetModifiedFloatStat(UpgradeStatType.ElevatorUpSpeed, ResolvedValue)
+            );
+        }
+
+        if (CurrentVerticalMoveState == VerticalMoveState.MovingDown)
+        {
+            return Mathf.Max(
+                0f,
+                UpgradeManager.GetModifiedFloatStat(UpgradeStatType.ElevatorDownSpeed, ResolvedValue)
+            );
+        }
+
+        return ResolvedValue;
     }
 
     /// <summary>
@@ -389,5 +546,23 @@ public sealed class ElevatorPhysicalMotor : MonoBehaviour
             MinDistance,
             UpgradeManager.GetModifiedFloatStat(UpgradeStatType.ElevatorMaxTravelDistance, BaseValue)
         );
+    }
+
+    /// <summary>
+    /// Resolves whether the elevator rotation feature is currently unlocked.
+    /// </summary>
+    private bool ResolveRotationUnlocked()
+    {
+        if (RotationUnlockedByDefault)
+        {
+            return true;
+        }
+
+        if (UpgradeManager == null || string.IsNullOrWhiteSpace(RotationUnlockFeatureFlagId))
+        {
+            return false;
+        }
+
+        return UpgradeManager.IsFeatureUnlocked(RotationUnlockFeatureFlagId);
     }
 }

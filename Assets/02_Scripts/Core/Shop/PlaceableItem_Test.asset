@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8f853d96537a4f8409a8c5461b842a92, type: 3}
+  m_Name: PlaceableItem_Test
+  m_EditorClassIdentifier: Assembly-CSharp::PlaceableItemDefinition
+  ItemId: Elevator rotation lever
+  DisplayName: Elevator rotation lever
+  Icon: {fileID: 21300000, guid: 4ca9e709a65faf543a1b376009b64e12, type: 3}
+  WorldPrefab: {fileID: 6409605215366757665, guid: 923bd36defda87049805df5e3bee5a46, type: 3}
+  EquippedPrefab: {fileID: 8356662148077495263, guid: 4419765bbf0269f499df40b5b6142f61, type: 3}
+  IsStackable: 0
+  MaxStackSize: 1
+  DefaultDurability: 9999
+  BaseWeight: 5.33
+  AutoEquipWhenSelected: 1
+  PlacementId: Elevator.Lever.Rotation
+  GhostPrefab: {fileID: 6915636783274917110, guid: ea5a695912df54b48a2147783a201ba9, type: 3}
+  InstalledPrefab: {fileID: 2406781228293484504, guid: b7a801a4b9115194b9e924e4169b95a7, type: 3}
+  AppliedUpgradeDefinition: {fileID: 11400000, guid: a98800db439166e42a4cb91942d8be47, type: 2}
+  ApplyMode: 1
+  TargetUpgradeLevel: 1
+  UpgradeLevelIncrement: 1
