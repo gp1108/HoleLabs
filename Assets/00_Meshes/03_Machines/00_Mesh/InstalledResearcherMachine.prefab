@@ -252,6 +252,10 @@ MonoBehaviour:
   OreInputLayers:
     serializedVersion: 2
     m_Bits: 64
+  AcceptOreRootLayer: 1
+  UsePeriodicOverlapScan: 1
+  OverlapScanInterval: 0.15
+  MaxOverlapResults: 64
   DebugLogs: 0
 --- !u!1 &3350288810160432273
 GameObject:
@@ -307,7 +311,7 @@ MonoBehaviour:
   IgnoreControlledCarryables: 1
   ProcessingInterval: 1
   MaxOresProcessedPerTick: 1
-  DebugLogs: 1
+  DebugLogs: 0
 --- !u!114 &1906924960289180477
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -2,15 +2,15 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Player-side station state holder.
-/// This component tracks legacy upgrade stations, product shop stations and research stations,
-/// opens or closes the current modal panel on request, and handles Escape while a station is open.
+/// Player-side station modal interactor.
+/// This component tracks product shop stations and research stations, opens the appropriate panel on request,
+/// and handles Escape while any supported station panel is open.
 /// </summary>
 [DefaultExecutionOrder(-200)]
 public sealed class UpgradeShopInteractor : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("Central modal state controller used to block gameplay and release the cursor.")]
+    [Tooltip("Central modal state controller used to block gameplay and release the cursor while a station panel is open.")]
     [SerializeField] private PlayerModalStateController PlayerModalStateController;
 
     [Header("Close Input")]
@@ -22,11 +22,6 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     [SerializeField] private bool DebugLogs = false;
 
     /// <summary>
-    /// Legacy upgrade station currently in range.
-    /// </summary>
-    private UpgradeShopStation NearbyUpgradeStation;
-
-    /// <summary>
     /// Product shop station currently in range.
     /// </summary>
     private ShopProductStation NearbyProductStation;
@@ -35,11 +30,6 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// Research station currently in range.
     /// </summary>
     private ResearchStation NearbyResearchStation;
-
-    /// <summary>
-    /// Legacy upgrade station currently opened by this interactor.
-    /// </summary>
-    private UpgradeShopStation OpenedUpgradeStation;
 
     /// <summary>
     /// Product shop station currently opened by this interactor.
@@ -82,31 +72,25 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// <summary>
     /// Returns whether the player is currently inside any supported station trigger.
     /// </summary>
+    /// <returns>True when a product shop or research station is currently reachable.</returns>
     public bool HasNearbyStation()
     {
-        return NearbyProductStation != null || NearbyResearchStation != null || NearbyUpgradeStation != null;
+        return NearbyProductStation != null || NearbyResearchStation != null;
     }
 
     /// <summary>
     /// Returns whether a station panel is currently opened.
     /// </summary>
+    /// <returns>True when a product shop or research station panel is open.</returns>
     public bool HasOpenedStation()
     {
-        return OpenedProductStation != null || OpenedResearchStation != null || OpenedUpgradeStation != null;
-    }
-
-    /// <summary>
-    /// Assigns the currently reachable legacy upgrade station.
-    /// </summary>
-    public void SetNearbyStation(UpgradeShopStation Station)
-    {
-        NearbyUpgradeStation = Station;
-        Log("Nearby upgrade station assigned: " + (Station != null ? Station.name : "null"));
+        return OpenedProductStation != null || OpenedResearchStation != null;
     }
 
     /// <summary>
     /// Assigns the currently reachable product station.
     /// </summary>
+    /// <param name="Station">Product station that entered interaction range.</param>
     public void SetNearbyProductStation(ShopProductStation Station)
     {
         NearbyProductStation = Station;
@@ -116,6 +100,7 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// <summary>
     /// Assigns the currently reachable research station.
     /// </summary>
+    /// <param name="Station">Research station that entered interaction range.</param>
     public void SetNearbyResearchStation(ResearchStation Station)
     {
         NearbyResearchStation = Station;
@@ -123,28 +108,10 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     }
 
     /// <summary>
-    /// Clears the reachable legacy upgrade station if it matches the provided one.
-    /// Also closes the modal if the player leaves the opened station trigger.
-    /// </summary>
-    public void ClearNearbyStation(UpgradeShopStation Station)
-    {
-        if (NearbyUpgradeStation == Station)
-        {
-            NearbyUpgradeStation = null;
-            Log("Nearby upgrade station cleared: " + (Station != null ? Station.name : "null"));
-        }
-
-        if (OpenedUpgradeStation == Station)
-        {
-            Log("Left opened upgrade station trigger. Closing station.");
-            CloseCurrentStation();
-        }
-    }
-
-    /// <summary>
     /// Clears the reachable product station if it matches the provided one.
-    /// Also closes the modal if the player leaves the opened station trigger.
+    /// Also closes the modal if the player leaves the opened product station trigger.
     /// </summary>
+    /// <param name="Station">Product station that left interaction range.</param>
     public void ClearNearbyProductStation(ShopProductStation Station)
     {
         if (NearbyProductStation == Station)
@@ -162,8 +129,9 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
 
     /// <summary>
     /// Clears the reachable research station if it matches the provided one.
-    /// Also closes the modal if the player leaves the opened station trigger.
+    /// Also closes the modal if the player leaves the opened research station trigger.
     /// </summary>
+    /// <param name="Station">Research station that left interaction range.</param>
     public void ClearNearbyResearchStation(ResearchStation Station)
     {
         if (NearbyResearchStation == Station)
@@ -181,8 +149,9 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
 
     /// <summary>
     /// Tries to open the currently nearby station.
-    /// Product stations are prioritized first, then research, then legacy upgrade stations.
+    /// Product stations are prioritized before research stations when both are reachable.
     /// </summary>
+    /// <returns>True when a station panel was opened.</returns>
     public bool TryOpenNearbyStation()
     {
         if (HasOpenedStation())
@@ -201,32 +170,16 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
             return TryOpenResearchStation(NearbyResearchStation);
         }
 
-        if (NearbyUpgradeStation != null)
-        {
-            return TryOpenUpgradeStation(NearbyUpgradeStation);
-        }
-
         Log("Cannot open station because no nearby station is available.");
         return false;
     }
 
     /// <summary>
-    /// Closes the currently opened station.
+    /// Closes the currently opened station, if any.
     /// </summary>
     public void CloseCurrentStation()
     {
-        if (OpenedUpgradeStation != null)
-        {
-            UpgradePanelUI Panel = OpenedUpgradeStation.GetUpgradePanelUI();
-
-            if (Panel != null)
-            {
-                Panel.HidePanel();
-            }
-
-            Log("Upgrade shop closed successfully.");
-            OpenedUpgradeStation = null;
-        }
+        bool ClosedAnyStation = false;
 
         if (OpenedProductStation != null)
         {
@@ -239,6 +192,7 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
 
             Log("Product shop closed successfully.");
             OpenedProductStation = null;
+            ClosedAnyStation = true;
         }
 
         if (OpenedResearchStation != null)
@@ -252,43 +206,27 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
 
             Log("Research station closed successfully.");
             OpenedResearchStation = null;
+            ClosedAnyStation = true;
         }
 
-        if (PlayerModalStateController != null)
+        if (ClosedAnyStation && PlayerModalStateController != null)
         {
             PlayerModalStateController.CloseModal(this);
         }
     }
 
     /// <summary>
-    /// Attempts to open a legacy upgrade station.
-    /// </summary>
-    private bool TryOpenUpgradeStation(UpgradeShopStation Station)
-    {
-        UpgradePanelUI Panel = Station.GetUpgradePanelUI();
-
-        if (Panel == null)
-        {
-            Log("Cannot open upgrade shop because UpgradePanelUI is null.");
-            return false;
-        }
-
-        if (!TryOpenModal())
-        {
-            return false;
-        }
-
-        Panel.ShowPanel();
-        OpenedUpgradeStation = Station;
-        Log("Upgrade shop opened successfully.");
-        return true;
-    }
-
-    /// <summary>
     /// Attempts to open a product station.
     /// </summary>
+    /// <param name="Station">Product station to open.</param>
+    /// <returns>True when the product station panel was opened.</returns>
     private bool TryOpenProductStation(ShopProductStation Station)
     {
+        if (Station == null)
+        {
+            return false;
+        }
+
         ShopProductPanelUI Panel = Station.GetProductPanelUI();
 
         if (Panel == null)
@@ -312,8 +250,15 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// <summary>
     /// Attempts to open a research station.
     /// </summary>
+    /// <param name="Station">Research station to open.</param>
+    /// <returns>True when the research station panel was opened.</returns>
     private bool TryOpenResearchStation(ResearchStation Station)
     {
+        if (Station == null)
+        {
+            return false;
+        }
+
         ResearchPanelUI Panel = Station.GetResearchPanelUI();
 
         if (Panel == null)
@@ -337,6 +282,7 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// <summary>
     /// Attempts to open the player modal state for station UI.
     /// </summary>
+    /// <returns>True when the modal state was opened.</returns>
     private bool TryOpenModal()
     {
         if (PlayerModalStateController == null)
@@ -357,6 +303,7 @@ public sealed class UpgradeShopInteractor : MonoBehaviour
     /// <summary>
     /// Writes a station-interactor-specific debug message.
     /// </summary>
+    /// <param name="Message">Message written to the Unity console.</param>
     private void Log(string Message)
     {
         if (!DebugLogs)
