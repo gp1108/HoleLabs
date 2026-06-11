@@ -1,6 +1,5 @@
 using TMPro;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 /// <summary>
 /// Controls the scanner world-space UI using separate panels for ore and vein targets.
@@ -36,7 +35,6 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     [SerializeField] private TMP_Text OreWeightText;
 
     [Tooltip("Text used to display the dropped ore credit value.")]
-    [FormerlySerializedAs("OrePriceGoldText")]
     [SerializeField] private TMP_Text OreCreditValueText;
 
 

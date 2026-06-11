@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.Serialization;
 
 [CreateAssetMenu(fileName = "ItemDefinition_", menuName = "Game/Items/Item Definition")]
 public class ItemDefinition : ScriptableObject
@@ -33,7 +32,6 @@ public class ItemDefinition : ScriptableObject
     [SerializeField] private float DefaultDurability = 100f;
 
     [Tooltip("Base gameplay weight contributed by one runtime instance of this item when it is physically carried, dropped or stored in the player's hotbar.")]
-    [FormerlySerializedAs("DefaultWeight")]
     [SerializeField] private float BaseWeight = 0f;
 
     [Tooltip("If true, the item will be auto-equipped when picked into an empty selected slot.")]

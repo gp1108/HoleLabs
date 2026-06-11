@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using DamageNumbersPro;
 using TMPro;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 /// <summary>
 /// Trigger volume that receives ore pickups, queues them for machine processing,
@@ -44,7 +43,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         [SerializeField] private GameObject Prefab;
 
         [Tooltip("Fixed credit value represented by this denomination.")]
-        [FormerlySerializedAs("GoldValue")]
         [SerializeField] private float CreditValue = 1f;
 
         [Tooltip("Relative random weight used when multiple prefabs share the same fixed value.")]

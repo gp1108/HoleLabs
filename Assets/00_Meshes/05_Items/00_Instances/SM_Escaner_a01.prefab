@@ -874,9 +874,8 @@ MonoBehaviour:
   OrePurityText: {fileID: 5837649078062864841}
   OreSizeText: {fileID: 8914210803599794296}
   OreWeightText: {fileID: 889706492665186083}
-  OrePriceGoldText: {fileID: 8191081303665666249}
-  OrePriceResearchText: {fileID: 8024250185408082233}
-  OrePanelStatusText: {fileID: 0}
+  OreCreditValueText: {fileID: 8191081303665666249}
+  OrePanelStatusText: {fileID: 1238329205267608561}
   VeinMineralTypeText: {fileID: 573607055740483787}
   VeinDropAmountText: {fileID: 2240409687591528385}
   SharedStatusText: {fileID: 1238329205267608561}
@@ -901,12 +900,14 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 2496
   VeinDropRangeUnlockId: Scanner.Unlock.VeinDropRange
-  OreGoldUnlockId: Scanner.Unlock.GoldValue
-  OreResearchUnlockId: Scanner.Unlock.ResearchValue
+  OreCreditUnlockId: Scanner.Unlock.CreditValue
   OrePurityUnlockId: Scanner.Unlock.Purity
   OreSizeUnlockId: Scanner.Unlock.Size
   OreWeightUnlockId: Scanner.Unlock.Weight
   ItemAnimator: {fileID: 8758065881935067562}
+  PrimaryUseParameterName: PrimaryUse
+  SecondaryUseParameterName: SecondaryUse
+  IsUsingParameterName: IsUsing
   ZoomAlphaParameterName: ZoomAlpha
   ZoomBlendSpeed: 6
   DrawDebugRay: 0

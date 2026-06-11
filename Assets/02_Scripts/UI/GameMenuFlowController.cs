@@ -184,10 +184,10 @@ public sealed class GameMenuFlowController : MonoBehaviour
         [Tooltip("If true, gameplay HUD objects configured on the menu controller are hidden while this external modal is open.")]
         [SerializeField] private bool HideGameplayHudWhileOpen = true;
 
-        [Tooltip("Optional event invoked after the modal is opened. Use this to call custom UI setup methods such as UpgradePanelUI.ShowPanel.")]
+        [Tooltip("Optional event invoked after the modal is opened. Use this to call custom UI setup methods such as shop, research or machine panel refresh methods.")]
         [SerializeField] private UnityEvent OnOpened = new UnityEvent();
 
-        [Tooltip("Optional event invoked before the modal is closed. Use this to call custom UI shutdown methods such as UpgradePanelUI.HidePanel.")]
+        [Tooltip("Optional event invoked before the modal is closed. Use this to call custom UI shutdown methods such as shop, research or machine panel cleanup methods.")]
         [SerializeField] private UnityEvent OnClosed = new UnityEvent();
 
         /// <summary>

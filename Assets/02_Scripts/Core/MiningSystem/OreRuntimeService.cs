@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.Serialization;
 
 /// <summary>
 /// Central mining resolver used to translate ore definitions into runtime results.
@@ -17,11 +16,9 @@ public sealed class OreRuntimeService : MonoBehaviour
 
     [Header("Credit Value Influence")]
     [Tooltip("How strongly runtime purity affects final credit value.")]
-    [FormerlySerializedAs("PurityGoldInfluence")]
     [SerializeField] private float PurityCreditInfluence = 0.35f;
 
     [Tooltip("How strongly runtime size affects final credit value.")]
-    [FormerlySerializedAs("SizeGoldInfluence")]
     [SerializeField] private float SizeCreditInfluence = 0.25f;
 
 

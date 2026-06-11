@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 /// <summary>
 /// Static definition for one mineable ore type.
@@ -71,8 +70,7 @@ public sealed class OreDefinition : ScriptableObject
     [Tooltip("Minimum mining tier required to damage this ore. Lower tier tools will be rejected without consuming durability.")]
     [SerializeField] private MiningTier RequiredMiningTier = MiningTier.TierI;
 
-    [Tooltip("Base amount of mining damage required to break this ore vein. Existing values from the old hits system map directly to this durability.")]
-    [FormerlySerializedAs("BaseHitsRequired")]
+    [Tooltip("Base amount of mining damage required to break this ore vein.")]
     [SerializeField] private int BaseMiningDurability = 3;
 
     [Tooltip("Seconds required before this ore vein regrows after being depleted.")]
@@ -90,11 +88,9 @@ public sealed class OreDefinition : ScriptableObject
 
     [Header("Economy")]
     [Tooltip("Minimum base credit value rolled for each dropped ore before purity, size and upgrade modifiers.")]
-    [FormerlySerializedAs("BaseGoldValueMin")]
     [SerializeField] private float BaseCreditValueMin = 3f;
 
     [Tooltip("Maximum base credit value rolled for each dropped ore before purity, size and upgrade modifiers.")]
-    [FormerlySerializedAs("BaseGoldValueMax")]
     [SerializeField] private float BaseCreditValueMax = 6f;
 
 

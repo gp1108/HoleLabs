@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 /// <summary>
 /// Runtime ore payload generated when a vein breaks.
@@ -54,7 +53,6 @@ public sealed class OreItemData
     [SerializeField] private List<OrePropertyValue> Properties = new();
 
     [Tooltip("Final credit value received when this ore is sold.")]
-    [FormerlySerializedAs("GoldValue")]
     [SerializeField] private float CreditValue;
 
 
