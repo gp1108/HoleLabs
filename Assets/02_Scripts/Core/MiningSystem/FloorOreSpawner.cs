@@ -69,16 +69,6 @@ public sealed class FloorOreSpawner : MonoBehaviour
     }
 
     /// <summary>
-    /// Legacy entry point kept so old buttons or context menu calls still work.
-    /// It now generates the fixed configured layout instead of a random weighted layout.
-    /// </summary>
-    [ContextMenu("Generate Active Spawns")]
-    public void GenerateActiveSpawns()
-    {
-        GenerateConfiguredSpawns();
-    }
-
-    /// <summary>
     /// Clears every vein currently owned by this spawner.
     /// </summary>
     [ContextMenu("Clear All Spawns")]

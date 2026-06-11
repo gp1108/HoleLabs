@@ -334,28 +334,6 @@ public sealed class ResearchStation : MonoBehaviour
     }
 
     /// <summary>
-    /// Legacy facade kept for save migration safety. New saves should use ResearchRuntimeService directly.
-    /// </summary>
-    public ResearchRuntimeService.ResearchRuntimeSaveData CreateSaveSnapshot()
-    {
-        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
-        return RuntimeService != null ? RuntimeService.CreateSaveSnapshot() : new ResearchRuntimeService.ResearchRuntimeSaveData();
-    }
-
-    /// <summary>
-    /// Legacy facade kept for save migration safety. New saves should use ResearchRuntimeService directly.
-    /// </summary>
-    public void ApplySaveState(ResearchRuntimeService.ResearchRuntimeSaveData SaveData)
-    {
-        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
-
-        if (RuntimeService != null)
-        {
-            RuntimeService.ApplySaveState(SaveData);
-        }
-    }
-
-    /// <summary>
     /// Processes matching physical ore pickups from all registered ore input zones.
     /// </summary>
     private void ProcessActiveResearch(float DeltaTime)

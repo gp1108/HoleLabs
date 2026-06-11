@@ -1,5 +1,3 @@
-using System;
-
 /// <summary>
 /// Identifies all gameplay stats that can be modified by upgrades.
 /// Keep this enum focused on numeric values that gameplay systems can query directly.
@@ -7,7 +5,7 @@ using System;
 public enum UpgradeStatType
 {
     None = 0,
-    MiningHitsRequired = 1,
+    MiningDurabilityRequired = 1,
     MiningSwingSpeed = 2,
     ElevatorDownSpeed = 3,
     ElevatorUpSpeed = 4,
@@ -49,19 +47,4 @@ public enum UpgradeModifierType
     Multiply = 2,
     Divide = 3,
     Override = 4
-}
-
-/// <summary>
-/// Describes why a purchase attempt is currently blocked.
-/// This enum is used only for runtime validation feedback and does not replace the existing purchase flow.
-/// </summary>
-public enum UpgradePurchaseBlockReason
-{
-    None = 0,
-    MissingDefinition = 1,
-    MissingCurrencyWallet = 2,
-    AlreadyMaxLevel = 3,
-    MissingLevelCost = 4,
-    MissingPrerequisite = 5,
-    NotEnoughCurrency = 6
 }

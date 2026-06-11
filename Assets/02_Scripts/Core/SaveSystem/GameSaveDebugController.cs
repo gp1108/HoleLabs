@@ -249,34 +249,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
-    private sealed class ResearchStationState
-    {
-        [SerializeField] private string SceneId;
-        [SerializeField] private ResearchRuntimeService.ResearchRuntimeSaveData StationData;
-
-        /// <summary>
-        /// Creates a save payload for one persistent research station.
-        /// </summary>
-        /// <param name="SceneIdValue">Stable scene id of the research station.</param>
-        /// <param name="StationDataValue">Saved station runtime state.</param>
-        public ResearchStationState(string SceneIdValue, ResearchRuntimeService.ResearchRuntimeSaveData StationDataValue)
-        {
-            SceneId = SceneIdValue;
-            StationData = StationDataValue;
-        }
-
-        /// <summary>
-        /// Gets the stable scene id of the research station.
-        /// </summary>
-        public string GetSceneId() => SceneId;
-
-        /// <summary>
-        /// Gets the saved research station runtime data.
-        /// </summary>
-        public ResearchRuntimeService.ResearchRuntimeSaveData GetStationData() => StationData;
-    }
-
-    [Serializable]
     private sealed class PlayerSaveData
     {
         [SerializeField] private Vector3 Position;
@@ -467,7 +439,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private bool IsActive;
         [SerializeField] private string OreId;
         [SerializeField] private bool IsGrowing;
-        [SerializeField] private int HitsRemaining;
+        [SerializeField] private int MiningDurabilityRemaining;
         [SerializeField] private float RespawnTimerRemaining;
 
         public OreSpawnPointState(
@@ -475,14 +447,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
             bool IsActiveValue,
             string OreIdValue,
             bool IsGrowingValue,
-            int HitsRemainingValue,
+            int MiningDurabilityRemainingValue,
             float RespawnTimerRemainingValue)
         {
             SceneId = SceneIdValue;
             IsActive = IsActiveValue;
             OreId = OreIdValue;
             IsGrowing = IsGrowingValue;
-            HitsRemaining = HitsRemainingValue;
+            MiningDurabilityRemaining = MiningDurabilityRemainingValue;
             RespawnTimerRemaining = RespawnTimerRemainingValue;
         }
 
@@ -490,7 +462,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         public bool GetIsActive() => IsActive;
         public string GetOreId() => OreId;
         public bool GetIsGrowing() => IsGrowing;
-        public int GetHitsRemaining() => HitsRemaining;
+        public int GetMiningDurabilityRemaining() => MiningDurabilityRemaining;
         public float GetRespawnTimerRemaining() => RespawnTimerRemaining;
     }
 
@@ -513,9 +485,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
         [SerializeField] private ResearchRuntimeService.ResearchRuntimeSaveData ResearchRuntime;
 
-        [Tooltip("Compatibility: older Block 8 saves stored research state per station. Current saves use ResearchRuntime.")]
-        [SerializeField] private List<ResearchStationState> ResearchStations = new();
-
         public ResearchRuntimeService.ResearchRuntimeSaveData GetResearchRuntime() => ResearchRuntime;
         public void SetResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData Value) => ResearchRuntime = Value;
 
@@ -524,9 +493,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         public List<PlaceableInstallationSpotState> GetPlaceableInstallationSpots() => PlaceableInstallationSpots;
         public void SetPlaceableInstallationSpots(List<PlaceableInstallationSpotState> Value) => PlaceableInstallationSpots = Value ?? new List<PlaceableInstallationSpotState>();
-        public List<ResearchStationState> GetResearchStations() => ResearchStations;
-        public void SetResearchStations(List<ResearchStationState> Value) => ResearchStations = Value ?? new List<ResearchStationState>();
-
         public PlayerSaveData GetPlayer() => Player;
         public void SetPlayer(PlayerSaveData Value) => Player = Value;
 
@@ -614,6 +580,10 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Tooltip("Optional gameplay scene loaded when Continue or Load is requested from a non-gameplay menu scene. Leave empty to reload the currently active scene.")]
     [SerializeField] private string GameplaySceneName = string.Empty;
 
+    [Header("Debug Hotkeys")]
+    [Tooltip("If true, F5 saves to slot one and F4 loads from slot one. Keep disabled for normal gameplay builds.")]
+    [SerializeField] private bool EnableDebugHotkeys = false;
+
     [Header("Debug")]
     [Tooltip("Logs save and load operations.")]
     [SerializeField] private bool DebugLogs = true;
@@ -624,8 +594,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private readonly Dictionary<string, OreSpawnPoint> OreSpawnPointsById = new();
     private readonly Dictionary<string, DrillPlacementSpot> DrillPlacementSpotsById = new();
     private readonly Dictionary<string, PlaceableInstallationSpot> PlaceableInstallationSpotsById = new();
-    private readonly Dictionary<string, ResearchStation> ResearchStationsById = new();
-
     /// <summary>
     /// Resolves missing scene references and builds lookup caches.
     /// </summary>
@@ -743,7 +711,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
     /// </summary>
     private void Update()
     {
-        //@TODO:QUITAR ESTAS TECLAS PARA QUE NO SALTEN ERROR
+        if (!EnableDebugHotkeys)
+        {
+            return;
+        }
+
         if (Input.GetKeyDown(KeyCode.F5))
         {
             SaveGame();
@@ -1089,7 +1061,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetDrillPlacementSpots(CaptureDrillPlacementSpots());
         Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
         Data.SetResearchRuntime(CaptureResearchRuntime());
-        Data.SetResearchStations(CaptureResearchStations());
 
         return Data;
     }
@@ -1152,10 +1123,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreRuntimeWorldItems(Data.GetRuntimeWorldItems());
         RestoreMoneyPickups(Data.GetMoneyPickups());
         RestoreOrePickups(Data.GetOrePickups());
-        RestoreResearchRuntime(Data.GetResearchRuntime(), Data.GetResearchStations());
+        RestoreResearchRuntime(Data.GetResearchRuntime());
         RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
         RebuildLookupCaches();
-        RestoreResearchStations(Data.GetResearchStations());
     }
 
     /// <summary>
@@ -1237,7 +1207,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
         OreSpawnPointsById.Clear();
         DrillPlacementSpotsById.Clear();
         PlaceableInstallationSpotsById.Clear();
-        ResearchStationsById.Clear();
 
         for (int Index = 0; Index < ItemDefinitions.Count; Index++)
         {
@@ -1361,28 +1330,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
             PlaceableInstallationSpotsById[SaveId.GetId()] = Spot;
         }
 
-        ResearchStation[] ResearchStations = FindObjectsByType<ResearchStation>(
-            FindObjectsInactive.Include,
-            FindObjectsSortMode.None);
-
-        for (int Index = 0; Index < ResearchStations.Length; Index++)
-        {
-            ResearchStation Station = ResearchStations[Index];
-
-            if (Station == null)
-            {
-                continue;
-            }
-
-            SceneSaveId SaveId = Station.GetComponent<SceneSaveId>();
-
-            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
-            {
-                continue;
-            }
-
-            ResearchStationsById[SaveId.GetId()] = Station;
-        }
     }
 
     /// <summary>
@@ -1911,7 +1858,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 {
                     CurrentVein.ApplySavedRuntimeState(
                         State.GetIsGrowing(),
-                        State.GetHitsRemaining(),
+                        State.GetMiningDurabilityRemaining(),
                         State.GetRespawnTimerRemaining());
                 }
             }
@@ -2039,11 +1986,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            GameObject LegacyPrefab = Definition.GetDroppedOrePrefab();
+            GameObject FallbackPrefab = Definition.GetDroppedOrePrefab();
 
-            if (LegacyPrefab != null && LegacyPrefab.name == PrefabName)
+            if (FallbackPrefab != null && FallbackPrefab.name == PrefabName)
             {
-                return LegacyPrefab;
+                return FallbackPrefab;
             }
 
             IReadOnlyList<GameObject> VisualPrefabs = Definition.GetDroppedOreVisualPrefabs();
@@ -2092,11 +2039,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
     /// <summary>
     /// Restores the global research runtime state.
-    /// Falls back to one legacy per-station state when loading a Block 8 save.
     /// </summary>
     /// <param name="RuntimeState">Saved global runtime state.</param>
-    /// <param name="LegacyStationStates">Migration legacy per-station states.</param>
-    private void RestoreResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData RuntimeState, List<ResearchStationState> LegacyStationStates)
+    private void RestoreResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData RuntimeState)
     {
         if (ResearchRuntimeServiceReference == null)
         {
@@ -2109,88 +2054,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             return;
         }
 
-        if (RuntimeState != null)
-        {
-            ResearchRuntimeServiceReference.ApplySaveState(RuntimeState);
-            return;
-        }
-
-        if (LegacyStationStates == null || LegacyStationStates.Count <= 0)
-        {
-            ResearchRuntimeServiceReference.ApplySaveState(null);
-            return;
-        }
-
-        for (int Index = 0; Index < LegacyStationStates.Count; Index++)
-        {
-            ResearchStationState LegacyState = LegacyStationStates[Index];
-
-            if (LegacyState == null || LegacyState.GetStationData() == null)
-            {
-                continue;
-            }
-
-            ResearchRuntimeServiceReference.ApplySaveState(LegacyState.GetStationData());
-            Log("Imported legacy research station save state into ResearchRuntimeService.");
-            return;
-        }
-
-        ResearchRuntimeServiceReference.ApplySaveState(null);
-    }
-
-    /// <summary>
-    /// Captures every persistent research station runtime state in the scene.
-    /// </summary>
-    private List<ResearchStationState> CaptureResearchStations()
-    {
-        List<ResearchStationState> Result = new List<ResearchStationState>();
-
-        foreach (KeyValuePair<string, ResearchStation> Pair in ResearchStationsById)
-        {
-            ResearchStation Station = Pair.Value;
-
-            if (Station == null)
-            {
-                continue;
-            }
-
-            Result.Add(new ResearchStationState(Pair.Key, Station.CreateSaveSnapshot()));
-        }
-
-        return Result;
-    }
-
-    /// <summary>
-    /// Restores every persistent research station runtime state from save.
-    /// </summary>
-    /// <param name="States">Saved research station states.</param>
-    private void RestoreResearchStations(List<ResearchStationState> States)
-    {
-        if (States == null)
-        {
-            Log("No research station states were found in the save.");
-            return;
-        }
-
-        Log("Restoring " + States.Count + " research station states.");
-
-        for (int Index = 0; Index < States.Count; Index++)
-        {
-            ResearchStationState State = States[Index];
-
-            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
-            {
-                continue;
-            }
-
-            if (!ResearchStationsById.TryGetValue(State.GetSceneId(), out ResearchStation Station) || Station == null)
-            {
-                Log("Saved research station id was not found in the scene: " + State.GetSceneId());
-                continue;
-            }
-
-            Station.ApplySaveState(State.GetStationData());
-        }
+        ResearchRuntimeServiceReference.ApplySaveState(RuntimeState);
     }
 
     /// <summary>

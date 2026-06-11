@@ -61,7 +61,7 @@ public sealed class OreDefinition : ScriptableObject
     [Tooltip("Mineable vein prefab spawned by generic ore spawn points.")]
     [SerializeField] private GameObject VeinPrefab;
 
-    [Tooltip("Legacy single dropped ore prefab. Used as fallback when the visual variants list is empty.")]
+    [Tooltip("Default dropped ore prefab used as fallback when the visual variants list is empty.")]
     [SerializeField] private GameObject DroppedOrePrefab;
 
     [Tooltip("Optional list of dropped ore visual prefabs. A random one is selected every time a drop is spawned.")]

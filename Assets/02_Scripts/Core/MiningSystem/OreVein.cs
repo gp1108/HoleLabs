@@ -117,7 +117,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <summary>
     /// Remaining mining durability required before the vein breaks.
     /// </summary>
-    private int CurrentHitsRemaining;
+    private int CurrentMiningDurabilityRemaining;
 
     /// <summary>
     /// Remaining respawn time while the vein is regrowing.
@@ -172,7 +172,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// </summary>
     public int GetCurrentMiningDurabilityRemaining()
     {
-        return Mathf.Max(0, CurrentHitsRemaining);
+        return Mathf.Max(0, CurrentMiningDurabilityRemaining);
     }
 
 
@@ -188,9 +188,9 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// Restores the runtime state of this vein after it has been spawned from its saved ore definition.
     /// </summary>
     /// <param name="IsGrowingValue">True if the vein should be regrowing.</param>
-    /// <param name="HitsRemainingValue">Saved remaining hit count for ready veins.</param>
+    /// <param name="MiningDurabilityRemainingValue">Saved remaining mining durability for ready veins.</param>
     /// <param name="RespawnTimerRemainingValue">Saved remaining regrowth timer.</param>
-    public void ApplySavedRuntimeState(bool IsGrowingValue, int HitsRemainingValue, float RespawnTimerRemainingValue)
+    public void ApplySavedRuntimeState(bool IsGrowingValue, int MiningDurabilityRemainingValue, float RespawnTimerRemainingValue)
     {
         if (OreDefinition == null || OreRuntimeService == null)
         {
@@ -201,7 +201,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
         {
             CurrentState = VeinState.Growing;
             CurrentRespawnTimer = Mathf.Max(0f, RespawnTimerRemainingValue);
-            CurrentHitsRemaining = 0;
+            CurrentMiningDurabilityRemaining = 0;
 
             float RespawnDuration = Mathf.Max(0.01f, OreRuntimeService.ResolveRespawnTime(OreDefinition));
             float NormalizedProgress = 1f - Mathf.Clamp01(CurrentRespawnTimer / RespawnDuration);
@@ -217,8 +217,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         CurrentState = VeinState.Ready;
         CurrentRespawnTimer = 0f;
-        CurrentHitsRemaining = Mathf.Clamp(
-            HitsRemainingValue,
+        CurrentMiningDurabilityRemaining = Mathf.Clamp(
+            MiningDurabilityRemainingValue,
             1,
             Mathf.Max(1, OreRuntimeService.ResolveMiningDurability(OreDefinition)));
 
@@ -295,35 +295,35 @@ public sealed class OreVein : MonoBehaviour, IMineable
         {
             PlayRejectedHitFeedback(MiningRequest.HitContext);
             Log("Mining hit rejected. Required tier: " + RequiredTier + " | Source tier: " + MiningRequest.MiningTier);
-            return MiningHitResult.InsufficientTier(RequiredTier, MiningRequest.MiningTier, CurrentHitsRemaining);
+            return MiningHitResult.InsufficientTier(RequiredTier, MiningRequest.MiningTier, CurrentMiningDurabilityRemaining);
         }
 
         int DamageToApply = Mathf.CeilToInt(MiningRequest.MiningDamage);
 
         if (DamageToApply <= 0)
         {
-            return MiningHitResult.NoDamage(CurrentHitsRemaining);
+            return MiningHitResult.NoDamage(CurrentMiningDurabilityRemaining);
         }
 
         LastMiningHitContext = MiningRequest.HitContext;
         LastExtractionQualityMultiplier = Mathf.Max(0.01f, MiningRequest.ExtractionQualityMultiplier);
-        CurrentHitsRemaining -= DamageToApply;
+        CurrentMiningDurabilityRemaining -= DamageToApply;
 
-        bool IsBreakingHit = CurrentHitsRemaining <= 0;
+        bool IsBreakingHit = CurrentMiningDurabilityRemaining <= 0;
 
         if (PlayHitFeedbackOnBreakingHit || !IsBreakingHit)
         {
             PlayHitFeedback(MiningRequest.HitContext);
         }
 
-        Log("Ore vein hit. Damage: " + DamageToApply + " | Remaining mining durability: " + CurrentHitsRemaining);
+        Log("Ore vein hit. Damage: " + DamageToApply + " | Remaining mining durability: " + CurrentMiningDurabilityRemaining);
 
         if (IsBreakingHit)
         {
             BreakVein();
         }
 
-        return MiningHitResult.Accepted(DamageToApply, Mathf.Max(0, CurrentHitsRemaining));
+        return MiningHitResult.Accepted(DamageToApply, Mathf.Max(0, CurrentMiningDurabilityRemaining));
     }
 
 
@@ -588,7 +588,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
     {
         CurrentState = VeinState.Ready;
         CurrentRespawnTimer = 0f;
-        CurrentHitsRemaining = OreRuntimeService != null && OreDefinition != null
+        CurrentMiningDurabilityRemaining = OreRuntimeService != null && OreDefinition != null
             ? OreRuntimeService.ResolveMiningDurability(OreDefinition)
             : 1;
 

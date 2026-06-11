@@ -56,7 +56,7 @@ public sealed class OreRuntimeService : MonoBehaviour
         }
 
         int FinalMiningDurability = UpgradeManager.GetModifiedOreIntStat(
-            UpgradeStatType.MiningHitsRequired,
+            UpgradeStatType.MiningDurabilityRequired,
             OreDefinition.GetOreId(),
             BaseMiningDurability);
 

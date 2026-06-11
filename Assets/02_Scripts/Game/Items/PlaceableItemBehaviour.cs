@@ -44,7 +44,7 @@ public sealed class PlaceableItemBehaviour : EquippedItemBehaviour
     [Tooltip("Maximum number of colliders scanned when looking for nearby placement spots.")]
     [SerializeField] private int MaxPreviewOverlapResults = 64;
 
-    [Tooltip("Legacy compatibility option. If false and no nearby spot exists, the ghost can remain at the last known spot. Recommended true.")]
+    [Tooltip("If true, the ghost is hidden when no compatible nearby placement spot exists. If false, the ghost can remain on the last valid spot.")]
     [SerializeField] private bool HideGhostWhenInvalid = true;
 
     [Header("Ghost Materials")]
@@ -104,7 +104,7 @@ public sealed class PlaceableItemBehaviour : EquippedItemBehaviour
     private PlaceableInstallationSpot CurrentTargetSpot;
 
     /// <summary>
-    /// Last known ghost spot kept while legacy invalid hiding is disabled.
+    /// Last known ghost spot kept while invalid hiding is disabled.
     /// </summary>
     private PlaceableInstallationSpot LastPreviewSpot;
 
