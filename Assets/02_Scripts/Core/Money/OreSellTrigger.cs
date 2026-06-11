@@ -98,8 +98,6 @@ public sealed class OreSellTrigger : MonoBehaviour
     }
 
     [Header("References")]
-    [Tooltip("Legacy wallet reference kept only to preserve existing scene assignments. The selling machine now pays physical credits only.")]
-    [SerializeField] private CurrencyWallet CurrencyWallet;
 
     [Tooltip("Pool used to reuse money prefabs instead of instantiating and destroying them.")]
     [SerializeField] private MoneyPickupPool MoneyPickupPool;
@@ -168,9 +166,6 @@ public sealed class OreSellTrigger : MonoBehaviour
     [SerializeField] private float BillRandomTorqueImpulse = 0.05f;
 
     [Header("Payout Rules")]
-    [Tooltip("Legacy option kept only to preserve serialized data during migration. Research currency is disabled and this value is ignored.")]
-    [SerializeField, HideInInspector] private bool GrantResearchInstantly = false;
-
     [Tooltip("Available physical denominations used to compose the emitted credit value exactly.")]
     [SerializeField] private List<MoneyDenomination> MoneyDenominations = new();
 
@@ -1968,7 +1963,6 @@ public sealed class OreSellTrigger : MonoBehaviour
         Log(
             "Processed ore sale: " + OreName +
             " | Credits queued: " + (OreItemData != null ? OreItemData.GetCreditValue().ToString("0.00") : "0.00") +
-            " | LegacyResearchDisabled: 0.00" +
             " | Pending money pieces: " + PendingMoneyEmissions.Count);
     }
 

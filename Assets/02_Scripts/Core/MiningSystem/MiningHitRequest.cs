@@ -55,19 +55,4 @@ public readonly struct MiningHitRequest
         HitContext = HitContextValue;
     }
 
-    /// <summary>
-    /// Creates a backwards-compatible mining request from the old mining power call path.
-    /// </summary>
-    /// <param name="MiningPower">Legacy mining power value.</param>
-    /// <param name="HitContext">World hit context.</param>
-    /// <returns>Mining request using tier I and neutral extraction quality.</returns>
-    public static MiningHitRequest CreateLegacy(float MiningPower, MiningHitContext HitContext)
-    {
-        return new MiningHitRequest(
-            Mathf.Max(1f, MiningPower),
-            MiningTier.TierI,
-            1f,
-            0f,
-            HitContext);
-    }
 }

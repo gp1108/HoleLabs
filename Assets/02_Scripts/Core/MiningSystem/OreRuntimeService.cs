@@ -24,12 +24,6 @@ public sealed class OreRuntimeService : MonoBehaviour
     [FormerlySerializedAs("SizeGoldInfluence")]
     [SerializeField] private float SizeCreditInfluence = 0.25f;
 
-    [Header("Legacy Research Influence")]
-    [Tooltip("Legacy value kept only to preserve serialized data during migration. New gameplay does not use abstract research value.")]
-    [SerializeField, HideInInspector] private float PurityResearchInfluence = 0.20f;
-
-    [Tooltip("Legacy value kept only to preserve serialized data during migration. New gameplay does not use abstract research value.")]
-    [SerializeField, HideInInspector] private float SizeResearchInfluence = 0.10f;
 
     [Header("Weight Influence")]
     [Tooltip("How strongly runtime size affects final physical ore weight.")]
@@ -69,15 +63,6 @@ public sealed class OreRuntimeService : MonoBehaviour
         return Mathf.Max(1, FinalMiningDurability);
     }
 
-    /// <summary>
-    /// Legacy alias for old hit-based systems. Use ResolveMiningDurability instead.
-    /// </summary>
-    /// <param name="OreDefinition">Ore definition to resolve.</param>
-    /// <returns>Final required mining durability.</returns>
-    public int ResolveHitsRequired(OreDefinition OreDefinition)
-    {
-        return ResolveMiningDurability(OreDefinition);
-    }
 
     /// <summary>
     /// Resolves the ore respawn time after global upgrades.
@@ -202,7 +187,6 @@ public sealed class OreRuntimeService : MonoBehaviour
 
     /// <summary>
     /// Resolves final credit value and physical weight for a runtime ore payload.
-    /// Abstract research value is intentionally cleared for the current GDD migration.
     /// </summary>
     /// <param name="OreItemData">Runtime ore payload to resolve.</param>
     public void ResolveOreValues(OreItemData OreItemData)
@@ -264,7 +248,6 @@ public sealed class OreRuntimeService : MonoBehaviour
             Mathf.Max(0.1f, WeightFactor);
 
         OreItemData.SetCreditValue(Mathf.Max(0f, FinalCreditValue));
-        OreItemData.ClearLegacyResearchValue();
         OreItemData.SetWeightValue(Mathf.Max(0f, FinalWeightValue));
 
         if (DebugLogs)

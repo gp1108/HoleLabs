@@ -116,7 +116,6 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
     /// <summary>
     /// Remaining mining durability required before the vein breaks.
-    /// This intentionally keeps the old field name to preserve save compatibility during migration.
     /// </summary>
     private int CurrentHitsRemaining;
 
@@ -176,13 +175,6 @@ public sealed class OreVein : MonoBehaviour, IMineable
         return Mathf.Max(0, CurrentHitsRemaining);
     }
 
-    /// <summary>
-    /// Legacy alias for save and UI code that still refers to hits.
-    /// </summary>
-    public int GetCurrentHitsRemaining()
-    {
-        return GetCurrentMiningDurabilityRemaining();
-    }
 
     /// <summary>
     /// Gets the remaining regrowth timer for this vein.
@@ -283,17 +275,6 @@ public sealed class OreVein : MonoBehaviour, IMineable
         }
     }
 
-    /// <summary>
-    /// Attempts to apply one legacy mining hit through the generic mineable interface.
-    /// New systems should use the MiningHitRequest overload instead.
-    /// </summary>
-    /// <param name="MiningPower">Legacy power value of the mining hit.</param>
-    /// <param name="HitContext">Explicit source context that caused the hit.</param>
-    /// <returns>True when the vein accepted the mining hit.</returns>
-    public bool TryMine(float MiningPower, MiningHitContext HitContext)
-    {
-        return TryMine(MiningHitRequest.CreateLegacy(MiningPower, HitContext)).WasAccepted;
-    }
 
     /// <summary>
     /// Attempts to apply one complete mining request to this ore vein.
@@ -345,16 +326,6 @@ public sealed class OreVein : MonoBehaviour, IMineable
         return MiningHitResult.Accepted(DamageToApply, Mathf.Max(0, CurrentHitsRemaining));
     }
 
-    /// <summary>
-    /// Applies one legacy hit to this ore vein.
-    /// This method is kept for older animation or debug paths.
-    /// </summary>
-    /// <param name="HitContext">Explicit source context that caused the hit.</param>
-    /// <returns>True when the hit was accepted.</returns>
-    public bool ApplyHit(MiningHitContext HitContext)
-    {
-        return TryMine(MiningHitRequest.CreateLegacy(1f, HitContext)).WasAccepted;
-    }
 
     /// <summary>
     /// Gets whether this vein is currently mineable.

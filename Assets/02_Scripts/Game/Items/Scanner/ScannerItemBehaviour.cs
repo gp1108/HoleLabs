@@ -73,8 +73,6 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     [Tooltip("Feature flag required to show dropped ore credit value.")]
     [SerializeField] private string OreCreditUnlockId = "Scanner.Unlock.CreditValue";
 
-    [Tooltip("Legacy feature flag kept only to preserve serialized data during migration. Research value is no longer displayed.")]
-    [SerializeField, HideInInspector] private string OreResearchUnlockId = "Scanner.Unlock.ResearchValue";
 
     [Tooltip("Feature flag required to show dropped ore purity.")]
     [SerializeField] private string OrePurityUnlockId = "Scanner.Unlock.Purity";
@@ -444,7 +442,6 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
 
         string MineralType = OreItemData.GetOreDefinition().GetDisplayName();
         float CreditValue = OreItemData.GetCreditValue();
-        float LegacyResearchValue = 0f;
         float Purity = OreItemData.GetPropertyValue(OrePropertyType.Purity, 0f);
         float Size = OreItemData.GetPropertyValue(OrePropertyType.Size, 0f);
         float Weight = OreItemData.GetWeightValue();
@@ -455,8 +452,6 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
                 MineralType,
                 IsFeatureUnlocked(OreCreditUnlockId),
                 CreditValue,
-                false,
-                LegacyResearchValue,
                 IsFeatureUnlocked(OrePurityUnlockId),
                 Purity,
                 IsFeatureUnlocked(OreSizeUnlockId),

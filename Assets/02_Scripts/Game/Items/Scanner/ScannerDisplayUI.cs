@@ -39,8 +39,6 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     [FormerlySerializedAs("OrePriceGoldText")]
     [SerializeField] private TMP_Text OreCreditValueText;
 
-    [Tooltip("Legacy research value field kept only to preserve scene references during migration. It is cleared by this UI.")]
-    [SerializeField, HideInInspector] private TMP_Text OrePriceResearchText;
 
     [Tooltip("Optional status text placed inside the ore panel.")]
     [SerializeField] private TMP_Text OrePanelStatusText;
@@ -122,8 +120,6 @@ public sealed class ScannerDisplayUI : MonoBehaviour
         string MineralType,
         bool ShowCreditValue,
         float CreditValue,
-        bool ShowLegacyResearchValue,
-        float LegacyResearchValue,
         bool ShowPurity,
         float Purity,
         bool ShowSize,
@@ -136,7 +132,6 @@ public sealed class ScannerDisplayUI : MonoBehaviour
 
         SetText(OreMineralTypeText, "Mineral Type: " + MineralType);
         SetText(OreCreditValueText, ShowCreditValue ? "Credit Value: " + CreditValue.ToString("0.00") + " C" : "Credit Value: Locked");
-        SetText(OrePriceResearchText, string.Empty);
         SetText(OrePurityText, ShowPurity ? "Purity: " + Purity.ToString("0.00") : "Purity: Locked");
         SetText(OreSizeText, ShowSize ? "Size: " + Size.ToString("0.00") : "Size: Locked");
         SetText(OreWeightText, ShowWeight ? "Weight: " + Weight.ToString("0.00") : "Weight: Locked");
@@ -156,7 +151,6 @@ public sealed class ScannerDisplayUI : MonoBehaviour
         SetText(OreSizeText, "Size: -");
         SetText(OreWeightText, "Weight: -");
         SetText(OreCreditValueText, "Credit Value: -");
-        SetText(OrePriceResearchText, string.Empty);
     }
 
     /// <summary>

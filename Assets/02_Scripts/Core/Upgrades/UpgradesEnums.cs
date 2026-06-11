@@ -1,5 +1,4 @@
 using System;
-using Unity.VisualScripting;
 
 /// <summary>
 /// Identifies all gameplay stats that can be modified by upgrades.
@@ -19,8 +18,6 @@ public enum UpgradeStatType
     OreRespawnTimeMultiplier = 10,
     OrePurityMultiplier = 11,
     OreSizeMultiplier = 12,
-    [Obsolete("Research currency is legacy. Use mineral requirements in the research system instead.")]
-    ResearchSellValueMultiplier = 13,
 
     // Elevator
     ElevatorMoveSpeed = 14,

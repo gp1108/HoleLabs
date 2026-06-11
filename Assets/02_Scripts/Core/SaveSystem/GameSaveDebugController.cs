@@ -83,8 +83,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private sealed class OreItemDataSaveData
     {
         [SerializeField] private string OreId;
-        [SerializeField] private float GoldValue;
-        [SerializeField] private float ResearchValue;
+        [SerializeField] private float CreditValue;
         [SerializeField] private float WeightValue;
         [SerializeField] private List<OrePropertyValueData> Properties = new();
 
@@ -98,8 +97,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             OreItemDataSaveData Result = new OreItemDataSaveData
             {
                 OreId = RuntimeData.GetOreDefinition().GetOreId(),
-                GoldValue = RuntimeData.GetCreditValue(),
-                ResearchValue = 0f,
+                CreditValue = RuntimeData.GetCreditValue(),
                 WeightValue = RuntimeData.GetWeightValue()
             };
 
@@ -135,7 +133,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             OreItemData Result = new OreItemData(Definition);
-            Result.SetCreditValue(GoldValue);
+            Result.SetCreditValue(CreditValue);
             Result.SetWeightValue(WeightValue);
 
             for (int Index = 0; Index < Properties.Count; Index++)
@@ -297,17 +295,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Serializable]
     private sealed class WalletSaveData
     {
-        [SerializeField] private float Gold;
-        [SerializeField] private float Research;
+        [SerializeField] private float Credits;
 
-        public WalletSaveData(float GoldValue, float ResearchValue)
+        public WalletSaveData(float CreditsValue)
         {
-            Gold = GoldValue;
-            Research = ResearchValue;
+            Credits = CreditsValue;
         }
 
-        public float GetGold() => Gold;
-        public float GetResearch() => Research;
+        public float GetCredits() => Credits;
     }
 
     [Serializable]
@@ -518,7 +513,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
         [SerializeField] private ResearchRuntimeService.ResearchRuntimeSaveData ResearchRuntime;
 
-        [Tooltip("Migration legacy. Older Block 8 saves stored research state per station; new saves use ResearchRuntime.")]
+        [Tooltip("Compatibility: older Block 8 saves stored research state per station. Current saves use ResearchRuntime.")]
         [SerializeField] private List<ResearchStationState> ResearchStations = new();
 
         public ResearchRuntimeService.ResearchRuntimeSaveData GetResearchRuntime() => ResearchRuntime;
@@ -1064,8 +1059,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (CurrencyWallet != null)
         {
             Data.SetWallet(new WalletSaveData(
-                CurrencyWallet.GetBalance(CurrencyWallet.CurrencyType.Credits),
-                0f));
+                CurrencyWallet.GetCredits()));
         }
 
         if (HotbarController != null)
@@ -1112,7 +1106,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         if (CurrencyWallet != null && Data.GetWallet() != null)
         {
-            CurrencyWallet.SetBalance(CurrencyWallet.CurrencyType.Credits, Data.GetWallet().GetGold());
+            CurrencyWallet.SetCredits(Data.GetWallet().GetCredits());
         }
 
         if (UpgradeManager != null)
@@ -1611,7 +1605,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 true,
                 CurrentVein.GetOreDefinition().GetOreId(),
                 CurrentVein.GetIsGrowing(),
-                CurrentVein.GetCurrentHitsRemaining(),
+                CurrentVein.GetCurrentMiningDurabilityRemaining(),
                 CurrentVein.GetCurrentRespawnTimer()));
         }
 

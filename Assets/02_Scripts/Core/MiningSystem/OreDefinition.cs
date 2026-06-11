@@ -97,12 +97,6 @@ public sealed class OreDefinition : ScriptableObject
     [FormerlySerializedAs("BaseGoldValueMax")]
     [SerializeField] private float BaseCreditValueMax = 6f;
 
-    [Header("Legacy Research Economy")]
-    [Tooltip("Legacy research value kept only to avoid losing serialized data during migration. New gameplay should not use this field.")]
-    [SerializeField, HideInInspector] private float BaseResearchValueMin = 0f;
-
-    [Tooltip("Legacy research value kept only to avoid losing serialized data during migration. New gameplay should not use this field.")]
-    [SerializeField, HideInInspector] private float BaseResearchValueMax = 0f;
 
     [Header("Properties")]
     [Tooltip("Runtime property ranges generated on each dropped ore pickup.")]
@@ -129,7 +123,7 @@ public sealed class OreDefinition : ScriptableObject
     public GameObject GetVeinPrefab() => VeinPrefab;
 
     /// <summary>
-    /// Gets the legacy single dropped ore prefab fallback.
+    /// Gets the single dropped ore prefab fallback.
     /// </summary>
     public GameObject GetDroppedOrePrefab() => DroppedOrePrefab;
 
@@ -148,10 +142,6 @@ public sealed class OreDefinition : ScriptableObject
     /// </summary>
     public int GetBaseMiningDurability() => Mathf.Max(1, BaseMiningDurability);
 
-    /// <summary>
-    /// Legacy alias for old hit-based code. Use GetBaseMiningDurability instead.
-    /// </summary>
-    public int GetBaseHitsRequired() => GetBaseMiningDurability();
 
     /// <summary>
     /// Gets the base respawn time in seconds.
@@ -183,31 +173,6 @@ public sealed class OreDefinition : ScriptableObject
     /// </summary>
     public float GetBaseCreditValueMax() => CurrencyMath.RoundCurrency(Mathf.Max(GetBaseCreditValueMin(), BaseCreditValueMax));
 
-    /// <summary>
-    /// Legacy alias for older systems. Use GetBaseCreditValueMin instead.
-    /// </summary>
-    [Obsolete("Use GetBaseCreditValueMin instead.")]
-    public float GetBaseGoldValueMin() => GetBaseCreditValueMin();
-
-    /// <summary>
-    /// Legacy alias for older systems. Use GetBaseCreditValueMax instead.
-    /// </summary>
-    [Obsolete("Use GetBaseCreditValueMax instead.")]
-    public float GetBaseGoldValueMax() => GetBaseCreditValueMax();
-
-    /// <summary>
-    /// Legacy research value accessor kept only for temporary compatibility.
-    /// New research should consume physical minerals instead of abstract research currency.
-    /// </summary>
-    [Obsolete("Research currency is legacy. Use physical mineral costs in the research system instead.")]
-    public float GetBaseResearchValueMin() => CurrencyMath.RoundCurrency(Mathf.Max(0f, BaseResearchValueMin));
-
-    /// <summary>
-    /// Legacy research value accessor kept only for temporary compatibility.
-    /// New research should consume physical minerals instead of abstract research currency.
-    /// </summary>
-    [Obsolete("Research currency is legacy. Use physical mineral costs in the research system instead.")]
-    public float GetBaseResearchValueMax() => CurrencyMath.RoundCurrency(Mathf.Max(GetBaseResearchValueMin(), BaseResearchValueMax));
 
     /// <summary>
     /// Gets runtime property generation ranges for this ore.
@@ -216,7 +181,7 @@ public sealed class OreDefinition : ScriptableObject
 
     /// <summary>
     /// Returns a random valid dropped ore prefab.
-    /// Uses the visual variants list when available and falls back to the legacy single prefab otherwise.
+    /// Uses the visual variants list when available and falls back to the single fallback prefab otherwise.
     /// </summary>
     /// <returns>Dropped ore prefab or null when none is configured.</returns>
     public GameObject GetRandomDroppedOrePrefab()

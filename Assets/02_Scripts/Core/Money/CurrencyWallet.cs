@@ -3,31 +3,23 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Stores and manages every gameplay currency owned by the player.
-/// Credits are the authoritative player currency for the current HoleLabs design.
-/// Legacy currency entries remain available only to keep old assets and saves readable during migration.
+/// Stores and manages the player credit balance.
+/// Credits are the only authoritative currency in the current HoleLabs economy.
 /// </summary>
 public sealed class CurrencyWallet : MonoBehaviour
 {
     /// <summary>
-    /// Defines every supported currency type used by the game.
-    /// Credits is the current authoritative currency. Gold is a legacy alias that shares the same serialized value.
+    /// Defines the supported gameplay currency.
     /// </summary>
     public enum CurrencyType
     {
-        Credits = 0,
-
-        [Obsolete("Gold is a legacy alias. Use Credits instead.")]
-        Gold = 0,
-
-        [Obsolete("Research currency is legacy. Research should consume credits and physical minerals instead.")]
-        Research = 1
+        Credits = 0
     }
 
     [Serializable]
     private sealed class CurrencyEntry
     {
-        [Tooltip("Type of currency stored by this entry. Use Credits for all new gameplay data.")]
+        [Tooltip("Currency type stored by this entry. Credits is the only supported runtime currency.")]
         [SerializeField] private CurrencyType Type = CurrencyType.Credits;
 
         [Tooltip("Current amount owned for this currency type.")]
@@ -104,15 +96,6 @@ public sealed class CurrencyWallet : MonoBehaviour
     public void DebugCurrency()
     {
         Debug.Log(GetCredits().ToString("0.00") + " credits", this);
-
-#pragma warning disable CS0618
-        float LegacyResearchBalance = GetBalance(CurrencyType.Research);
-#pragma warning restore CS0618
-
-        if (LegacyResearchBalance > 0f)
-        {
-            Debug.Log(LegacyResearchBalance.ToString("0.00") + " legacy research currency", this);
-        }
     }
 
     /// <summary>
@@ -165,7 +148,6 @@ public sealed class CurrencyWallet : MonoBehaviour
 
     /// <summary>
     /// Gets the current balance for the provided currency type.
-    /// Legacy Gold requests are normalized to Credits.
     /// </summary>
     /// <param name="CurrencyTypeValue">Currency type to read.</param>
     /// <returns>Current rounded balance.</returns>
@@ -183,7 +165,6 @@ public sealed class CurrencyWallet : MonoBehaviour
 
     /// <summary>
     /// Adds currency to the wallet.
-    /// Legacy Gold requests are normalized to Credits.
     /// </summary>
     /// <param name="CurrencyTypeValue">Currency type to add.</param>
     /// <param name="Amount">Amount to add.</param>
@@ -204,7 +185,6 @@ public sealed class CurrencyWallet : MonoBehaviour
 
     /// <summary>
     /// Checks whether the wallet contains enough of the provided currency.
-    /// Legacy Gold requests are normalized to Credits.
     /// </summary>
     /// <param name="CurrencyTypeValue">Currency type to check.</param>
     /// <param name="Amount">Required amount.</param>
@@ -222,7 +202,6 @@ public sealed class CurrencyWallet : MonoBehaviour
 
     /// <summary>
     /// Attempts to spend currency from the wallet.
-    /// Legacy Gold requests are normalized to Credits.
     /// </summary>
     /// <param name="CurrencyTypeValue">Currency type to spend.</param>
     /// <param name="Amount">Amount to spend.</param>
@@ -254,7 +233,6 @@ public sealed class CurrencyWallet : MonoBehaviour
 
     /// <summary>
     /// Sets the exact balance for a currency type.
-    /// Legacy Gold requests are normalized to Credits.
     /// Useful for loading save data or debugging.
     /// </summary>
     /// <param name="CurrencyTypeValue">Currency type to set.</param>
@@ -270,19 +248,13 @@ public sealed class CurrencyWallet : MonoBehaviour
     }
 
     /// <summary>
-    /// Converts legacy currency aliases into their current authoritative runtime type.
+    /// Normalizes serialized currency values into the current authoritative runtime type.
     /// </summary>
     /// <param name="CurrencyTypeValue">Currency type to normalize.</param>
     /// <returns>Normalized currency type.</returns>
     public static CurrencyType NormalizeCurrencyType(CurrencyType CurrencyTypeValue)
     {
-        switch ((int)CurrencyTypeValue)
-        {
-            case 0:
-                return CurrencyType.Credits;
-            default:
-                return CurrencyTypeValue;
-        }
+        return CurrencyType.Credits;
     }
 
     /// <summary>

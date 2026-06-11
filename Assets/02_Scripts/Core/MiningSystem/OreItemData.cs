@@ -57,8 +57,6 @@ public sealed class OreItemData
     [FormerlySerializedAs("GoldValue")]
     [SerializeField] private float CreditValue;
 
-    [Tooltip("Legacy research value kept only for save compatibility during migration.")]
-    [SerializeField, HideInInspector] private float ResearchValue;
 
     [Tooltip("Final physical weight contributed by this ore.")]
     [SerializeField] private float WeightValue;
@@ -88,40 +86,6 @@ public sealed class OreItemData
     /// <param name="CreditValueAmount">Final credit value.</param>
     public void SetCreditValue(float CreditValueAmount) => CreditValue = CurrencyMath.RoundCurrency(Mathf.Max(0f, CreditValueAmount));
 
-    /// <summary>
-    /// Legacy alias for older systems. Use GetCreditValue instead.
-    /// </summary>
-    [Obsolete("Use GetCreditValue instead.")]
-    public float GetGoldValue() => GetCreditValue();
-
-    /// <summary>
-    /// Legacy alias for older systems. Use SetCreditValue instead.
-    /// </summary>
-    /// <param name="GoldValueValue">Legacy gold value mapped to credits.</param>
-    [Obsolete("Use SetCreditValue instead.")]
-    public void SetGoldValue(float GoldValueValue) => SetCreditValue(GoldValueValue);
-
-    /// <summary>
-    /// Gets the legacy research value stored on this ore.
-    /// This is retained only for migration and should not drive new gameplay.
-    /// </summary>
-    [Obsolete("Research currency is legacy. Use physical mineral research costs instead.")]
-    public float GetResearchValue() => ResearchValue;
-
-    /// <summary>
-    /// Sets the legacy research value stored on this ore.
-    /// This is retained only for migration and should not drive new gameplay.
-    /// </summary>
-    /// <param name="ResearchValueValue">Legacy research value.</param>
-    [Obsolete("Research currency is legacy. Use physical mineral research costs instead.")]
-    public void SetResearchValue(float ResearchValueValue) => ResearchValue = CurrencyMath.RoundCurrency(Mathf.Max(0f, ResearchValueValue));
-
-
-    /// <summary>
-    /// Clears the legacy abstract research value during migration.
-    /// New research progression should consume physical minerals instead of reading this value.
-    /// </summary>
-    public void ClearLegacyResearchValue() => ResearchValue = 0f;
 
     /// <summary>
     /// Sets the final physical weight contributed by this ore.
