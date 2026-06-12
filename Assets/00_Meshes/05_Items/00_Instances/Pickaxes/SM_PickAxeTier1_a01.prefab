@@ -29,7 +29,7 @@ Transform:
   m_GameObject: {fileID: 2634897519947290856}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -11.2181, y: 0.12251, z: -6.16182}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -42,7 +42,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2634897519947290856}
-  m_Mesh: {fileID: 3012011895477995069, guid: 1ab2975322dbeb7458fdfb7a1d74b545, type: 3}
+  m_Mesh: {fileID: 8943831086333274753, guid: 729bc4344b5a9304cb00e28badac0805, type: 3}
 --- !u!23 &4976320420551003026
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -68,7 +68,7 @@ MeshRenderer:
   m_RenderingLayerMask: 4294967295
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: bb588ee01fbd4394c81f6f67bdf53178, type: 2}
+  - {fileID: 2100000, guid: ddaf9895c4bc93741a719a814589531f, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -115,11 +115,17 @@ MonoBehaviour:
   AllowSecondaryHoldRepeat: 0
   DebugLogs: 0
   PlayerCamera: {fileID: 0}
-  MiningPower: 1
+  FallbackMiningDamage: 1
+  FallbackMiningTier: 1
+  FallbackExtractionQualityMultiplier: 1
+  FallbackDurabilityCostPerAcceptedHit: 1
+  FallbackUsesDurability: 1
+  FallbackBreaksAtZeroDurability: 1
   MiningDistance: 4
   MiningLayers:
     serializedVersion: 2
     m_Bits: 2048
+  FallbackMinimumUseInterval: 0
   DrawDebugRay: 1
 --- !u!95 &4739695087512874912
 Animator:

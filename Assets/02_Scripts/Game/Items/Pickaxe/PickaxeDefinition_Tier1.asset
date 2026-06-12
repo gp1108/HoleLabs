@@ -19,7 +19,7 @@ MonoBehaviour:
   EquippedPrefab: {fileID: 2634897519947290856, guid: 9e8c6ab92835f784d8ea2cdf1f6f05ef, type: 3}
   IsStackable: 0
   MaxStackSize: 1
-  DefaultDurability: 10
+  DefaultDurability: 1000
   BaseWeight: 10
   AutoEquipWhenSelected: 1
   MiningDamage: 1
