@@ -113,7 +113,7 @@ MonoBehaviour:
   WaitUntilAnimatorLeavesActionState: 1
   AllowPrimaryHoldRepeat: 1
   AllowSecondaryHoldRepeat: 0
-  DebugLogs: 0
+  DebugLogs: 1
   PlayerCamera: {fileID: 0}
   FallbackMiningDamage: 1
   FallbackMiningTier: 1
