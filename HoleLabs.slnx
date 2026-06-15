@@ -7,6 +7,7 @@
   <Project Path="Kamgam.UGUIComponentsForSettings.csproj" />
   <Project Path="MoreMountains.Tools.Editor.csproj" />
   <Project Path="Lofelt.NiceVibrations.csproj" />
+  <Project Path="Unity.RenderPipelines.Core.Samples.Runtime.csproj" />
   <Project Path="VHierarchy.csproj" />
   <Project Path="LocalizationsForSettings.csproj" />
   <Project Path="Kamgam.SettingsGeneratorExamples.csproj" />
@@ -17,5 +18,6 @@
   <Project Path="Kamgam.UGUIComponentsForSettingsEditor.csproj" />
   <Project Path="Lofelt.NiceVibrations.Demo.csproj" />
   <Project Path="Lofelt.NiceVibrations.Editor.csproj" />
+  <Project Path="Unity.RenderPipelines.Core.Samples.Editor.csproj" />
   <Project Path="LocalizationsForSettingsEditor.csproj" />
 </Solution>
