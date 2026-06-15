@@ -58,11 +58,46 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     public override void Initialize(HotbarController OwnerHotbar, ItemInstance ItemInstance)
     {
         base.Initialize(OwnerHotbar, ItemInstance);
+        ResolvePlayerCamera();
+    }
 
-        if (PlayerCamera == null && this.OwnerHotbar != null)
+    /// <summary>
+    /// Resolves the gameplay camera used by mining raycasts.
+    /// This intentionally supports nested equipped item hierarchies where the pickaxe behaviour may no longer live directly under the player camera socket.
+    /// </summary>
+    private void ResolvePlayerCamera()
+    {
+        if (PlayerCamera != null)
         {
-            PlayerCamera = this.OwnerHotbar.GetComponentInChildren<Camera>();
+            return;
         }
+
+        if (OwnerHotbar != null)
+        {
+            PlayerController PlayerController = OwnerHotbar.GetComponentInParent<PlayerController>();
+
+            if (PlayerController != null && PlayerController.PlayerCamera != null)
+            {
+                PlayerCamera = PlayerController.PlayerCamera;
+                return;
+            }
+
+            PlayerCamera = OwnerHotbar.GetComponentInChildren<Camera>(true);
+
+            if (PlayerCamera != null)
+            {
+                return;
+            }
+        }
+
+        PlayerCamera = Camera.main;
+
+        if (PlayerCamera != null)
+        {
+            return;
+        }
+
+        PlayerCamera = FindFirstObjectByType<Camera>();
     }
 
     /// <summary>
@@ -107,6 +142,8 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     /// </summary>
     protected override void OnPrimaryActionImpact()
     {
+        ResolvePlayerCamera();
+
         if (PlayerCamera == null)
         {
             Log("No camera was found for the pickaxe mining ray.");

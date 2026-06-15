@@ -24,6 +24,11 @@ MonoBehaviour:
   DeliveryMode: 0
   DeliveredItemDefinition: {fileID: 11400000, guid: 2c333aa06de5a4c41ad05009829156ae, type: 2}
   DeliveredAmount: 1
+  StockMode: 1
+  UniqueGroupId: Researcher.Main
+  ReissueCostMode: 0
+  CustomReissueCost: 0
+  InstalledProductEntryMode: 1
   AppliedUpgradeDefinition: {fileID: 0}
   ApplyMode: 0
   TargetUpgradeLevel: 1

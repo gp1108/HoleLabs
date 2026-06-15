@@ -16,7 +16,7 @@ MonoBehaviour:
   DisplayName: Tier2Pickaxe
   Icon: {fileID: 21300000, guid: e305d4ff6fcb66148a89b78f93cc03fa, type: 3}
   WorldPrefab: {fileID: 2838507164606574361, guid: c0a8eb828bb986c49af9926989c756e5, type: 3}
-  EquippedPrefab: {fileID: 2634897519947290856, guid: 9ed80eec05275b14989f8fdb064a91e5, type: 3}
+  EquippedPrefab: {fileID: 424485714343339591, guid: a4c03085a6e069643a13bc68d9d818ec, type: 3}
   IsStackable: 0
   MaxStackSize: 1
   DefaultDurability: 100

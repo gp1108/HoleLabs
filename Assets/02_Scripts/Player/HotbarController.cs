@@ -194,6 +194,16 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
+    /// Gets the currently instantiated equipped item root object.
+    /// This is useful for equipped behaviours that need to resolve sibling references after the hotbar spawns a nested prefab hierarchy.
+    /// </summary>
+    /// <returns>Current equipped prefab instance root, or null when no item is equipped.</returns>
+    public GameObject GetCurrentEquippedObject()
+    {
+        return CurrentEquippedObject;
+    }
+
+    /// <summary>
     /// Gets the item instance stored at the given slot index.
     /// </summary>
     /// <param name="SlotIndex">Target hotbar slot index.</param>
@@ -950,15 +960,54 @@ public sealed class HotbarController : MonoBehaviour
         CurrentEquippedObject.transform.localPosition = Vector3.zero;
         CurrentEquippedObject.transform.localRotation = Quaternion.identity;
 
-        CurrentEquippedBehaviour = CurrentEquippedObject.GetComponent<EquippedItemBehaviour>();
+        CurrentEquippedBehaviour = ResolveEquippedItemBehaviour(CurrentEquippedObject);
 
         if (CurrentEquippedBehaviour != null)
         {
             CurrentEquippedBehaviour.Initialize(this, SelectedItem);
             CurrentEquippedBehaviour.OnEquipped();
         }
+        else
+        {
+            Log("Equipped prefab has no EquippedItemBehaviour on its root or children: " + EquippedPrefab.name);
+        }
 
         Log("Equipped item from slot: " + SelectedIndex);
+    }
+
+    /// <summary>
+    /// Resolves the gameplay behaviour from an equipped prefab instance.
+    /// Root components are preferred, but nested visual hierarchies are also supported so procedural view motion pivots do not force gameplay scripts onto the prefab root.
+    /// </summary>
+    /// <param name="EquippedObject">Spawned equipped prefab root.</param>
+    /// <returns>Resolved equipped item behaviour, or null when none exists.</returns>
+    private EquippedItemBehaviour ResolveEquippedItemBehaviour(GameObject EquippedObject)
+    {
+        if (EquippedObject == null)
+        {
+            return null;
+        }
+
+        EquippedItemBehaviour RootBehaviour = EquippedObject.GetComponent<EquippedItemBehaviour>();
+
+        if (RootBehaviour != null)
+        {
+            return RootBehaviour;
+        }
+
+        EquippedItemBehaviour[] ChildBehaviours = EquippedObject.GetComponentsInChildren<EquippedItemBehaviour>(true);
+
+        if (ChildBehaviours == null || ChildBehaviours.Length == 0)
+        {
+            return null;
+        }
+
+        if (ChildBehaviours.Length > 1)
+        {
+            Log("Equipped prefab contains multiple EquippedItemBehaviour components. Using the first one found: " + ChildBehaviours[0].name);
+        }
+
+        return ChildBehaviours[0];
     }
 
     /// <summary>

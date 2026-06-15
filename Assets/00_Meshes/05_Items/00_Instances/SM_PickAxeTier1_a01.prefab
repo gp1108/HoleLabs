@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 4976320420551003026}
   - component: {fileID: 5935367148468653665}
   - component: {fileID: 4739695087512874912}
+  - component: {fileID: 2254698900742075415}
   m_Layer: 10
   m_Name: SM_PickAxeTier1_a01
   m_TagString: Untagged
@@ -115,11 +116,17 @@ MonoBehaviour:
   AllowSecondaryHoldRepeat: 0
   DebugLogs: 0
   PlayerCamera: {fileID: 0}
-  MiningPower: 1
+  FallbackMiningDamage: 1
+  FallbackMiningTier: 1
+  FallbackExtractionQualityMultiplier: 1
+  FallbackDurabilityCostPerAcceptedHit: 1
+  FallbackUsesDurability: 1
+  FallbackBreaksAtZeroDurability: 1
   MiningDistance: 4
   MiningLayers:
     serializedVersion: 2
     m_Bits: 2048
+  FallbackMinimumUseInterval: 0
   DrawDebugRay: 1
 --- !u!95 &4739695087512874912
 Animator:
@@ -143,3 +150,26 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!114 &2254698900742075415
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2634897519947290856}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bfc54414a97825e47899c7a9c9fd1124, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EquippedItemViewMotion
+  LocomotionSource: {fileID: 0}
+  EquippedItemBehaviour: {fileID: 5935367148468653665}
+  MotionRoot: {fileID: 632162633714572393}
+  PositionAmplitude: {x: 0.025, y: 0.035, z: 0.012}
+  PositionMultiplier: 1
+  RotationAmplitude: {x: 1.25, y: 0.65, z: 1.65}
+  RotationMultiplier: 1
+  FollowSpeed: 14
+  ReturnSpeed: 18
+  SuppressWhileItemIsUsing: 1
+  DebugLogs: 0
