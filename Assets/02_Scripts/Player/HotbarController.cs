@@ -218,6 +218,59 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
+    /// Removes every hotbar item that uses the provided item definition.
+    /// If the selected equipped item is removed, its active use state is stopped and the visual is refreshed safely.
+    /// </summary>
+    /// <param name="Definition">Item definition to remove from the hotbar.</param>
+    /// <returns>Number of slots cleared.</returns>
+    public int RemoveItemsByDefinition(ItemDefinition Definition)
+    {
+        if (Definition == null)
+        {
+            return 0;
+        }
+
+        EnsureSlotListSize(SlotCount);
+
+        int RemovedCount = 0;
+        bool RemovedSelectedSlot = false;
+
+        for (int Index = 0; Index < Slots.Count; Index++)
+        {
+            ItemInstance ItemInstance = Slots[Index];
+
+            if (ItemInstance == null || ItemInstance.GetDefinition() != Definition)
+            {
+                continue;
+            }
+
+            if (Index == SelectedIndex)
+            {
+                ForceStopCurrentItemUsage();
+                UnequipCurrentItem();
+                RemovedSelectedSlot = true;
+            }
+
+            Slots[Index] = null;
+            RemovedCount++;
+            NotifySlotChanged(Index);
+        }
+
+        if (RemovedSelectedSlot)
+        {
+            RefreshEquippedItem();
+        }
+
+        if (RemovedCount > 0)
+        {
+            OnHotbarStructureChanged?.Invoke();
+            Log("Removed " + RemovedCount + " item(s) by definition: " + Definition.GetDisplayName());
+        }
+
+        return RemovedCount;
+    }
+
+    /// <summary>
     /// Removes the selected item only if the provided runtime instance is still the selected slot instance.
     /// This prevents an equipped item from deleting a different item after a fast slot change.
     /// </summary>
