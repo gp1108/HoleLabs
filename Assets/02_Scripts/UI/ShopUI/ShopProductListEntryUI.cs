@@ -28,6 +28,9 @@ public sealed class ShopProductListEntryUI : MonoBehaviour
     [Tooltip("Text used to display current purchase state.")]
     [SerializeField] private TMP_Text StateText;
 
+    [Tooltip("Optional text placed on the purchase button. When empty, only State Text is updated.")]
+    [SerializeField] private TMP_Text PurchaseButtonLabelText;
+
     [Tooltip("Button used to trigger the purchase attempt.")]
     [SerializeField] private Button PurchaseButton;
 
@@ -70,9 +73,28 @@ public sealed class ShopProductListEntryUI : MonoBehaviour
             return;
         }
 
+        if (OwnerStation != null && OwnerStation.ShouldHideProductEntry(ProductDefinition))
+        {
+            if (gameObject.activeSelf)
+            {
+                gameObject.SetActive(false);
+            }
+
+            return;
+        }
+
+        if (!gameObject.activeSelf)
+        {
+            gameObject.SetActive(true);
+        }
+
         ShopProductStation.ProductPurchaseBlockReason BlockReason = OwnerStation != null
             ? OwnerStation.GetPurchaseBlockReason(ProductDefinition)
             : ShopProductStation.ProductPurchaseBlockReason.MissingProduct;
+
+        ShopProductStation.ProductPurchaseAction PurchaseAction = OwnerStation != null
+            ? OwnerStation.GetPurchaseAction(ProductDefinition)
+            : ShopProductStation.ProductPurchaseAction.None;
 
         bool CanPurchase = BlockReason == ShopProductStation.ProductPurchaseBlockReason.None;
 
@@ -95,13 +117,18 @@ public sealed class ShopProductListEntryUI : MonoBehaviour
 
         if (CostText != null)
         {
-            CostText.text = "Cost: " + ProductDefinition.GetCost().ToString("0.00") + " " + ProductDefinition.GetCurrencyType();
+            CostText.text = BuildCostText(PurchaseAction);
         }
 
         if (StateText != null)
         {
-            StateText.text = BuildStateText(BlockReason);
+            StateText.text = BuildStateText(BlockReason, PurchaseAction);
             StateText.color = CanPurchase ? PurchasableColor : NotPurchasableColor;
+        }
+
+        if (PurchaseButtonLabelText != null)
+        {
+            PurchaseButtonLabelText.text = BuildButtonText(BlockReason, PurchaseAction);
         }
 
         if (PurchaseButton != null)
@@ -124,16 +151,35 @@ public sealed class ShopProductListEntryUI : MonoBehaviour
     }
 
     /// <summary>
+    /// Builds the cost text using the current action cost resolved by the station.
+    /// </summary>
+    /// <param name="PurchaseAction">Current purchase action.</param>
+    /// <returns>Formatted cost label.</returns>
+    private string BuildCostText(ShopProductStation.ProductPurchaseAction PurchaseAction)
+    {
+        float EffectiveCost = OwnerStation != null
+            ? OwnerStation.GetEffectivePurchaseCost(ProductDefinition)
+            : ProductDefinition.GetCost();
+
+        string CostPrefix = PurchaseAction == ShopProductStation.ProductPurchaseAction.Reissue
+            ? "Reissue Cost: "
+            : "Cost: ";
+
+        return CostPrefix + EffectiveCost.ToString("0.00") + " " + ProductDefinition.GetCurrencyType();
+    }
+
+    /// <summary>
     /// Builds a compact state label for the current purchase block reason.
     /// </summary>
     /// <param name="BlockReason">Current purchase block reason.</param>
+    /// <param name="PurchaseAction">Current purchase action.</param>
     /// <returns>State label.</returns>
-    private string BuildStateText(ShopProductStation.ProductPurchaseBlockReason BlockReason)
+    private string BuildStateText(ShopProductStation.ProductPurchaseBlockReason BlockReason, ShopProductStation.ProductPurchaseAction PurchaseAction)
     {
         switch (BlockReason)
         {
             case ShopProductStation.ProductPurchaseBlockReason.None:
-                return "Available";
+                return PurchaseAction == ShopProductStation.ProductPurchaseAction.Reissue ? "Reissue available" : "Available";
             case ShopProductStation.ProductPurchaseBlockReason.NotEnoughCurrency:
                 return "Not enough credits";
             case ShopProductStation.ProductPurchaseBlockReason.MissingRequiredFeatureFlag:
@@ -144,8 +190,31 @@ public sealed class ShopProductListEntryUI : MonoBehaviour
                 return "Missing world prefab";
             case ShopProductStation.ProductPurchaseBlockReason.MissingDeliveryPoint:
                 return "Missing delivery point";
+            case ShopProductStation.ProductPurchaseBlockReason.UniqueProductInstalled:
+                return "Installed";
             default:
                 return BlockReason.ToString();
         }
+    }
+
+    /// <summary>
+    /// Builds the optional purchase button label.
+    /// </summary>
+    /// <param name="BlockReason">Current purchase block reason.</param>
+    /// <param name="PurchaseAction">Current purchase action.</param>
+    /// <returns>Button label.</returns>
+    private string BuildButtonText(ShopProductStation.ProductPurchaseBlockReason BlockReason, ShopProductStation.ProductPurchaseAction PurchaseAction)
+    {
+        if (BlockReason == ShopProductStation.ProductPurchaseBlockReason.UniqueProductInstalled)
+        {
+            return "Installed";
+        }
+
+        if (BlockReason != ShopProductStation.ProductPurchaseBlockReason.None)
+        {
+            return "Locked";
+        }
+
+        return PurchaseAction == ShopProductStation.ProductPurchaseAction.Reissue ? "Reissue" : "Buy";
     }
 }

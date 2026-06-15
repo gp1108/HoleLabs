@@ -8,25 +8,39 @@ using UnityEngine;
 /// </summary>
 public abstract class EquippedItemBehaviour : MonoBehaviour
 {
+    /// <summary>
+    /// Current runtime item instance associated with this equipped behaviour.
+    /// </summary>
     [Tooltip("Current runtime item instance associated with this equipped behaviour.")]
     protected ItemInstance ItemInstance;
 
+    /// <summary>
+    /// Hotbar controller that owns this equipped item.
+    /// </summary>
     [Tooltip("Hotbar controller that owns this equipped item.")]
     protected HotbarController OwnerHotbar;
 
+    /// <summary>
+    /// Whether the item is currently using its primary action.
+    /// </summary>
     [Tooltip("Whether the item is currently using its primary action.")]
     protected bool IsPrimaryUseActive;
 
+    /// <summary>
+    /// Whether the item is currently using its secondary action.
+    /// </summary>
     [Tooltip("Whether the item is currently using its secondary action.")]
     protected bool IsSecondaryUseActive;
 
     /// <summary>
     /// Initializes the equipped item with its runtime data and owner.
     /// </summary>
-    public virtual void Initialize(HotbarController ownerHotbar, ItemInstance itemInstance)
+    /// <param name="OwnerHotbarValue">Hotbar controller that owns this equipped item.</param>
+    /// <param name="ItemInstanceValue">Runtime item instance associated with this equipped behaviour.</param>
+    public virtual void Initialize(HotbarController OwnerHotbarValue, ItemInstance ItemInstanceValue)
     {
-        OwnerHotbar = ownerHotbar;
-        ItemInstance = itemInstance;
+        OwnerHotbar = OwnerHotbarValue;
+        ItemInstance = ItemInstanceValue;
     }
 
     /// <summary>
@@ -97,5 +111,25 @@ public abstract class EquippedItemBehaviour : MonoBehaviour
     public virtual void OnSecondaryUseEnded()
     {
         IsSecondaryUseActive = false;
+    }
+
+    /// <summary>
+    /// Gets whether this item currently has any use input or action state active.
+    /// Procedural view motion and similar feedback systems use this to avoid fighting authored animations.
+    /// </summary>
+    /// <returns>True when the item is currently using either primary or secondary input.</returns>
+    public virtual bool GetIsUsageActive()
+    {
+        return IsPrimaryUseActive || IsSecondaryUseActive;
+    }
+
+    /// <summary>
+    /// Gets whether procedural view motion should be suppressed while this item is active.
+    /// Override this when an item has delayed actions that must also block additive bob or sway.
+    /// </summary>
+    /// <returns>True when procedural view motion should return to its neutral pose.</returns>
+    public virtual bool ShouldBlockProceduralViewMotion()
+    {
+        return GetIsUsageActive();
     }
 }

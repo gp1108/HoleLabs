@@ -3,6 +3,7 @@ using UnityEngine;
 /// <summary>
 /// World station that sells shop products.
 /// Products are separated from applied upgrades so the shop can deliver physical items that the player must place later.
+/// Unique products can be reissued while loose, but become locked after installation.
 /// </summary>
 [RequireComponent(typeof(Collider))]
 public sealed class ShopProductStation : MonoBehaviour
@@ -22,7 +23,19 @@ public sealed class ShopProductStation : MonoBehaviour
         MissingDeliveredItemDefinition = 7,
         MissingWorldPrefab = 8,
         MissingAppliedUpgradeDefinition = 9,
-        MissingDeliveryPoint = 10
+        MissingDeliveryPoint = 10,
+        UniqueProductInstalled = 11,
+        MissingOwnershipService = 12
+    }
+
+    /// <summary>
+    /// Purchase action currently represented by an available product.
+    /// </summary>
+    public enum ProductPurchaseAction
+    {
+        None = 0,
+        Buy = 1,
+        Reissue = 2
     }
 
     [Header("References")]
@@ -34,6 +47,9 @@ public sealed class ShopProductStation : MonoBehaviour
 
     [Tooltip("Upgrade manager used for availability checks and immediate upgrade application.")]
     [SerializeField] private UpgradeManager UpgradeManager;
+
+    [Tooltip("Ownership service used to resolve unique product loose and installed states.")]
+    [SerializeField] private ShopProductOwnershipService ProductOwnershipService;
 
     [Tooltip("Optional prompt root enabled only while the player is inside the station range.")]
     [SerializeField] private GameObject PromptRoot;
@@ -72,6 +88,16 @@ public sealed class ShopProductStation : MonoBehaviour
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
         }
 
+        if (ProductOwnershipService == null)
+        {
+            ProductOwnershipService = FindFirstObjectByType<ShopProductOwnershipService>();
+        }
+
+        if (ProductOwnershipService == null)
+        {
+            ProductOwnershipService = gameObject.AddComponent<ShopProductOwnershipService>();
+        }
+
         if (ProductPanelUI != null)
         {
             ProductPanelUI.Initialize(this);
@@ -92,6 +118,93 @@ public sealed class ShopProductStation : MonoBehaviour
     public bool IsInteractorRegistered(UpgradeShopInteractor Interactor)
     {
         return CurrentInteractor == Interactor;
+    }
+
+    /// <summary>
+    /// Gets the current unique ownership state for the provided product.
+    /// Unlimited products return NotTracked.
+    /// </summary>
+    /// <param name="ProductDefinition">Product to evaluate.</param>
+    /// <returns>Derived ownership state.</returns>
+    public ShopProductOwnershipService.ProductOwnershipState GetOwnershipState(ShopProductDefinition ProductDefinition)
+    {
+        if (ProductOwnershipService == null || ProductDefinition == null)
+        {
+            return ShopProductOwnershipService.ProductOwnershipState.NotTracked;
+        }
+
+        return ProductOwnershipService.GetOwnershipState(ProductDefinition);
+    }
+
+    /// <summary>
+    /// Gets whether this product entry should be hidden in the current runtime state.
+    /// </summary>
+    /// <param name="ProductDefinition">Product to evaluate.</param>
+    /// <returns>True when the entry should be hidden.</returns>
+    public bool ShouldHideProductEntry(ShopProductDefinition ProductDefinition)
+    {
+        if (ProductDefinition == null || !ProductDefinition.UsesUniqueReissueStock())
+        {
+            return false;
+        }
+
+        return ProductDefinition.GetInstalledProductEntryMode() == ShopProductDefinition.InstalledEntryMode.HideEntry &&
+               GetOwnershipState(ProductDefinition) == ShopProductOwnershipService.ProductOwnershipState.Installed;
+    }
+
+    /// <summary>
+    /// Gets the purchase action currently represented by this product.
+    /// </summary>
+    /// <param name="ProductDefinition">Product to evaluate.</param>
+    /// <returns>Buy, Reissue or None.</returns>
+    public ProductPurchaseAction GetPurchaseAction(ShopProductDefinition ProductDefinition)
+    {
+        if (ProductDefinition == null)
+        {
+            return ProductPurchaseAction.None;
+        }
+
+        if (!ProductDefinition.UsesUniqueReissueStock())
+        {
+            return ProductPurchaseAction.Buy;
+        }
+
+        ShopProductOwnershipService.ProductOwnershipState OwnershipState = GetOwnershipState(ProductDefinition);
+
+        switch (OwnershipState)
+        {
+            case ShopProductOwnershipService.ProductOwnershipState.LooseInstance:
+                return ProductPurchaseAction.Reissue;
+
+            case ShopProductOwnershipService.ProductOwnershipState.NotOwned:
+            case ShopProductOwnershipService.ProductOwnershipState.NotTracked:
+                return ProductPurchaseAction.Buy;
+
+            case ShopProductOwnershipService.ProductOwnershipState.Installed:
+            default:
+                return ProductPurchaseAction.None;
+        }
+    }
+
+    /// <summary>
+    /// Gets the effective credit cost for the current product action.
+    /// Reissued unique products can be free, full cost or custom cost depending on their definition.
+    /// </summary>
+    /// <param name="ProductDefinition">Product to evaluate.</param>
+    /// <returns>Rounded effective cost.</returns>
+    public float GetEffectivePurchaseCost(ShopProductDefinition ProductDefinition)
+    {
+        if (ProductDefinition == null)
+        {
+            return 0f;
+        }
+
+        if (ProductDefinition.UsesUniqueReissueStock() && GetPurchaseAction(ProductDefinition) == ProductPurchaseAction.Reissue)
+        {
+            return ProductDefinition.GetReissueCost();
+        }
+
+        return ProductDefinition.GetCost();
     }
 
     /// <summary>
@@ -133,11 +246,6 @@ public sealed class ShopProductStation : MonoBehaviour
             return ProductPurchaseBlockReason.MissingDeliveredItemUnlock;
         }
 
-        if (!CurrencyWallet.HasEnough(ProductDefinition.GetCurrencyType(), ProductDefinition.GetCost()))
-        {
-            return ProductPurchaseBlockReason.NotEnoughCurrency;
-        }
-
         if (ProductDefinition.ShouldSpawnWorldItem())
         {
             ItemDefinition DeliveredItemDefinition = ProductDefinition.GetDeliveredItemDefinition();
@@ -158,10 +266,30 @@ public sealed class ShopProductStation : MonoBehaviour
             }
         }
 
+        if (ProductDefinition.UsesUniqueReissueStock())
+        {
+            if (ProductOwnershipService == null)
+            {
+                return ProductPurchaseBlockReason.MissingOwnershipService;
+            }
+
+            if (GetOwnershipState(ProductDefinition) == ShopProductOwnershipService.ProductOwnershipState.Installed)
+            {
+                return ProductPurchaseBlockReason.UniqueProductInstalled;
+            }
+        }
+
         if (ProductDefinition.ShouldApplyUpgradeImmediately() &&
             ProductDefinition.GetAppliedUpgradeDefinition() == null)
         {
             return ProductPurchaseBlockReason.MissingAppliedUpgradeDefinition;
+        }
+
+        float EffectiveCost = GetEffectivePurchaseCost(ProductDefinition);
+
+        if (!CurrencyWallet.HasEnough(ProductDefinition.GetCurrencyType(), EffectiveCost))
+        {
+            return ProductPurchaseBlockReason.NotEnoughCurrency;
         }
 
         return ProductPurchaseBlockReason.None;
@@ -182,10 +310,18 @@ public sealed class ShopProductStation : MonoBehaviour
             return false;
         }
 
-        if (!CurrencyWallet.TrySpendCurrency(ProductDefinition.GetCurrencyType(), ProductDefinition.GetCost()))
+        ProductPurchaseAction PurchaseAction = GetPurchaseAction(ProductDefinition);
+        float EffectiveCost = GetEffectivePurchaseCost(ProductDefinition);
+
+        if (!CurrencyWallet.TrySpendCurrency(ProductDefinition.GetCurrencyType(), EffectiveCost))
         {
             Log("Product purchase failed while spending currency: " + ProductDefinition.GetDisplayName());
             return false;
+        }
+
+        if (ProductDefinition.UsesUniqueReissueStock() && PurchaseAction == ProductPurchaseAction.Reissue)
+        {
+            ProductOwnershipService.RemoveLooseInstances(ProductDefinition);
         }
 
         if (ProductDefinition.ShouldSpawnWorldItem() && !SpawnDeliveredWorldItem(ProductDefinition))
@@ -204,7 +340,7 @@ public sealed class ShopProductStation : MonoBehaviour
             ProductPanelUI.RefreshAll();
         }
 
-        Log("Purchased shop product: " + ProductDefinition.GetDisplayName());
+        Log("Processed shop product action " + PurchaseAction + ": " + ProductDefinition.GetDisplayName());
         return true;
     }
 

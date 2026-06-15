@@ -40,6 +40,9 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     [Tooltip("If true, the item waits until the Animator is fully out of an action state before retriggering hold repeat.")]
     [SerializeField] protected bool WaitUntilAnimatorLeavesActionState = true;
 
+    [Tooltip("If true, an event relay is automatically installed on child Animator objects so animation events can reach this behaviour even when the Animator is not on the same GameObject.")]
+    [SerializeField] protected bool AutoInstallAnimatorEventRelay = true;
+
     [Header("Behaviour")]
     [Tooltip("If true, holding the primary input starts a new action when the current one finishes.")]
     [SerializeField] protected bool AllowPrimaryHoldRepeat = true;
@@ -77,11 +80,67 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     public override void Initialize(HotbarController ownerHotbar, ItemInstance itemInstance)
     {
         base.Initialize(ownerHotbar, itemInstance);
+        ResolveAnimatorReference(ownerHotbar);
+        EnsureAnimatorEventRelay();
+    }
+
+    /// <summary>
+    /// Resolves the Animator used by this equipped item.
+    /// The search supports root behaviours, nested behaviours and a separate non-animated motion pivot hierarchy.
+    /// </summary>
+    /// <param name="OwnerHotbarValue">Hotbar that spawned this equipped item.</param>
+    protected virtual void ResolveAnimatorReference(HotbarController OwnerHotbarValue)
+    {
+        if (ItemAnimator != null)
+        {
+            return;
+        }
+
+        ItemAnimator = GetComponentInChildren<Animator>(true);
+
+        if (ItemAnimator != null)
+        {
+            return;
+        }
+
+        ItemAnimator = GetComponentInParent<Animator>();
+
+        if (ItemAnimator != null)
+        {
+            return;
+        }
+
+        if (OwnerHotbarValue != null && OwnerHotbarValue.GetCurrentEquippedObject() != null)
+        {
+            ItemAnimator = OwnerHotbarValue.GetCurrentEquippedObject().GetComponentInChildren<Animator>(true);
+        }
 
         if (ItemAnimator == null)
         {
-            ItemAnimator = GetComponentInChildren<Animator>();
+            Log("No Animator could be resolved for this equipped item. Primary and secondary actions will run logic state but cannot play authored animations.");
         }
+    }
+
+    /// <summary>
+    /// Installs an animation event relay on the Animator GameObject when the gameplay behaviour lives on a different object.
+    /// Unity animation events are sent to components on the same GameObject as the Animator, not automatically to parent behaviours.
+    /// </summary>
+    protected virtual void EnsureAnimatorEventRelay()
+    {
+        if (!AutoInstallAnimatorEventRelay || ItemAnimator == null || ItemAnimator.gameObject == gameObject)
+        {
+            return;
+        }
+
+        AnimationEventEquippedItemRelay Relay = ItemAnimator.GetComponent<AnimationEventEquippedItemRelay>();
+
+        if (Relay == null)
+        {
+            Relay = ItemAnimator.gameObject.AddComponent<AnimationEventEquippedItemRelay>();
+        }
+
+        Relay.Initialize(this);
+        Log("Installed animation event relay on Animator object: " + ItemAnimator.name);
     }
 
     /// <summary>
@@ -331,6 +390,25 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
         return true;
     }
 
+
+    /// <summary>
+    /// Gets whether this animation-event item is currently using input or waiting for animation events.
+    /// </summary>
+    /// <returns>True when input usage or an animation-event action is active.</returns>
+    public override bool GetIsUsageActive()
+    {
+        return base.GetIsUsageActive() || IsPrimaryActionRunning || IsSecondaryActionRunning;
+    }
+
+    /// <summary>
+    /// Gets whether procedural view motion should be suppressed while this animated item action is active.
+    /// </summary>
+    /// <returns>True while the item is using input or waiting for action animation events.</returns>
+    public override bool ShouldBlockProceduralViewMotion()
+    {
+        return GetIsUsageActive();
+    }
+
     /// <summary>
     /// Checks whether the primary action is allowed to start.
     /// Subclasses can override this for ammo, cooldowns or validation.
@@ -485,7 +563,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     }
 
     /// <summary>
-    /// Triggers an animator parameter if the name is valid.
+    /// Triggers an animator parameter if the name is valid and exists on the current Animator Controller.
     /// </summary>
     protected void TryPlayAnimatorTrigger(string triggerName)
     {
@@ -494,11 +572,19 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
             return;
         }
 
+        if (!HasAnimatorParameter(triggerName, AnimatorControllerParameterType.Trigger))
+        {
+            Log("Animator trigger not found or has the wrong type: " + triggerName + " on " + ItemAnimator.name);
+            return;
+        }
+
+        ItemAnimator.ResetTrigger(triggerName);
         ItemAnimator.SetTrigger(triggerName);
+        Log("Animator trigger fired: " + triggerName + " on " + ItemAnimator.name);
     }
 
     /// <summary>
-    /// Resets an animator trigger if the name is valid.
+    /// Resets an animator trigger if the name is valid and exists on the current Animator Controller.
     /// </summary>
     protected void ResetAnimatorTrigger(string triggerName)
     {
@@ -507,11 +593,16 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
             return;
         }
 
+        if (!HasAnimatorParameter(triggerName, AnimatorControllerParameterType.Trigger))
+        {
+            return;
+        }
+
         ItemAnimator.ResetTrigger(triggerName);
     }
 
     /// <summary>
-    /// Sets the animator using bool if configured.
+    /// Sets the animator using bool if configured and present on the current Animator Controller.
     /// </summary>
     protected void SetAnimatorUsingState(bool isUsing)
     {
@@ -520,7 +611,46 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
             return;
         }
 
+        if (!HasAnimatorParameter(IsUsingBoolName, AnimatorControllerParameterType.Bool))
+        {
+            Log("Animator bool not found or has the wrong type: " + IsUsingBoolName + " on " + ItemAnimator.name);
+            return;
+        }
+
         ItemAnimator.SetBool(IsUsingBoolName, isUsing);
+    }
+
+    /// <summary>
+    /// Returns whether the Animator has a parameter with the requested name and type.
+    /// </summary>
+    /// <param name="ParameterName">Animator parameter name.</param>
+    /// <param name="ParameterType">Expected animator parameter type.</param>
+    /// <returns>True when the parameter exists and matches the expected type.</returns>
+    private bool HasAnimatorParameter(string ParameterName, AnimatorControllerParameterType ParameterType)
+    {
+        if (ItemAnimator == null || string.IsNullOrWhiteSpace(ParameterName))
+        {
+            return false;
+        }
+
+        AnimatorControllerParameter[] Parameters = ItemAnimator.parameters;
+
+        for (int Index = 0; Index < Parameters.Length; Index++)
+        {
+            AnimatorControllerParameter Parameter = Parameters[Index];
+
+            if (Parameter == null)
+            {
+                continue;
+            }
+
+            if (Parameter.type == ParameterType && string.Equals(Parameter.name, ParameterName, System.StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

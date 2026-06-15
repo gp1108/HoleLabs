@@ -3,8 +3,8 @@ using UnityEngine;
 
 /// <summary>
 /// Defines one purchasable shop product.
-/// A product can deliver a physical item, apply an upgrade immediately, or do both.
-/// This keeps shop purchases separate from already-applied upgrade state.
+/// Products can deliver physical items, apply upgrades immediately, or use limited stock rules.
+/// Unique reissue products allow exactly one loose physical instance until the item is installed.
 /// </summary>
 [CreateAssetMenu(fileName = "ShopProduct_", menuName = "Game/Shop/Shop Product Definition")]
 public sealed class ShopProductDefinition : ScriptableObject
@@ -26,6 +26,34 @@ public sealed class ShopProductDefinition : ScriptableObject
     {
         SetToLevel = 0,
         AddLevels = 1
+    }
+
+    /// <summary>
+    /// Defines how this product is limited by existing owned runtime instances.
+    /// </summary>
+    public enum ProductStockMode
+    {
+        Unlimited = 0,
+        UniqueReissueUntilInstalled = 1
+    }
+
+    /// <summary>
+    /// Defines how much the player pays when reissuing an already loose unique product.
+    /// </summary>
+    public enum UniqueReissueCostMode
+    {
+        Free = 0,
+        FullCost = 1,
+        CustomCost = 2
+    }
+
+    /// <summary>
+    /// Defines how this product entry behaves after the unique product has been installed.
+    /// </summary>
+    public enum InstalledEntryMode
+    {
+        ShowAsInstalled = 0,
+        HideEntry = 1
     }
 
     [Header("Identity")]
@@ -68,6 +96,22 @@ public sealed class ShopProductDefinition : ScriptableObject
 
     [Tooltip("Amount stored in the delivered item instance.")]
     [SerializeField] private int DeliveredAmount = 1;
+
+    [Header("Stock")]
+    [Tooltip("Stock policy used by this product. Use Unique Reissue Until Installed for physical one-off machines such as the researcher.")]
+    [SerializeField] private ProductStockMode StockMode = ProductStockMode.Unlimited;
+
+    [Tooltip("Stable logical id used for debugging unique products. If empty, Product Id is used as fallback.")]
+    [SerializeField] private string UniqueGroupId;
+
+    [Tooltip("Cost policy used when the unique product already exists loose and the player reissues it.")]
+    [SerializeField] private UniqueReissueCostMode ReissueCostMode = UniqueReissueCostMode.FullCost;
+
+    [Tooltip("Custom credit cost used only when Reissue Cost Mode is Custom Cost.")]
+    [SerializeField] private float CustomReissueCost = 0f;
+
+    [Tooltip("How this shop entry behaves after the unique product has been installed.")]
+    [SerializeField] private InstalledEntryMode InstalledProductEntryMode = InstalledEntryMode.ShowAsInstalled;
 
     [Header("Immediate Upgrade")]
     [Tooltip("Upgrade modified when the delivery mode includes immediate upgrade application.")]
@@ -194,6 +238,83 @@ public sealed class ShopProductDefinition : ScriptableObject
     public int GetDeliveredAmount()
     {
         return Mathf.Max(1, DeliveredAmount);
+    }
+
+    /// <summary>
+    /// Gets the stock policy configured for this product.
+    /// </summary>
+    public ProductStockMode GetStockMode()
+    {
+        return StockMode;
+    }
+
+    /// <summary>
+    /// Gets whether this product uses unique reissue stock rules.
+    /// </summary>
+    public bool UsesUniqueReissueStock()
+    {
+        return StockMode == ProductStockMode.UniqueReissueUntilInstalled;
+    }
+
+    /// <summary>
+    /// Gets the stable unique group id used for debugging and future save-safe ownership policies.
+    /// </summary>
+    public string GetUniqueGroupId()
+    {
+        if (!string.IsNullOrWhiteSpace(UniqueGroupId))
+        {
+            return UniqueGroupId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ProductId))
+        {
+            return ProductId;
+        }
+
+        return DeliveredItemDefinition != null ? DeliveredItemDefinition.GetItemId() : string.Empty;
+    }
+
+    /// <summary>
+    /// Gets the cost policy used when reissuing a loose unique product.
+    /// </summary>
+    public UniqueReissueCostMode GetReissueCostMode()
+    {
+        return ReissueCostMode;
+    }
+
+    /// <summary>
+    /// Gets the rounded custom reissue cost.
+    /// </summary>
+    public float GetCustomReissueCost()
+    {
+        return CurrencyMath.RoundCurrency(Mathf.Max(0f, CustomReissueCost));
+    }
+
+    /// <summary>
+    /// Gets the installed entry behaviour used by unique products.
+    /// </summary>
+    public InstalledEntryMode GetInstalledProductEntryMode()
+    {
+        return InstalledProductEntryMode;
+    }
+
+    /// <summary>
+    /// Gets the effective cost used when the product is reissued instead of bought for the first time.
+    /// </summary>
+    public float GetReissueCost()
+    {
+        switch (ReissueCostMode)
+        {
+            case UniqueReissueCostMode.Free:
+                return 0f;
+
+            case UniqueReissueCostMode.CustomCost:
+                return GetCustomReissueCost();
+
+            case UniqueReissueCostMode.FullCost:
+            default:
+                return GetCost();
+        }
     }
 
     /// <summary>

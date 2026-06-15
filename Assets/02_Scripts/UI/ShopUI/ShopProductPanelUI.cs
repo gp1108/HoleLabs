@@ -4,7 +4,7 @@ using UnityEngine;
 
 /// <summary>
 /// Manual product shop panel.
-/// It discovers manually placed product entries and refreshes them when currency or upgrade state changes.
+/// It discovers manually placed product entries and refreshes them when currency, upgrade or derived ownership state changes.
 /// </summary>
 public sealed class ShopProductPanelUI : MonoBehaviour
 {
@@ -25,6 +25,13 @@ public sealed class ShopProductPanelUI : MonoBehaviour
     [Tooltip("If true, product entries are rediscovered whenever the panel is shown.")]
     [SerializeField] private bool RediscoverOnShow = true;
 
+    [Header("Runtime Refresh")]
+    [Tooltip("If true, the visible panel refreshes periodically so derived stock states update while the UI remains open.")]
+    [SerializeField] private bool RefreshPeriodicallyWhileVisible = true;
+
+    [Tooltip("Seconds between automatic refreshes while the panel is visible.")]
+    [SerializeField] private float VisibleRefreshInterval = 0.25f;
+
     /// <summary>
     /// Product station that owns this panel.
     /// </summary>
@@ -34,6 +41,11 @@ public sealed class ShopProductPanelUI : MonoBehaviour
     /// Manual product entries currently registered under this panel.
     /// </summary>
     private readonly List<ShopProductListEntryUI> RegisteredProductEntries = new();
+
+    /// <summary>
+    /// Remaining time before the visible panel performs a periodic refresh.
+    /// </summary>
+    private float VisibleRefreshTimer;
 
     /// <summary>
     /// Resolves references and optionally discovers manual entries.
@@ -58,6 +70,27 @@ public sealed class ShopProductPanelUI : MonoBehaviour
         }
 
         PanelRoot.SetActive(false);
+    }
+
+    /// <summary>
+    /// Periodically refreshes the panel while visible so ownership-derived entries remain accurate.
+    /// </summary>
+    private void Update()
+    {
+        if (!RefreshPeriodicallyWhileVisible || PanelRoot == null || !PanelRoot.activeSelf)
+        {
+            return;
+        }
+
+        VisibleRefreshTimer -= Time.unscaledDeltaTime;
+
+        if (VisibleRefreshTimer > 0f)
+        {
+            return;
+        }
+
+        VisibleRefreshTimer = Mathf.Max(0.05f, VisibleRefreshInterval);
+        RefreshAll();
     }
 
     /// <summary>
@@ -110,6 +143,8 @@ public sealed class ShopProductPanelUI : MonoBehaviour
 
         if (IsVisible)
         {
+            VisibleRefreshTimer = 0f;
+
             if (RediscoverOnShow)
             {
                 DiscoverManualUi();
@@ -206,6 +241,8 @@ public sealed class ShopProductPanelUI : MonoBehaviour
     /// <summary>
     /// Refreshes the panel when currency changes.
     /// </summary>
+    /// <param name="CurrencyTypeValue">Currency type that changed.</param>
+    /// <param name="NewAmount">New currency amount.</param>
     private void HandleCurrencyChanged(CurrencyWallet.CurrencyType CurrencyTypeValue, float NewAmount)
     {
         RefreshAll();

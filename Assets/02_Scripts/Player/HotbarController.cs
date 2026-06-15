@@ -194,6 +194,16 @@ public sealed class HotbarController : MonoBehaviour
     }
 
     /// <summary>
+    /// Gets the currently instantiated equipped item root object.
+    /// This is useful for equipped behaviours that need to resolve sibling references after the hotbar spawns a nested prefab hierarchy.
+    /// </summary>
+    /// <returns>Current equipped prefab instance root, or null when no item is equipped.</returns>
+    public GameObject GetCurrentEquippedObject()
+    {
+        return CurrentEquippedObject;
+    }
+
+    /// <summary>
     /// Gets the item instance stored at the given slot index.
     /// </summary>
     /// <param name="SlotIndex">Target hotbar slot index.</param>
@@ -215,6 +225,59 @@ public sealed class HotbarController : MonoBehaviour
     {
         EnsureSlotListSize(SlotCount);
         NotifySlotChanged(SelectedIndex);
+    }
+
+    /// <summary>
+    /// Removes every hotbar item that uses the provided item definition.
+    /// If the selected equipped item is removed, its active use state is stopped and the visual is refreshed safely.
+    /// </summary>
+    /// <param name="Definition">Item definition to remove from the hotbar.</param>
+    /// <returns>Number of slots cleared.</returns>
+    public int RemoveItemsByDefinition(ItemDefinition Definition)
+    {
+        if (Definition == null)
+        {
+            return 0;
+        }
+
+        EnsureSlotListSize(SlotCount);
+
+        int RemovedCount = 0;
+        bool RemovedSelectedSlot = false;
+
+        for (int Index = 0; Index < Slots.Count; Index++)
+        {
+            ItemInstance ItemInstance = Slots[Index];
+
+            if (ItemInstance == null || ItemInstance.GetDefinition() != Definition)
+            {
+                continue;
+            }
+
+            if (Index == SelectedIndex)
+            {
+                ForceStopCurrentItemUsage();
+                UnequipCurrentItem();
+                RemovedSelectedSlot = true;
+            }
+
+            Slots[Index] = null;
+            RemovedCount++;
+            NotifySlotChanged(Index);
+        }
+
+        if (RemovedSelectedSlot)
+        {
+            RefreshEquippedItem();
+        }
+
+        if (RemovedCount > 0)
+        {
+            OnHotbarStructureChanged?.Invoke();
+            Log("Removed " + RemovedCount + " item(s) by definition: " + Definition.GetDisplayName());
+        }
+
+        return RemovedCount;
     }
 
     /// <summary>
@@ -897,15 +960,54 @@ public sealed class HotbarController : MonoBehaviour
         CurrentEquippedObject.transform.localPosition = Vector3.zero;
         CurrentEquippedObject.transform.localRotation = Quaternion.identity;
 
-        CurrentEquippedBehaviour = CurrentEquippedObject.GetComponent<EquippedItemBehaviour>();
+        CurrentEquippedBehaviour = ResolveEquippedItemBehaviour(CurrentEquippedObject);
 
         if (CurrentEquippedBehaviour != null)
         {
             CurrentEquippedBehaviour.Initialize(this, SelectedItem);
             CurrentEquippedBehaviour.OnEquipped();
         }
+        else
+        {
+            Log("Equipped prefab has no EquippedItemBehaviour on its root or children: " + EquippedPrefab.name);
+        }
 
         Log("Equipped item from slot: " + SelectedIndex);
+    }
+
+    /// <summary>
+    /// Resolves the gameplay behaviour from an equipped prefab instance.
+    /// Root components are preferred, but nested visual hierarchies are also supported so procedural view motion pivots do not force gameplay scripts onto the prefab root.
+    /// </summary>
+    /// <param name="EquippedObject">Spawned equipped prefab root.</param>
+    /// <returns>Resolved equipped item behaviour, or null when none exists.</returns>
+    private EquippedItemBehaviour ResolveEquippedItemBehaviour(GameObject EquippedObject)
+    {
+        if (EquippedObject == null)
+        {
+            return null;
+        }
+
+        EquippedItemBehaviour RootBehaviour = EquippedObject.GetComponent<EquippedItemBehaviour>();
+
+        if (RootBehaviour != null)
+        {
+            return RootBehaviour;
+        }
+
+        EquippedItemBehaviour[] ChildBehaviours = EquippedObject.GetComponentsInChildren<EquippedItemBehaviour>(true);
+
+        if (ChildBehaviours == null || ChildBehaviours.Length == 0)
+        {
+            return null;
+        }
+
+        if (ChildBehaviours.Length > 1)
+        {
+            Log("Equipped prefab contains multiple EquippedItemBehaviour components. Using the first one found: " + ChildBehaviours[0].name);
+        }
+
+        return ChildBehaviours[0];
     }
 
     /// <summary>
