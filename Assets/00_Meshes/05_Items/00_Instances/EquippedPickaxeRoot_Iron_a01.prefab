@@ -46,7 +46,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2c68f19089fb6174db50d62dc31d46b7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PickaxeItemBehaviour
-  ItemAnimator: {fileID: 0}
+  ItemAnimator: {fileID: 3502543257141013407}
   PrimaryUseTriggerName: PrimaryUse
   SecondaryUseTriggerName: SecondaryUse
   IsUsingBoolName: IsUsing
