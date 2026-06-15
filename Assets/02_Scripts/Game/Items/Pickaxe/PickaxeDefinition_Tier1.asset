@@ -29,3 +29,4 @@ MonoBehaviour:
   DurabilityCostPerAcceptedHit: 3
   BreaksAtZeroDurability: 1
   MinimumUseInterval: 0
+  FeedbackProfile: {fileID: 11400000, guid: a39c3daddca834847a409c5bad803ff3, type: 2}

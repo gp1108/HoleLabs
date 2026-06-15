@@ -32,6 +32,10 @@ public sealed class PickaxeItemDefinition : ItemDefinition
     [Tooltip("Minimum seconds between accepted primary action starts. This is a safety gate in addition to animation-event timing.")]
     [SerializeField] private float MinimumUseInterval = 0f;
 
+    [Header("Pickaxe Feedback")]
+    [Tooltip("Generic feedback profile used by the equipped pickaxe when mining events happen.")]
+    [SerializeField] private GameFeedbackProfile FeedbackProfile;
+
     /// <summary>
     /// Gets the mining damage applied by this pickaxe.
     /// </summary>
@@ -86,5 +90,14 @@ public sealed class PickaxeItemDefinition : ItemDefinition
     public float GetMinimumUseInterval()
     {
         return Mathf.Max(0f, MinimumUseInterval);
+    }
+
+    /// <summary>
+    /// Gets the generic feedback profile used by this pickaxe.
+    /// </summary>
+    /// <returns>Feedback profile assigned to this pickaxe definition, or null.</returns>
+    public GameFeedbackProfile GetFeedbackProfile()
+    {
+        return FeedbackProfile;
     }
 }

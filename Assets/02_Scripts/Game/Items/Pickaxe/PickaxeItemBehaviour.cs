@@ -41,6 +41,25 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     [Tooltip("Fallback minimum seconds between primary action starts when the item definition does not provide one.")]
     [SerializeField] private float FallbackMinimumUseInterval = 0f;
 
+    [Header("Feedback")]
+    [Tooltip("Generic feedback emitter used to play particles, audio and Feel feedbacks when mining results happen. If empty, one is found or created on this item root.")]
+    [SerializeField] private GameFeedbackEmitter FeedbackEmitter;
+
+    [Tooltip("Fallback feedback profile used when the equipped item definition does not provide one.")]
+    [SerializeField] private GameFeedbackProfile FallbackFeedbackProfile;
+
+    [Tooltip("If true, a PickaxeItemDefinition feedback profile overrides the profile currently assigned to the emitter.")]
+    [SerializeField] private bool UseItemDefinitionFeedbackProfile = true;
+
+    [Tooltip("If true, a feedback event is played when the mining ray hits nothing.")]
+    [SerializeField] private bool PlayMissFeedbackWhenRayHitsNothing = false;
+
+    [Tooltip("If true, a feedback event is played when the mining ray hits a collider that is not mineable.")]
+    [SerializeField] private bool PlayNonMineableHitFeedback = true;
+
+    [Tooltip("If true, regular accepted hit feedback is also played on the same hit that breaks the vein.")]
+    [SerializeField] private bool PlayAcceptedFeedbackOnBreakingHit = true;
+
     [Header("Debug")]
     [Tooltip("Draws the mining ray in the Scene view when attempting a hit.")]
     [SerializeField] private bool DrawDebugRay = false;
@@ -59,6 +78,7 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     {
         base.Initialize(OwnerHotbar, ItemInstance);
         ResolvePlayerCamera();
+        ResolveFeedbackEmitter();
     }
 
     /// <summary>
@@ -98,6 +118,50 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
         }
 
         PlayerCamera = FindFirstObjectByType<Camera>();
+    }
+
+    /// <summary>
+    /// Resolves or creates the generic feedback emitter used by this pickaxe.
+    /// </summary>
+    private void ResolveFeedbackEmitter()
+    {
+        if (FeedbackEmitter == null)
+        {
+            FeedbackEmitter = GetComponent<GameFeedbackEmitter>();
+        }
+
+        if (FeedbackEmitter == null)
+        {
+            FeedbackEmitter = GetComponentInChildren<GameFeedbackEmitter>(true);
+        }
+
+        if (FeedbackEmitter == null)
+        {
+            FeedbackEmitter = gameObject.AddComponent<GameFeedbackEmitter>();
+        }
+
+        GameFeedbackProfile ResolvedProfile = GetResolvedFeedbackProfile();
+
+        if (ResolvedProfile != null)
+        {
+            FeedbackEmitter.SetFeedbackProfile(ResolvedProfile);
+        }
+    }
+
+    /// <summary>
+    /// Gets the feedback profile that should be used by this equipped pickaxe.
+    /// </summary>
+    /// <returns>Resolved feedback profile, or null when none is configured.</returns>
+    private GameFeedbackProfile GetResolvedFeedbackProfile()
+    {
+        PickaxeItemDefinition PickaxeDefinition = GetPickaxeDefinition();
+
+        if (UseItemDefinitionFeedbackProfile && PickaxeDefinition != null && PickaxeDefinition.GetFeedbackProfile() != null)
+        {
+            return PickaxeDefinition.GetFeedbackProfile();
+        }
+
+        return FallbackFeedbackProfile;
     }
 
     /// <summary>
@@ -143,6 +207,7 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     protected override void OnPrimaryActionImpact()
     {
         ResolvePlayerCamera();
+        ResolveFeedbackEmitter();
 
         if (PlayerCamera == null)
         {
@@ -159,14 +224,26 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
 
         if (!Physics.Raycast(MiningRay, out RaycastHit HitInfo, MiningDistance, MiningLayers, QueryTriggerInteraction.Ignore))
         {
+            if (PlayMissFeedbackWhenRayHitsNothing)
+            {
+                Vector3 MissPosition = MiningRay.origin + (MiningRay.direction * Mathf.Max(0f, MiningDistance));
+                PlayFeedback(GameFeedbackEventIds.MiningMiss, GameFeedbackContext.FromPosition(MissPosition, transform));
+            }
+
             Log("Mining ray hit nothing.");
             return;
         }
 
+        GameFeedbackContext FeedbackContext = GameFeedbackContext.FromRaycastHit(HitInfo, transform);
         IMineable Mineable = ResolveMineable(HitInfo);
 
         if (Mineable == null)
         {
+            if (PlayNonMineableHitFeedback)
+            {
+                PlayFeedback(GameFeedbackEventIds.MiningNonMineableHit, FeedbackContext);
+            }
+
             Log("Mining ray hit a non-mineable target.");
             return;
         }
@@ -188,10 +265,12 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
 
         if (!MiningResult.WasAccepted)
         {
+            PlayRejectedMiningFeedback(MiningResult, FeedbackContext);
             LogRejectedMiningResult(MiningResult);
             return;
         }
 
+        PlayAcceptedMiningFeedback(MiningResult, FeedbackContext);
         ApplyAcceptedHitDurabilityCost(MiningRequest.DurabilityCost);
         Log("Mineable target accepted pickaxe hit. Damage: " + MiningResult.DamageApplied + " | Remaining target durability: " + MiningResult.RemainingDurability);
     }
@@ -370,6 +449,74 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
         return PickaxeDefinition != null
             ? PickaxeDefinition.GetMinimumUseInterval()
             : Mathf.Max(0f, FallbackMinimumUseInterval);
+    }
+
+    /// <summary>
+    /// Plays the feedback associated with an accepted mining result.
+    /// </summary>
+    /// <param name="MiningResult">Accepted mining result.</param>
+    /// <param name="FeedbackContext">Runtime feedback context.</param>
+    private void PlayAcceptedMiningFeedback(MiningHitResult MiningResult, GameFeedbackContext FeedbackContext)
+    {
+        if (MiningResult.DidBreak)
+        {
+            if (PlayAcceptedFeedbackOnBreakingHit)
+            {
+                PlayFeedback(GameFeedbackEventIds.MiningAcceptedHit, FeedbackContext);
+            }
+
+            PlayFeedback(GameFeedbackEventIds.MiningBreak, FeedbackContext);
+            return;
+        }
+
+        PlayFeedback(GameFeedbackEventIds.MiningAcceptedHit, FeedbackContext);
+    }
+
+    /// <summary>
+    /// Plays the feedback associated with a rejected mining result.
+    /// </summary>
+    /// <param name="MiningResult">Rejected mining result.</param>
+    /// <param name="FeedbackContext">Runtime feedback context.</param>
+    private void PlayRejectedMiningFeedback(MiningHitResult MiningResult, GameFeedbackContext FeedbackContext)
+    {
+        switch (MiningResult.ResultType)
+        {
+            case MiningHitResultType.InsufficientTier:
+                PlayFeedback(GameFeedbackEventIds.MiningInsufficientTier, FeedbackContext);
+                break;
+
+            case MiningHitResultType.TargetUnavailable:
+                PlayFeedback(GameFeedbackEventIds.MiningTargetUnavailable, FeedbackContext);
+                break;
+
+            case MiningHitResultType.NoDamage:
+                PlayFeedback(GameFeedbackEventIds.MiningNoDamage, FeedbackContext);
+                break;
+
+            default:
+                PlayFeedback(GameFeedbackEventIds.MiningRejectedHit, FeedbackContext);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Routes one gameplay feedback event to the configured generic feedback emitter.
+    /// </summary>
+    /// <param name="EventId">Stable feedback event id.</param>
+    /// <param name="FeedbackContext">Runtime feedback context.</param>
+    private void PlayFeedback(string EventId, GameFeedbackContext FeedbackContext)
+    {
+        if (FeedbackEmitter == null)
+        {
+            ResolveFeedbackEmitter();
+        }
+
+        if (FeedbackEmitter == null)
+        {
+            return;
+        }
+
+        FeedbackEmitter.Play(EventId, FeedbackContext);
     }
 
     /// <summary>
