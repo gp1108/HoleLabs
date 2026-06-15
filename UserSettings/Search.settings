@@ -13,7 +13,7 @@ scopes = {
 	"picker_visibility_flags.00000000" = "0"
 	"picker_item_size.00000000" = "32"
 	"picker_inspector.00000000" = "0"
-	"last_search.66F56946" = "rect se"
+	"last_search.66F56946" = "visual"
 	"OpenInspectorPreview.66F56946" = "0"
 	"currentGroup.66F56946" = "settings"
 }
@@ -96,6 +96,7 @@ objectSelectors = {
 	}
 }
 recentSearches = [
+	"v"
 ]
 searchItemFavorites = [
 ]
