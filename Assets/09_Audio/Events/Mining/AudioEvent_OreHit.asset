@@ -12,12 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 097f058ea4dfc1342a4c1711dd14fbe8, type: 3}
   m_Name: AudioEvent_OreHit
   m_EditorClassIdentifier: Assembly-CSharp::GameAudioEvent
-  Clips: []
+  Clips:
+  - {fileID: 8300000, guid: 16427b6ab3d50674a80a7f43cf185632, type: 3}
   MixerGroup: {fileID: -4126407946397343254, guid: 7aa1a94eb7eb93045ac6df7cd9f363f3, type: 2}
   Volume: 1
   VolumeRandomMultiplierRange: {x: 1, y: 1}
   Pitch: 1
   PitchRandomMultiplierRange: {x: 1, y: 1}
+  PlaybackDelay: 0
   Cooldown: 0
   Priority: 128
   IgnoreListenerPause: 0

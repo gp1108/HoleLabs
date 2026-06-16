@@ -54,6 +54,14 @@ MonoBehaviour:
   ActionStateTag: Action
   WaitUntilAnimatorLeavesActionState: 1
   AutoInstallAnimatorEventRelay: 1
+  PrimaryAnimationVariantParameterName: PrimaryVariant
+  PrimaryAnimationVariantCount: 2
+  RandomizePrimaryAnimationVariant: 1
+  PreventImmediatePrimaryVariantRepeat: 0
+  SecondaryAnimationVariantParameterName: SecondaryVariant
+  SecondaryAnimationVariantCount: 1
+  RandomizeSecondaryAnimationVariant: 0
+  PreventImmediateSecondaryVariantRepeat: 1
   AllowPrimaryHoldRepeat: 1
   AllowSecondaryHoldRepeat: 0
   DebugLogs: 0
@@ -69,6 +77,14 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 2048
   FallbackMinimumUseInterval: 0
+  FeedbackEmitter: {fileID: 0}
+  FallbackFeedbackProfile: {fileID: 0}
+  UseItemDefinitionFeedbackProfile: 1
+  PlayPrimaryStartedFeedback: 1
+  PrimaryStartedFeedbackEventId: Tool.PrimaryStarted
+  PlayMissFeedbackWhenRayHitsNothing: 0
+  PlayNonMineableHitFeedback: 1
+  PlayAcceptedFeedbackOnBreakingHit: 1
   DrawDebugRay: 1
 --- !u!114 &7023119692107028690
 MonoBehaviour:

@@ -136,3 +136,34 @@ MonoBehaviour:
     AudioSelectionMode: 0
     PlayAudioAtWorldPosition: 0
     FeelIntensityMultiplier: 0
+  - EventId: Tool.PrimaryStarted
+    Enabled: 1
+    ParticlePrefabs: []
+    ParticleSelectionMode: 0
+    ParticlePositionOffset: {x: 0, y: 0, z: 0}
+    AlignParticlesToSurfaceNormal: 0
+    ParentParticlesToContextParent: 0
+    ParticleDestroyDelay: 0
+    VisualEffectPrefabs: []
+    VisualEffectSelectionMode: 0
+    VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
+    AlignVisualEffectsToSurfaceNormal: 1
+    ParentVisualEffectsToContextParent: 0
+    ReinitializeVisualEffectsBeforePlay: 1
+    VisualEffectStopDelay: 0.25
+    VisualEffectDestroyDelay: 5
+    DecalPrefabs: []
+    DecalSelectionMode: 1
+    DecalAlignmentMode: 2
+    DecalPositionOffset: {x: 0, y: 0, z: 0}
+    DecalSurfaceOffset: 0.01
+    RandomizeDecalRoll: 1
+    DecalRollMin: 0
+    DecalRollMax: 360
+    ParentDecalsToContextParent: 0
+    DecalDestroyDelay: 15
+    AudioEvents:
+    - {fileID: 11400000, guid: ce12ba84e72bc1b458c4da354d1cbf05, type: 2}
+    AudioSelectionMode: 0
+    PlayAudioAtWorldPosition: 0
+    FeelIntensityMultiplier: 0

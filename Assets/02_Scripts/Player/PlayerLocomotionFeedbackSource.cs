@@ -14,6 +14,9 @@ public sealed class PlayerLocomotionFeedbackSource : MonoBehaviour
     [Tooltip("Player controller used to read grounded state, movement input and motor velocity.")]
     [SerializeField] private PlayerController PlayerController;
 
+    [Tooltip("Input reader used to resolve sprint state for feedback multipliers. If empty, it is resolved from the player hierarchy.")]
+    [SerializeField] private PlayerInputReader PlayerInputReader;
+
     [Header("Activation")]
     [Tooltip("Minimum movement input magnitude required before locomotion feedback can become active.")]
     [SerializeField] private float InputActivationThreshold = 0.1f;
@@ -35,11 +38,21 @@ public sealed class PlayerLocomotionFeedbackSource : MonoBehaviour
     [SerializeField] private float MinimumDeltaTime = 0.0001f;
 
     [Header("Step Phase")]
-    [Tooltip("Base phase frequency used by procedural bob. This is not the same as footstep interval.")]
-    [SerializeField] private float BasePhaseFrequency = 1.8f;
+    [Tooltip("Base phase frequency used by procedural bob. Lower values create slower, heavier item motion.")]
+    [SerializeField] private float BasePhaseFrequency = 1.15f;
 
     [Tooltip("Additional phase frequency multiplier applied at full locomotion intensity.")]
-    [SerializeField] private float FullIntensityPhaseMultiplier = 1.25f;
+    [SerializeField] private float FullIntensityPhaseMultiplier = 1.1f;
+
+    [Header("Stance Multipliers")]
+    [Tooltip("Feedback amplitude multiplier used while walking normally.")]
+    [SerializeField] private float WalkFeedbackMultiplier = 1f;
+
+    [Tooltip("Feedback amplitude multiplier used while sprinting. Values above 1 make bob and footsteps feel stronger.")]
+    [SerializeField] private float SprintFeedbackMultiplier = 1.3f;
+
+    [Tooltip("Feedback amplitude multiplier used while crouching. Values below 1 make bob and footsteps feel softer.")]
+    [SerializeField] private float CrouchFeedbackMultiplier = 0.55f;
 
     [Header("Debug")]
     [Tooltip("Logs locomotion state transitions for debugging.")]
@@ -96,9 +109,61 @@ public sealed class PlayerLocomotionFeedbackSource : MonoBehaviour
     public bool IsLocomotionActive { get; private set; }
 
     /// <summary>
+    /// Whether the player is currently crouching according to the player motor.
+    /// </summary>
+    public bool IsCrouching => PlayerController != null && PlayerController.IsCrouching;
+
+    /// <summary>
+    /// Whether sprint is currently requested and accepted for feedback purposes.
+    /// Crouch overrides sprint because crouched locomotion should remain visually contained.
+    /// </summary>
+    public bool IsSprintingForFeedback => !IsCrouching && PlayerInputReader != null && PlayerInputReader.IsSprintHeld && IsLocomotionActive;
+
+    /// <summary>
+    /// Current stance multiplier used by view bob, footsteps and other locomotion feedback consumers.
+    /// </summary>
+    public float StanceFeedbackMultiplier { get; private set; } = 1f;
+
+    /// <summary>
     /// Resolves references and initializes the position cache.
     /// </summary>
     private void Awake()
+    {
+        ResolveReferences();
+        ResetPositionCache();
+    }
+
+    /// <summary>
+    /// Resets transient motion state when the component becomes active.
+    /// </summary>
+    private void OnEnable()
+    {
+        ResolveReferences();
+        ResetPositionCache();
+        RealHorizontalVelocity = Vector3.zero;
+        RealHorizontalSpeed = 0f;
+        LocomotionIntensity = 0f;
+        TargetLocomotionIntensity = 0f;
+        IsLocomotionActive = false;
+        StanceFeedbackMultiplier = ResolveStanceFeedbackMultiplier();
+    }
+
+    /// <summary>
+    /// Samples player movement after the motor has updated.
+    /// </summary>
+    private void Update()
+    {
+        float DeltaTime = Mathf.Max(Time.deltaTime, MinimumDeltaTime);
+        UpdateRealHorizontalVelocity(DeltaTime);
+        UpdateIntensity(DeltaTime);
+        StanceFeedbackMultiplier = ResolveStanceFeedbackMultiplier();
+        UpdateStepPhase(DeltaTime);
+    }
+
+    /// <summary>
+    /// Resolves required player references from the local hierarchy.
+    /// </summary>
+    private void ResolveReferences()
     {
         if (PlayerController == null)
         {
@@ -110,31 +175,15 @@ public sealed class PlayerLocomotionFeedbackSource : MonoBehaviour
             PlayerController = GetComponentInParent<PlayerController>();
         }
 
-        ResetPositionCache();
-    }
+        if (PlayerInputReader == null)
+        {
+            PlayerInputReader = GetComponent<PlayerInputReader>();
+        }
 
-    /// <summary>
-    /// Resets transient motion state when the component becomes active.
-    /// </summary>
-    private void OnEnable()
-    {
-        ResetPositionCache();
-        RealHorizontalVelocity = Vector3.zero;
-        RealHorizontalSpeed = 0f;
-        LocomotionIntensity = 0f;
-        TargetLocomotionIntensity = 0f;
-        IsLocomotionActive = false;
-    }
-
-    /// <summary>
-    /// Samples player movement after the motor has updated.
-    /// </summary>
-    private void Update()
-    {
-        float DeltaTime = Mathf.Max(Time.deltaTime, MinimumDeltaTime);
-        UpdateRealHorizontalVelocity(DeltaTime);
-        UpdateIntensity(DeltaTime);
-        UpdateStepPhase(DeltaTime);
+        if (PlayerInputReader == null)
+        {
+            PlayerInputReader = GetComponentInParent<PlayerInputReader>();
+        }
     }
 
     /// <summary>
@@ -200,6 +249,25 @@ public sealed class PlayerLocomotionFeedbackSource : MonoBehaviour
             OnLocomotionActiveChanged?.Invoke(IsLocomotionActive);
             Log("Locomotion active changed: " + IsLocomotionActive);
         }
+    }
+
+    /// <summary>
+    /// Resolves the current feedback multiplier from crouch, sprint and walk states.
+    /// </summary>
+    /// <returns>Current stance feedback multiplier.</returns>
+    private float ResolveStanceFeedbackMultiplier()
+    {
+        if (IsCrouching)
+        {
+            return Mathf.Max(0f, CrouchFeedbackMultiplier);
+        }
+
+        if (IsSprintingForFeedback)
+        {
+            return Mathf.Max(0f, SprintFeedbackMultiplier);
+        }
+
+        return Mathf.Max(0f, WalkFeedbackMultiplier);
     }
 
     /// <summary>

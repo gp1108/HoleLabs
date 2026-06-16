@@ -4,6 +4,11 @@
 /// </summary>
 public static class GameFeedbackEventIds
 {
+
+    public const string ToolPrimaryStarted = "Tool.PrimaryStarted";
+    public const string ToolSecondaryStarted = "Tool.SecondaryStarted";
+    public const string ToolPrimaryFinished = "Tool.PrimaryFinished";
+    public const string ToolSecondaryFinished = "Tool.SecondaryFinished";
     public const string MiningAcceptedHit = "Mining.AcceptedHit";
     public const string MiningBreak = "Mining.Break";
     public const string MiningInsufficientTier = "Mining.InsufficientTier";
