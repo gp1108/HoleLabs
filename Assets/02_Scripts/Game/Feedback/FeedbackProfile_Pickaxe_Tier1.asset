@@ -41,7 +41,8 @@ MonoBehaviour:
     DecalRollMax: 360
     ParentDecalsToContextParent: 0
     DecalDestroyDelay: 6
-    AudioEvents: []
+    AudioEvents:
+    - {fileID: 11400000, guid: ce12ba84e72bc1b458c4da354d1cbf05, type: 2}
     AudioSelectionMode: 0
     PlayAudioAtWorldPosition: 0
     FeelIntensityMultiplier: 0
@@ -102,7 +103,8 @@ MonoBehaviour:
     DecalRollMax: 360
     ParentDecalsToContextParent: 0
     DecalDestroyDelay: 15
-    AudioEvents: []
+    AudioEvents:
+    - {fileID: 11400000, guid: d957e0ed4900ad64992b0df2f0fe19ce, type: 2}
     AudioSelectionMode: 0
     PlayAudioAtWorldPosition: 0
     FeelIntensityMultiplier: 0
@@ -163,7 +165,7 @@ MonoBehaviour:
     ParentDecalsToContextParent: 0
     DecalDestroyDelay: 15
     AudioEvents:
-    - {fileID: 11400000, guid: ce12ba84e72bc1b458c4da354d1cbf05, type: 2}
+    - {fileID: 11400000, guid: 4090bbcf5cb9a264dbe56d0bcb804d40, type: 2}
     AudioSelectionMode: 0
     PlayAudioAtWorldPosition: 0
     FeelIntensityMultiplier: 0

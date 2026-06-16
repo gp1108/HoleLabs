@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 097f058ea4dfc1342a4c1711dd14fbe8, type: 3}
-  m_Name: AudioEvent_OreHit
+  m_Name: AudioEvent_PickaxeNonOreHit
   m_EditorClassIdentifier: Assembly-CSharp::GameAudioEvent
   Clips:
-  - {fileID: 8300000, guid: df4c06b59df933b4ca712823f288770b, type: 3}
+  - {fileID: 8300000, guid: 8404968c4431d364a89b1787d2bafa38, type: 3}
   MixerGroup: {fileID: -4126407946397343254, guid: 7aa1a94eb7eb93045ac6df7cd9f363f3, type: 2}
   Volume: 1
   VolumeRandomMultiplierRange: {x: 1, y: 1}
