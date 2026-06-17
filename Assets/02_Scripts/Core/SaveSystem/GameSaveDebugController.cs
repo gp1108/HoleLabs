@@ -415,19 +415,26 @@ public sealed class GameSaveDebugController : MonoBehaviour
     {
         [SerializeField] private string SourcePrefabName;
         [SerializeField] private OreItemDataSaveData OreData;
+        [SerializeField] private string ScannerInstanceId;
         [SerializeField] private Vector3 Position;
         [SerializeField] private Quaternion Rotation;
 
-        public OrePickupState(string SourcePrefabNameValue, OreItemDataSaveData OreDataValue, Vector3 PositionValue, Quaternion RotationValue)
+        /// <summary>
+        /// Creates a serializable save state for one physical ore pickup.
+        /// The scanner instance id is stored only to preserve per-pickup scan knowledge when the pickup itself persists across save/load.
+        /// </summary>
+        public OrePickupState(string SourcePrefabNameValue, OreItemDataSaveData OreDataValue, string ScannerInstanceIdValue, Vector3 PositionValue, Quaternion RotationValue)
         {
             SourcePrefabName = SourcePrefabNameValue;
             OreData = OreDataValue;
+            ScannerInstanceId = ScannerInstanceIdValue;
             Position = PositionValue;
             Rotation = RotationValue;
         }
 
         public string GetSourcePrefabName() => SourcePrefabName;
         public OreItemDataSaveData GetOreData() => OreData;
+        public string GetScannerInstanceId() => ScannerInstanceId;
         public Vector3 GetPosition() => Position;
         public Quaternion GetRotation() => Rotation;
     }
@@ -485,8 +492,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
         [SerializeField] private ResearchRuntimeService.ResearchRuntimeSaveData ResearchRuntime;
 
+        [Tooltip("Global scanner knowledge state. This keeps discovered ore types independent from any specific scanner item instance.")]
+        [SerializeField] private ScannerRuntimeService.ScannerRuntimeSaveData ScannerRuntime;
+
         public ResearchRuntimeService.ResearchRuntimeSaveData GetResearchRuntime() => ResearchRuntime;
         public void SetResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData Value) => ResearchRuntime = Value;
+
+        public ScannerRuntimeService.ScannerRuntimeSaveData GetScannerRuntime() => ScannerRuntime;
+        public void SetScannerRuntime(ScannerRuntimeService.ScannerRuntimeSaveData Value) => ScannerRuntime = Value;
 
         public List<DrillPlacementSpotState> GetDrillPlacementSpots() => DrillPlacementSpots;
         public void SetDrillPlacementSpots(List<DrillPlacementSpotState> Value) => DrillPlacementSpots = Value ?? new List<DrillPlacementSpotState>();
@@ -541,6 +554,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
     [Tooltip("Global research runtime service restored from save. This should live in the scene independently from any placed researcher machine.")]
     [SerializeField] private ResearchRuntimeService ResearchRuntimeServiceReference;
+
+    [Tooltip("Global scanner runtime service restored from save. This stores ore discovery knowledge independently from scanner item instances.")]
+    [SerializeField] private ScannerRuntimeService ScannerRuntimeServiceReference;
 
     [Tooltip("Authoritative elevator motor restored from save.")]
     [SerializeField] private ElevatorPhysicalMotor ElevatorPhysicalMotor;
@@ -622,6 +638,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (ResearchRuntimeServiceReference == null)
         {
             ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
         }
 
         if (ElevatorPhysicalMotor == null)
@@ -1061,6 +1082,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetDrillPlacementSpots(CaptureDrillPlacementSpots());
         Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
         Data.SetResearchRuntime(CaptureResearchRuntime());
+        Data.SetScannerRuntime(CaptureScannerRuntime());
 
         return Data;
     }
@@ -1123,6 +1145,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreRuntimeWorldItems(Data.GetRuntimeWorldItems());
         RestoreMoneyPickups(Data.GetMoneyPickups());
         RestoreOrePickups(Data.GetOrePickups());
+        RestoreScannerRuntime(Data.GetScannerRuntime());
         RestoreResearchRuntime(Data.GetResearchRuntime());
         RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
         RebuildLookupCaches();
@@ -1199,6 +1222,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (ResearchRuntimeServiceReference == null)
         {
             ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
         }
 
         ItemDefinitionsById.Clear();
@@ -1510,6 +1538,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             Result.Add(new OrePickupState(
                 SourcePrefabName,
                 OreData,
+                Pickup.GetScannerInstanceId(),
                 Pickup.GetRuntimeRoot().position,
                 Pickup.GetRuntimeRoot().rotation));
         }
@@ -1774,6 +1803,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             Pickup.Initialize(RuntimeOreData);
+            Pickup.SetScannerInstanceId(State.GetScannerInstanceId());
 
             Rigidbody RigidbodyComponent = Pickup.GetComponent<Rigidbody>();
             if (RigidbodyComponent == null)
@@ -2055,6 +2085,41 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         ResearchRuntimeServiceReference.ApplySaveState(RuntimeState);
+    }
+
+    /// <summary>
+    /// Captures the global scanner runtime knowledge state.
+    /// </summary>
+    private ScannerRuntimeService.ScannerRuntimeSaveData CaptureScannerRuntime()
+    {
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
+        }
+
+        return ScannerRuntimeServiceReference != null
+            ? ScannerRuntimeServiceReference.CreateSaveSnapshot()
+            : new ScannerRuntimeService.ScannerRuntimeSaveData();
+    }
+
+    /// <summary>
+    /// Restores the global scanner runtime knowledge state.
+    /// </summary>
+    /// <param name="RuntimeState">Saved global scanner state.</param>
+    private void RestoreScannerRuntime(ScannerRuntimeService.ScannerRuntimeSaveData RuntimeState)
+    {
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
+        }
+
+        if (ScannerRuntimeServiceReference == null)
+        {
+            Log("Scanner runtime service was not found. Scanner knowledge cannot be restored.");
+            return;
+        }
+
+        ScannerRuntimeServiceReference.ApplySaveState(RuntimeState);
     }
 
     /// <summary>

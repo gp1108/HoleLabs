@@ -5,7 +5,7 @@ using UnityEngine;
 /// Equipped scanner tool that scans ore veins or dropped ore pickups while the primary input is held.
 /// Secondary input controls a smooth visual zoom pose of the scanner independently from scanning.
 /// Losing sight of the current scan target immediately cancels the active scan attempt.
-/// Previously scanned targets are cached and can be displayed instantly while their runtime identity remains valid.
+/// Previously scanned knowledge is stored by ScannerRuntimeService so discovered ore types survive item swaps, dropped scanners and save/load.
 /// </summary>
 public sealed class ScannerItemBehaviour : EquippedItemBehaviour
 {
@@ -56,6 +56,9 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     [Tooltip("Upgrade manager used to resolve scanner stats and unlocks.")]
     [SerializeField] private UpgradeManager UpgradeManager;
 
+    [Tooltip("Global scanner runtime service used to store discovered ore types and scanned ore instances outside this equipped item.")]
+    [SerializeField] private ScannerRuntimeService ScannerRuntimeServiceReference;
+
     [Header("Scanner")]
     [Tooltip("Base scan distance before scanner range upgrades are applied.")]
     [SerializeField] private float BaseScanDistance = 5f;
@@ -73,6 +76,8 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     [Tooltip("Feature flag required to show dropped ore credit value.")]
     [SerializeField] private string OreCreditUnlockId = "Scanner.Unlock.CreditValue";
 
+    [Tooltip("Legacy feature flag kept only to preserve serialized data during migration. Research value is no longer displayed.")]
+    [SerializeField, HideInInspector] private string OreResearchUnlockId = "Scanner.Unlock.ResearchValue";
 
     [Tooltip("Feature flag required to show dropped ore purity.")]
     [SerializeField] private string OrePurityUnlockId = "Scanner.Unlock.Purity";
@@ -146,8 +151,8 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     private bool HasCompletedCurrentScan;
 
     /// <summary>
-    /// Cache of already scanned runtime identities.
-    /// Value is unused because only membership matters.
+    /// Local fallback cache used only when no ScannerRuntimeService exists in the scene.
+    /// The authoritative scanner knowledge should live in ScannerRuntimeService.
     /// </summary>
     private readonly HashSet<ScanCacheKey> CachedScans = new();
 
@@ -164,6 +169,8 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         {
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
         }
+
+        ResolveScannerRuntimeService(true);
 
         if (ItemAnimator == null)
         {
@@ -312,13 +319,13 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
 
         ScanCacheKey CurrentCacheKey = BuildCacheKey(ResolvedTarget);
 
-        if (IsTargetCached(CurrentCacheKey))
+        if (IsTargetKnown(ResolvedTarget, CurrentCacheKey))
         {
             if (!HasCompletedCurrentScan)
             {
                 HasCompletedCurrentScan = true;
                 ShowResolvedTargetResult(ResolvedTarget);
-                Log("Displayed cached scan result instantly for target: " + ResolvedTarget.GetDisplayTargetLabel());
+                Log("Displayed known scan result instantly for target: " + ResolvedTarget.GetDisplayTargetLabel());
             }
 
             return;
@@ -366,6 +373,7 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     {
         HasCompletedCurrentScan = true;
         CachedScans.Add(CurrentCacheKey);
+        RegisterCompletedScan(ResolvedTarget);
         ShowResolvedTargetResult(ResolvedTarget);
     }
 
@@ -413,6 +421,7 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         {
             ScannerDisplayUI.ShowVeinResult(
                 OreDefinition.GetDisplayName(),
+                OreDefinition.GetRequiredMiningTier(),
                 IsFeatureUnlocked(VeinDropRangeUnlockId),
                 OreDefinition.GetBaseDropCountMin(),
                 OreDefinition.GetBaseDropCountMax());
@@ -442,6 +451,7 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
 
         string MineralType = OreItemData.GetOreDefinition().GetDisplayName();
         float CreditValue = OreItemData.GetCreditValue();
+        float LegacyResearchValue = 0f;
         float Purity = OreItemData.GetPropertyValue(OrePropertyType.Purity, 0f);
         float Size = OreItemData.GetPropertyValue(OrePropertyType.Size, 0f);
         float Weight = OreItemData.GetWeightValue();
@@ -450,8 +460,11 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         {
             ScannerDisplayUI.ShowOreResult(
                 MineralType,
+                OreItemData.GetOreDefinition().GetRequiredMiningTier(),
                 IsFeatureUnlocked(OreCreditUnlockId),
                 CreditValue,
+                false,
+                LegacyResearchValue,
                 IsFeatureUnlocked(OrePurityUnlockId),
                 Purity,
                 IsFeatureUnlocked(OreSizeUnlockId),
@@ -664,6 +677,61 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
     }
 
     /// <summary>
+    /// Returns whether the resolved target is known by the global scanner runtime service or by the local fallback cache.
+    /// Veins become known globally by ore definition. Dropped ores require their exact physical instance to be scanned.
+    /// </summary>
+    private bool IsTargetKnown(ResolvedScannerTarget ResolvedTarget, ScanCacheKey CacheKey)
+    {
+        ResolveScannerRuntimeService(false);
+
+        if (ScannerRuntimeServiceReference != null)
+        {
+            switch (ResolvedTarget.TargetType)
+            {
+                case ScannerTargetType.Vein:
+                    return ResolvedTarget.OreVein != null &&
+                           ScannerRuntimeServiceReference.IsOreDefinitionDiscovered(ResolvedTarget.OreVein.GetOreDefinition());
+
+                case ScannerTargetType.DroppedOre:
+                    return ResolvedTarget.OrePickup != null &&
+                           ScannerRuntimeServiceReference.IsOrePickupScanned(ResolvedTarget.OrePickup);
+            }
+        }
+
+        return IsTargetCached(CacheKey);
+    }
+
+    /// <summary>
+    /// Registers a completed scan into the global scanner runtime service.
+    /// </summary>
+    private void RegisterCompletedScan(ResolvedScannerTarget ResolvedTarget)
+    {
+        ResolveScannerRuntimeService(false);
+
+        if (ScannerRuntimeServiceReference == null)
+        {
+            return;
+        }
+
+        switch (ResolvedTarget.TargetType)
+        {
+            case ScannerTargetType.Vein:
+                if (ResolvedTarget.OreVein != null)
+                {
+                    ScannerRuntimeServiceReference.DiscoverOreDefinition(ResolvedTarget.OreVein.GetOreDefinition());
+                }
+                break;
+
+            case ScannerTargetType.DroppedOre:
+                if (ResolvedTarget.OrePickup != null)
+                {
+                    ScannerRuntimeServiceReference.MarkOrePickupScanned(ResolvedTarget.OrePickup);
+                }
+                break;
+        }
+    }
+
+    /// <summary>
     /// Returns the final scan distance after applying upgrades.
     /// </summary>
     private float GetResolvedScanDistance()
@@ -702,6 +770,25 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         }
 
         return UpgradeManager != null && UpgradeManager.IsFeatureUnlocked(FeatureId);
+    }
+
+    /// <summary>
+    /// Resolves the global scanner runtime service used to persist scanner knowledge.
+    /// </summary>
+    /// <param name="ForceRefresh">True to force a scene lookup even when a reference already exists.</param>
+    private void ResolveScannerRuntimeService(bool ForceRefresh)
+    {
+        if (!ForceRefresh && ScannerRuntimeServiceReference != null)
+        {
+            return;
+        }
+
+        ScannerRuntimeServiceReference = ScannerRuntimeService.Instance;
+
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
+        }
     }
 
     /// <summary>
