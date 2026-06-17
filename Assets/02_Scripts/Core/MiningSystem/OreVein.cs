@@ -21,7 +21,38 @@ public sealed class OreVein : MonoBehaviour, IMineable
     [Tooltip("Optional explicit world point used as the preferred ore drop origin. If empty, this transform is used.")]
     [SerializeField] private Transform DropOrigin;
 
-    [Header("Feel Feedbacks")]
+    [Header("Game Feedback")]
+    [Tooltip("Generic feedback emitter used by this vein to play ore-specific particles, VFX, decals, audio and Feel bindings.")]
+    [SerializeField] private GameFeedbackEmitter FeedbackEmitter;
+
+    [Tooltip("If true, this vein emits generic ore feedback events in addition to any direct Feel players still assigned below.")]
+    [SerializeField] private bool UseGameFeedback = true;
+
+    [Tooltip("Event played when this vein accepts mining damage but does not break.")]
+    [SerializeField] private string OreHitEventId = GameFeedbackEventIds.OreHit;
+
+    [Tooltip("Event played when this vein breaks and starts regrowing.")]
+    [SerializeField] private string OreBreakEventId = GameFeedbackEventIds.OreBreak;
+
+    [Tooltip("Event played when a mining hit is rejected because the source tier is too low.")]
+    [SerializeField] private string OreInsufficientTierEventId = GameFeedbackEventIds.OreInsufficientTier;
+
+    [Tooltip("Event played when this vein cannot accept mining because it is unavailable or missing runtime data.")]
+    [SerializeField] private string OreTargetUnavailableEventId = GameFeedbackEventIds.OreTargetUnavailable;
+
+    [Tooltip("Event played when a mining request reaches the vein but carries no usable damage.")]
+    [SerializeField] private string OreNoDamageEventId = GameFeedbackEventIds.OreNoDamage;
+
+    [Tooltip("Event played when this vein finishes regrowing and becomes mineable again.")]
+    [SerializeField] private string OreRegrownEventId = GameFeedbackEventIds.OreRegrown;
+
+    [Tooltip("If true, the regular ore hit feedback also plays on the final hit that breaks the vein.")]
+    [SerializeField] private bool PlayOreHitFeedbackOnBreakingHit = false;
+
+    [Tooltip("If true, the emitter is resolved from this GameObject when it is not assigned manually.")]
+    [SerializeField] private bool AutoResolveFeedbackEmitter = true;
+
+    [Header("Direct Feel Feedbacks")]
     [Tooltip("Feel player triggered every time this vein accepts a mining hit.")]
     [SerializeField] private MMF_Player HitFeedbacks;
 
@@ -40,7 +71,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
     [Tooltip("Intensity passed to the rejected hit feedback player.")]
     [SerializeField] private float RejectedHitFeedbackIntensity = 1f;
 
-    [Tooltip("If true, the regular hit feedback also plays on the final hit that breaks the vein.")]
+    [Tooltip("If true, the direct Feel hit feedback also plays on the final hit that breaks the vein.")]
     [SerializeField] private bool PlayHitFeedbackOnBreakingHit = true;
 
     [Header("Regrowth")]
@@ -244,6 +275,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
             VisualRoot = transform;
         }
 
+        ResolveFeedbackEmitter();
         ResetReadyState();
     }
 
@@ -286,6 +318,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
     {
         if (CurrentState != VeinState.Ready || OreDefinition == null || OreRuntimeService == null)
         {
+            PlayOreGameFeedback(OreTargetUnavailableEventId, MiningRequest.HitContext, 1f);
             return MiningHitResult.TargetUnavailable();
         }
 
@@ -293,6 +326,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         if ((int)MiningRequest.MiningTier < (int)RequiredTier)
         {
+            PlayOreGameFeedback(OreInsufficientTierEventId, MiningRequest.HitContext, 1f);
             PlayRejectedHitFeedback(MiningRequest.HitContext);
             Log("Mining hit rejected. Required tier: " + RequiredTier + " | Source tier: " + MiningRequest.MiningTier);
             return MiningHitResult.InsufficientTier(RequiredTier, MiningRequest.MiningTier, CurrentMiningDurabilityRemaining);
@@ -302,6 +336,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
         if (DamageToApply <= 0)
         {
+            PlayOreGameFeedback(OreNoDamageEventId, MiningRequest.HitContext, 1f);
             return MiningHitResult.NoDamage(CurrentMiningDurabilityRemaining);
         }
 
@@ -310,6 +345,11 @@ public sealed class OreVein : MonoBehaviour, IMineable
         CurrentMiningDurabilityRemaining -= DamageToApply;
 
         bool IsBreakingHit = CurrentMiningDurabilityRemaining <= 0;
+
+        if (PlayOreHitFeedbackOnBreakingHit || !IsBreakingHit)
+        {
+            PlayOreGameFeedback(OreHitEventId, MiningRequest.HitContext, 1f);
+        }
 
         if (PlayHitFeedbackOnBreakingHit || !IsBreakingHit)
         {
@@ -341,6 +381,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// </summary>
     private void BreakVein()
     {
+        PlayOreGameFeedback(OreBreakEventId, LastMiningHitContext, 1f);
         PlayBreakFeedback(LastMiningHitContext);
 
         int DropCount = OreRuntimeService.ResolveDropCount(OreDefinition);
@@ -586,6 +627,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// </summary>
     private void ResetReadyState()
     {
+        bool WasGrowing = CurrentState == VeinState.Growing;
+
         CurrentState = VeinState.Ready;
         CurrentRespawnTimer = 0f;
         CurrentMiningDurabilityRemaining = OreRuntimeService != null && OreDefinition != null
@@ -593,6 +636,12 @@ public sealed class OreVein : MonoBehaviour, IMineable
             : 1;
 
         UpdateGrowthVisual(1f);
+
+        if (WasGrowing)
+        {
+            PlayOreGameFeedback(OreRegrownEventId, MiningHitContext.CreateUnknown(), 1f);
+        }
+
         Log("Ore vein is ready again.");
     }
 
@@ -610,6 +659,72 @@ public sealed class OreVein : MonoBehaviour, IMineable
         float ClampedProgress = Mathf.Clamp01(NormalizedProgress);
         float ScaleMultiplier = Mathf.Lerp(MinimumGrowthScale, 1f, ClampedProgress);
         VisualRoot.localScale = Vector3.one * ScaleMultiplier;
+    }
+
+    /// <summary>
+    /// Resolves the generic feedback emitter used by this ore vein.
+    /// </summary>
+    private void ResolveFeedbackEmitter()
+    {
+        if (FeedbackEmitter != null || !AutoResolveFeedbackEmitter)
+        {
+            return;
+        }
+
+        FeedbackEmitter = GetComponent<GameFeedbackEmitter>();
+
+        if (FeedbackEmitter == null)
+        {
+            FeedbackEmitter = GetComponentInChildren<GameFeedbackEmitter>(true);
+        }
+    }
+
+    /// <summary>
+    /// Plays one generic ore feedback event using the mining context as world placement data.
+    /// </summary>
+    /// <param name="EventId">Stable feedback event id to play.</param>
+    /// <param name="HitContext">Mining context that caused the feedback.</param>
+    /// <param name="Intensity">Feedback intensity multiplier.</param>
+    private void PlayOreGameFeedback(string EventId, MiningHitContext HitContext, float Intensity)
+    {
+        if (!UseGameFeedback || string.IsNullOrWhiteSpace(EventId))
+        {
+            return;
+        }
+
+        ResolveFeedbackEmitter();
+
+        if (FeedbackEmitter == null)
+        {
+            return;
+        }
+
+        FeedbackEmitter.Play(EventId, CreateOreFeedbackContext(HitContext, Intensity));
+    }
+
+    /// <summary>
+    /// Creates a generic feedback context from a mining hit context.
+    /// </summary>
+    /// <param name="HitContext">Mining context that may contain hit point and normal.</param>
+    /// <param name="Intensity">Feedback intensity multiplier.</param>
+    /// <returns>Generic feedback context for this ore vein.</returns>
+    private GameFeedbackContext CreateOreFeedbackContext(MiningHitContext HitContext, float Intensity)
+    {
+        Transform SourceTransform = HitContext.SourceObject != null ? HitContext.SourceObject.transform : null;
+        Vector3 FeedbackPosition = HitContext.GetFeedbackPosition(transform.position);
+        bool HasPosition = HitContext.HasWorldPoint || transform != null;
+        bool HasNormal = HitContext.HasWorldPoint && HitContext.WorldNormal.sqrMagnitude > 0.0001f;
+        Vector3 FeedbackNormal = HasNormal ? HitContext.WorldNormal : transform.up;
+
+        return new GameFeedbackContext(
+            HasPosition,
+            FeedbackPosition,
+            HasNormal,
+            FeedbackNormal,
+            SourceTransform,
+            transform,
+            transform,
+            Mathf.Max(0f, Intensity));
     }
 
     /// <summary>

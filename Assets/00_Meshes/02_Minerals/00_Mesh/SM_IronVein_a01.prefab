@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 6937154290566520859}
   - component: {fileID: 5749706200457758408}
   - component: {fileID: 8983510467771780466}
+  - component: {fileID: -1693902601774238312}
   m_Layer: 11
   m_Name: SM_IronVein_a01
   m_TagString: Untagged
@@ -127,8 +128,51 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OreVein
   VisualRoot: {fileID: 2432426371778492963}
+  DropOrigin: {fileID: 0}
+  FeedbackEmitter: {fileID: -1693902601774238312}
+  UseGameFeedback: 1
+  OreHitEventId: Ore.Hit
+  OreBreakEventId: Ore.Break
+  OreInsufficientTierEventId: Ore.InsufficientTier
+  OreTargetUnavailableEventId: Ore.TargetUnavailable
+  OreNoDamageEventId: Ore.NoDamage
+  OreRegrownEventId: Ore.Regrown
+  PlayOreHitFeedbackOnBreakingHit: 0
+  AutoResolveFeedbackEmitter: 1
+  HitFeedbacks: {fileID: 0}
+  BreakFeedbacks: {fileID: 0}
+  RejectedHitFeedbacks: {fileID: 0}
+  HitFeedbackIntensity: 1
+  BreakFeedbackIntensity: 1
+  RejectedHitFeedbackIntensity: 1
+  PlayHitFeedbackOnBreakingHit: 1
   MinimumGrowthScale: 0.05
   AnimateGrowth: 1
   DropScatterRadius: 0.45
   DropVerticalOffset: 0.2
+  SpawnClearanceRadius: 0.2
+  MaxSpawnAttemptsPerDrop: 12
+  SpawnRadiusStep: 0.18
+  SpawnHeightStep: 0.12
+  DropVerticalJitter: 0.08
+  RandomizeYawRotation: 1
+  RandomizeTiltRotation: 1
+  MaxRandomPitch: 12
+  MaxRandomRoll: 12
   DebugLogs: 0
+--- !u!114 &-1693902601774238312
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8730402574253964879}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1abad1dca9e5a8f4a87ce98a2bbae4f4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GameFeedbackEmitter
+  FeedbackProfile: {fileID: 11400000, guid: f5fa0be9838a06e418ab8452280f8509, type: 2}
+  FallbackFeedbackRoot: {fileID: 2432426371778492963}
+  LocalBindings: []
+  DebugLogs: 1

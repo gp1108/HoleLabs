@@ -18,6 +18,14 @@ public static class GameFeedbackEventIds
     public const string MiningNonMineableHit = "Mining.NonMineableHit";
     public const string MiningMiss = "Mining.Miss";
 
+
+    public const string OreHit = "Ore.Hit";
+    public const string OreBreak = "Ore.Break";
+    public const string OreInsufficientTier = "Ore.InsufficientTier";
+    public const string OreTargetUnavailable = "Ore.TargetUnavailable";
+    public const string OreNoDamage = "Ore.NoDamage";
+    public const string OreRegrown = "Ore.Regrown";
+
     public const string MachineProcessStarted = "Machine.ProcessStarted";
     public const string MachineProcessTick = "Machine.ProcessTick";
     public const string MachineProcessCompleted = "Machine.ProcessCompleted";
