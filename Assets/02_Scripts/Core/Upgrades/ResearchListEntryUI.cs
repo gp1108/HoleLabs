@@ -7,6 +7,7 @@ using UnityEngine.UI;
 /// <summary>
 /// Manual UI entry used to display and activate one research definition.
 /// Ore progress is processed by the owning ResearchStation while the research is active.
+/// Unknown ore requirements are resolved through scanner knowledge before activation is allowed.
 /// </summary>
 public sealed class ResearchListEntryUI : MonoBehaviour
 {
@@ -39,6 +40,20 @@ public sealed class ResearchListEntryUI : MonoBehaviour
     [Tooltip("Optional text label inside the activate button.")]
     [SerializeField] private TMP_Text ActivateButtonText;
 
+    [Header("Unknown Requirements")]
+    [Tooltip("Label shown when an ore requirement references an ore type that has not been discovered by the scanner yet.")]
+    [SerializeField] private string UnknownOreRequirementLabel = "???";
+
+    [Tooltip("If true, undiscovered ore requirements hide their required amount and filters. If false, only the ore name is hidden.")]
+    [SerializeField] private bool HideUnknownOreRequirementDetails = true;
+
+    [Tooltip("If true, descriptions are replaced by Locked Description when the research is hard-locked by feature flags or prerequisites.")]
+    [SerializeField] private bool HideDescriptionWhenHardLocked = false;
+
+    [Tooltip("Description text shown while Hide Description When Hard Locked is true and this research is hard-locked.")]
+    [TextArea]
+    [SerializeField] private string LockedDescription = "Locked research.";
+
     [Header("Colors")]
     [Tooltip("Color used when research can be activated.")]
     [SerializeField] private Color AvailableColor = Color.white;
@@ -51,6 +66,15 @@ public sealed class ResearchListEntryUI : MonoBehaviour
 
     [Tooltip("Color used when research is already completed.")]
     [SerializeField] private Color CompletedColor = new Color(0.55f, 1f, 0.55f, 1f);
+
+    [Tooltip("Color used for unknown ore requirements shown as question marks.")]
+    [SerializeField] private Color UnknownRequirementColor = new Color(1f, 0.25f, 0.25f, 1f);
+
+    [Tooltip("Color used for known but incomplete ore or credit requirements.")]
+    [SerializeField] private Color MissingRequirementColor = new Color(1f, 0.45f, 0.45f, 1f);
+
+    [Tooltip("Color used for completed ore requirements.")]
+    [SerializeField] private Color CompletedRequirementColor = new Color(0.55f, 1f, 0.55f, 1f);
 
     /// <summary>
     /// Station used to execute research activation.
@@ -65,6 +89,7 @@ public sealed class ResearchListEntryUI : MonoBehaviour
     /// <summary>
     /// Initializes this entry with the owning research station.
     /// </summary>
+    /// <param name="Station">Research station that owns this entry.</param>
     public void Initialize(ResearchStation Station)
     {
         OwnerStation = Station;
@@ -73,6 +98,8 @@ public sealed class ResearchListEntryUI : MonoBehaviour
         {
             OwnerStation.RegisterResearchDefinition(ResearchDefinition);
         }
+
+        EnableRichText();
 
         if (ActivateButton != null)
         {
@@ -101,6 +128,8 @@ public sealed class ResearchListEntryUI : MonoBehaviour
             return;
         }
 
+        EnableRichText();
+
         ResearchRuntimeService.ResearchBlockReason BlockReason = OwnerStation != null
             ? OwnerStation.GetResearchBlockReason(ResearchDefinition)
             : ResearchRuntimeService.ResearchBlockReason.MissingResearch;
@@ -127,12 +156,12 @@ public sealed class ResearchListEntryUI : MonoBehaviour
 
         if (DescriptionText != null)
         {
-            DescriptionText.text = ResearchDefinition.GetDescription();
+            DescriptionText.text = ResolveDescriptionText(BlockReason);
         }
 
         if (CreditCostText != null)
         {
-            CreditCostText.text = "Activation Cost: " + ResearchDefinition.GetCreditCost().ToString("0.00") + " C";
+            CreditCostText.text = BuildCreditCostText(BlockReason, ViewState);
         }
 
         if (OreRequirementsText != null)
@@ -172,7 +201,25 @@ public sealed class ResearchListEntryUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Builds the ore requirement text using processed station progress.
+    /// Builds the credit cost label, coloring it when credits are the current blocker.
+    /// </summary>
+    /// <param name="BlockReason">Current activation block reason.</param>
+    /// <param name="ViewState">Current research view state.</param>
+    private string BuildCreditCostText(ResearchRuntimeService.ResearchBlockReason BlockReason, ResearchRuntimeService.ResearchViewState ViewState)
+    {
+        if (ViewState == ResearchRuntimeService.ResearchViewState.Active ||
+            ViewState == ResearchRuntimeService.ResearchViewState.PaidInactive ||
+            ViewState == ResearchRuntimeService.ResearchViewState.Completed)
+        {
+            return "Activation Cost: Paid";
+        }
+
+        string Label = "Activation Cost: " + ResearchDefinition.GetCreditCost().ToString("0.00") + " C";
+        return BlockReason == ResearchRuntimeService.ResearchBlockReason.NotEnoughCredits ? Colorize(Label, MissingRequirementColor) : Label;
+    }
+
+    /// <summary>
+    /// Builds the ore requirement text using processed station progress and scanner discovery state.
     /// </summary>
     private string BuildOreRequirementsText()
     {
@@ -194,17 +241,58 @@ public sealed class ResearchListEntryUI : MonoBehaviour
         for (int Index = 0; Index < ProgressEntries.Count; Index++)
         {
             ResearchRuntimeService.OreRequirementProgress Progress = ProgressEntries[Index];
-            string OreLabel = Progress.Requirement != null ? Progress.Requirement.BuildDisplayRequirementLabel() : "Missing Ore";
+            ResearchDefinition.OreRequirement Requirement = Progress.Requirement;
+            bool IsRequirementKnown = OwnerStation.IsOreRequirementDiscovered(Requirement);
+            bool IsRequirementSatisfied = Progress.IsSatisfied();
 
             RequirementsBuilder.Append('\n');
-            RequirementsBuilder.Append(OreLabel);
-            RequirementsBuilder.Append(" -> ");
-            RequirementsBuilder.Append(Progress.ProcessedAmount);
-            RequirementsBuilder.Append("/");
-            RequirementsBuilder.Append(Progress.RequiredAmount);
+
+            if (!IsRequirementKnown)
+            {
+                RequirementsBuilder.Append(BuildUnknownRequirementText(Progress));
+                continue;
+            }
+
+            string OreLabel = Requirement != null ? Requirement.BuildDisplayRequirementLabel() : "Missing Ore";
+            string ProgressLabel = Progress.ProcessedAmount + "/" + Progress.RequiredAmount;
+            string FullLabel = OreLabel + " -> " + ProgressLabel;
+
+            RequirementsBuilder.Append(IsRequirementSatisfied
+                ? Colorize(FullLabel, CompletedRequirementColor)
+                : Colorize(FullLabel, MissingRequirementColor));
         }
 
         return RequirementsBuilder.ToString();
+    }
+
+    /// <summary>
+    /// Builds the hidden label shown for one undiscovered ore requirement.
+    /// </summary>
+    /// <param name="Progress">Progress entry associated with the hidden requirement.</param>
+    private string BuildUnknownRequirementText(ResearchRuntimeService.OreRequirementProgress Progress)
+    {
+        string SafeLabel = string.IsNullOrWhiteSpace(UnknownOreRequirementLabel) ? "???" : UnknownOreRequirementLabel;
+
+        if (HideUnknownOreRequirementDetails)
+        {
+            return Colorize(SafeLabel, UnknownRequirementColor);
+        }
+
+        return Colorize(SafeLabel + " x" + Progress.RequiredAmount, UnknownRequirementColor);
+    }
+
+    /// <summary>
+    /// Resolves the description text, optionally hiding it for hard-locked research entries.
+    /// </summary>
+    /// <param name="BlockReason">Current activation block reason.</param>
+    private string ResolveDescriptionText(ResearchRuntimeService.ResearchBlockReason BlockReason)
+    {
+        if (HideDescriptionWhenHardLocked && IsHardLockedByProgression(BlockReason))
+        {
+            return string.IsNullOrWhiteSpace(LockedDescription) ? "Locked research." : LockedDescription;
+        }
+
+        return ResearchDefinition.GetDescription();
     }
 
     /// <summary>
@@ -228,6 +316,10 @@ public sealed class ResearchListEntryUI : MonoBehaviour
         {
             case ResearchRuntimeService.ResearchBlockReason.NotEnoughCredits:
                 return "Not enough credits";
+            case ResearchRuntimeService.ResearchBlockReason.MissingDiscoveredOreRequirement:
+                return "Unknown requirement";
+            case ResearchRuntimeService.ResearchBlockReason.MissingScannerRuntimeService:
+                return "Missing scanner service";
             case ResearchRuntimeService.ResearchBlockReason.MissingFeatureFlag:
                 return "Locked";
             case ResearchRuntimeService.ResearchBlockReason.MissingPrerequisite:
@@ -263,6 +355,43 @@ public sealed class ResearchListEntryUI : MonoBehaviour
                 return CanActivate ? AvailableColor : BlockedColor;
             default:
                 return BlockedColor;
+        }
+    }
+
+    /// <summary>
+    /// Returns whether a block reason should hide the full description when configured to do so.
+    /// </summary>
+    /// <param name="BlockReason">Activation block reason to evaluate.</param>
+    private bool IsHardLockedByProgression(ResearchRuntimeService.ResearchBlockReason BlockReason)
+    {
+        return BlockReason == ResearchRuntimeService.ResearchBlockReason.MissingFeatureFlag ||
+               BlockReason == ResearchRuntimeService.ResearchBlockReason.MissingPrerequisite;
+    }
+
+    /// <summary>
+    /// Wraps text in a TMP rich text color tag.
+    /// </summary>
+    /// <param name="Text">Text to wrap.</param>
+    /// <param name="ColorValue">Color to apply.</param>
+    private string Colorize(string Text, Color ColorValue)
+    {
+        string Hex = ColorUtility.ToHtmlStringRGBA(ColorValue);
+        return "<color=#" + Hex + ">" + Text + "</color>";
+    }
+
+    /// <summary>
+    /// Ensures optional TMP fields can render colored requirement labels.
+    /// </summary>
+    private void EnableRichText()
+    {
+        if (CreditCostText != null)
+        {
+            CreditCostText.richText = true;
+        }
+
+        if (OreRequirementsText != null)
+        {
+            OreRequirementsText.richText = true;
         }
     }
 }

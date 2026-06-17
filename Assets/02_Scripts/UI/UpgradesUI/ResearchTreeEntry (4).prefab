@@ -1067,10 +1067,17 @@ MonoBehaviour:
   StateText: {fileID: 6776400806579346032}
   ActivateButton: {fileID: 6332407027384244982}
   ActivateButtonText: {fileID: 653289047879700042}
+  UnknownOreRequirementLabel: ???
+  HideUnknownOreRequirementDetails: 1
+  HideDescriptionWhenHardLocked: 1
+  LockedDescription: Locked research.
   AvailableColor: {r: 1, g: 1, b: 1, a: 1}
   BlockedColor: {r: 1, g: 0.55, b: 0.55, a: 1}
   ActiveColor: {r: 0.55, g: 0.75, b: 1, a: 1}
   CompletedColor: {r: 0.55, g: 1, b: 0.55, a: 1}
+  UnknownRequirementColor: {r: 1, g: 0.25, b: 0.25, a: 1}
+  MissingRequirementColor: {r: 1, g: 0.45, b: 0.45, a: 1}
+  CompletedRequirementColor: {r: 0.55, g: 1, b: 0.55, a: 1}
 --- !u!1 &4672799971258336491
 GameObject:
   m_ObjectHideFlags: 0

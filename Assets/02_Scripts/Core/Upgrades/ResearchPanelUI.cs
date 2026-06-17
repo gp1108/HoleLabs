@@ -19,6 +19,9 @@ public sealed class ResearchPanelUI : MonoBehaviour
     [Tooltip("Upgrade manager used to refresh research completion and unlock state.")]
     [SerializeField] private UpgradeManager UpgradeManager;
 
+    [Tooltip("Scanner runtime service used to refresh unknown ore requirement labels as discoveries are made.")]
+    [SerializeField] private ScannerRuntimeService ScannerRuntimeService;
+
     [Tooltip("Text used to display current credits.")]
     [SerializeField] private TMP_Text CreditsAmountText;
 
@@ -60,6 +63,11 @@ public sealed class ResearchPanelUI : MonoBehaviour
         if (UpgradeManager == null)
         {
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
+        }
+
+        if (ScannerRuntimeService == null)
+        {
+            ScannerRuntimeService = FindFirstObjectByType<ScannerRuntimeService>();
         }
 
         SubscribeToEvents();
@@ -262,6 +270,11 @@ public sealed class ResearchPanelUI : MonoBehaviour
         {
             UpgradeManager.OnUpgradeStateChanged += HandleUpgradeStateChanged;
         }
+
+        if (ScannerRuntimeService != null)
+        {
+            ScannerRuntimeService.OnKnowledgeChanged += HandleScannerKnowledgeChanged;
+        }
     }
 
     /// <summary>
@@ -278,6 +291,11 @@ public sealed class ResearchPanelUI : MonoBehaviour
         {
             UpgradeManager.OnUpgradeStateChanged -= HandleUpgradeStateChanged;
         }
+
+        if (ScannerRuntimeService != null)
+        {
+            ScannerRuntimeService.OnKnowledgeChanged -= HandleScannerKnowledgeChanged;
+        }
     }
 
     /// <summary>
@@ -292,6 +310,14 @@ public sealed class ResearchPanelUI : MonoBehaviour
     /// Refreshes UI when upgrade state changes.
     /// </summary>
     private void HandleUpgradeStateChanged()
+    {
+        RefreshAll();
+    }
+
+    /// <summary>
+    /// Refreshes UI when scanner knowledge changes and unknown ore requirements may become known.
+    /// </summary>
+    private void HandleScannerKnowledgeChanged()
     {
         RefreshAll();
     }

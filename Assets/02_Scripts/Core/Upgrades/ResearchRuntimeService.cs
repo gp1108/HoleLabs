@@ -24,7 +24,9 @@ public sealed class ResearchRuntimeService : MonoBehaviour
         MissingFeatureFlag = 7,
         MissingPrerequisite = 8,
         NotEnoughCredits = 9,
-        MissingResearchId = 10
+        MissingResearchId = 10,
+        MissingScannerRuntimeService = 11,
+        MissingDiscoveredOreRequirement = 12
     }
 
     /// <summary>
@@ -338,6 +340,9 @@ public sealed class ResearchRuntimeService : MonoBehaviour
     [Tooltip("Upgrade manager used for prerequisites and final research application.")]
     [SerializeField] private UpgradeManager UpgradeManager;
 
+    [Tooltip("Scanner runtime service used to block activation until required ore types have been discovered.")]
+    [SerializeField] private ScannerRuntimeService ScannerRuntimeService;
+
     [Header("Research Lookup")]
     [Tooltip("Explicit research definitions known by the runtime service. Register every research asset here for deterministic save/load.")]
     [SerializeField] private List<ResearchDefinition> ResearchDefinitions = new();
@@ -583,6 +588,16 @@ public sealed class ResearchRuntimeService : MonoBehaviour
             return ResearchBlockReason.MissingPrerequisite;
         }
 
+        if (HasDiscoverableOreRequirements(ResearchDefinition) && ScannerRuntimeService == null)
+        {
+            return ResearchBlockReason.MissingScannerRuntimeService;
+        }
+
+        if (HasUndiscoveredOreRequirements(ResearchDefinition))
+        {
+            return ResearchBlockReason.MissingDiscoveredOreRequirement;
+        }
+
         ResearchProgressState ProgressState = GetProgressState(ResearchDefinition, false);
 
         if ((ProgressState == null || !ProgressState.GetIsActivationPaid()) &&
@@ -675,6 +690,107 @@ public sealed class ResearchRuntimeService : MonoBehaviour
         }
 
         return Result;
+    }
+
+
+    /// <summary>
+    /// Returns whether every valid ore requirement on the provided research has already been discovered by the scanner system.
+    /// Research entries without valid ore requirements are considered fully discovered.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition to evaluate.</param>
+    /// <returns>True when there are no unknown ore requirements.</returns>
+    public bool AreOreRequirementsDiscovered(ResearchDefinition ResearchDefinition)
+    {
+        if (ResearchDefinition == null)
+        {
+            return false;
+        }
+
+        IReadOnlyList<ResearchDefinition.OreRequirement> Requirements = ResearchDefinition.GetOreRequirements();
+
+        if (Requirements == null || Requirements.Count <= 0)
+        {
+            return true;
+        }
+
+        for (int Index = 0; Index < Requirements.Count; Index++)
+        {
+            ResearchDefinition.OreRequirement Requirement = Requirements[Index];
+
+            if (Requirement == null || !Requirement.IsValid())
+            {
+                continue;
+            }
+
+            if (!IsOreRequirementDiscovered(Requirement))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns whether the provided ore requirement references an ore type already discovered by the scanner system.
+    /// Invalid requirements are considered unknown so authoring problems do not silently unlock activation.
+    /// </summary>
+    /// <param name="Requirement">Requirement to evaluate.</param>
+    /// <returns>True when the required ore type is globally discovered.</returns>
+    public bool IsOreRequirementDiscovered(ResearchDefinition.OreRequirement Requirement)
+    {
+        if (Requirement == null || !Requirement.IsValid())
+        {
+            return false;
+        }
+
+        ResolveReferences();
+
+        if (ScannerRuntimeService == null)
+        {
+            return false;
+        }
+
+        return ScannerRuntimeService.IsOreDefinitionDiscovered(Requirement.GetOreDefinition());
+    }
+
+    /// <summary>
+    /// Counts valid ore requirements whose ore type has not been discovered yet.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition to evaluate.</param>
+    /// <returns>Number of unknown ore requirements.</returns>
+    public int CountUndiscoveredOreRequirements(ResearchDefinition ResearchDefinition)
+    {
+        if (ResearchDefinition == null)
+        {
+            return 0;
+        }
+
+        IReadOnlyList<ResearchDefinition.OreRequirement> Requirements = ResearchDefinition.GetOreRequirements();
+
+        if (Requirements == null || Requirements.Count <= 0)
+        {
+            return 0;
+        }
+
+        int Count = 0;
+
+        for (int Index = 0; Index < Requirements.Count; Index++)
+        {
+            ResearchDefinition.OreRequirement Requirement = Requirements[Index];
+
+            if (Requirement == null || !Requirement.IsValid())
+            {
+                continue;
+            }
+
+            if (!IsOreRequirementDiscovered(Requirement))
+            {
+                Count++;
+            }
+        }
+
+        return Count;
     }
 
     /// <summary>
@@ -922,6 +1038,46 @@ public sealed class ResearchRuntimeService : MonoBehaviour
     }
 
     /// <summary>
+    /// Returns whether the provided research has at least one valid ore requirement that must be discovered before activation.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition to inspect.</param>
+    private bool HasDiscoverableOreRequirements(ResearchDefinition ResearchDefinition)
+    {
+        if (ResearchDefinition == null)
+        {
+            return false;
+        }
+
+        IReadOnlyList<ResearchDefinition.OreRequirement> Requirements = ResearchDefinition.GetOreRequirements();
+
+        if (Requirements == null || Requirements.Count <= 0)
+        {
+            return false;
+        }
+
+        for (int Index = 0; Index < Requirements.Count; Index++)
+        {
+            ResearchDefinition.OreRequirement Requirement = Requirements[Index];
+
+            if (Requirement != null && Requirement.IsValid())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns whether the provided research has one or more valid ore requirements that are still unknown to the scanner system.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition to inspect.</param>
+    private bool HasUndiscoveredOreRequirements(ResearchDefinition ResearchDefinition)
+    {
+        return CountUndiscoveredOreRequirements(ResearchDefinition) > 0;
+    }
+
+    /// <summary>
     /// Returns whether all upgrade prerequisites are currently met.
     /// </summary>
     private bool ArePrerequisitesMet(ResearchDefinition ResearchDefinition)
@@ -1008,6 +1164,11 @@ public sealed class ResearchRuntimeService : MonoBehaviour
         if (UpgradeManager == null)
         {
             UpgradeManager = FindFirstObjectByType<UpgradeManager>();
+        }
+
+        if (ScannerRuntimeService == null)
+        {
+            ScannerRuntimeService = FindFirstObjectByType<ScannerRuntimeService>();
         }
     }
 
