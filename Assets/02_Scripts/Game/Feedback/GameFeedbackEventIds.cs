@@ -1,6 +1,7 @@
 /// <summary>
 /// Central string identifiers for reusable gameplay feedback events.
 /// Keep event ids stable because they are used by feedback profiles configured in the Unity inspector.
+/// Treat this file as append-only: do not remove or rename validated ids without a migration pass.
 /// </summary>
 public static class GameFeedbackEventIds
 {
@@ -95,6 +96,66 @@ public static class GameFeedbackEventIds
     public const string OreRegrown = "Ore.Regrown";
 
     /// <summary>
+    /// Event fired when the scanner starts reading a target.
+    /// </summary>
+    public const string ScannerScanStarted = "Scanner.ScanStarted";
+
+    /// <summary>
+    /// Event fired when the scanner successfully scans a target.
+    /// </summary>
+    public const string ScannerScanCompleted = "Scanner.ScanCompleted";
+
+    /// <summary>
+    /// Event fired when the scanner cannot scan the current target.
+    /// </summary>
+    public const string ScannerScanDenied = "Scanner.ScanDenied";
+
+    /// <summary>
+    /// Event fired when a new ore definition is discovered by scanning.
+    /// </summary>
+    public const string ScannerOreDiscovered = "Scanner.OreDiscovered";
+
+    /// <summary>
+    /// Event fired when the scanner inspects a target that was already known.
+    /// </summary>
+    public const string ScannerAlreadyKnown = "Scanner.AlreadyKnown";
+
+    /// <summary>
+    /// Event fired when the magnet starts pulling valid ore targets.
+    /// </summary>
+    public const string MagnetPullStarted = "Magnet.PullStarted";
+
+    /// <summary>
+    /// Event fired when the magnet stops pulling targets.
+    /// </summary>
+    public const string MagnetPullStopped = "Magnet.PullStopped";
+
+    /// <summary>
+    /// Event fired when a single magnet filter is set or replaced.
+    /// </summary>
+    public const string MagnetFilterSet = "Magnet.FilterSet";
+
+    /// <summary>
+    /// Event fired when a magnet filter is added to a multi-filter list.
+    /// </summary>
+    public const string MagnetFilterAdded = "Magnet.FilterAdded";
+
+    /// <summary>
+    /// Event fired when an existing magnet filter is removed.
+    /// </summary>
+    public const string MagnetFilterRemoved = "Magnet.FilterRemoved";
+
+    /// <summary>
+    /// Event fired when all magnet filters are cleared.
+    /// </summary>
+    public const string MagnetFilterCleared = "Magnet.FilterCleared";
+
+    /// <summary>
+    /// Event fired when a magnet filter request is rejected, for example because the filter list is full.
+    /// </summary>
+    public const string MagnetFilterRejected = "Magnet.FilterRejected";
+
+    /// <summary>
     /// Event fired when a machine starts processing.
     /// </summary>
     public const string MachineProcessStarted = "Machine.ProcessStarted";
@@ -118,6 +179,21 @@ public static class GameFeedbackEventIds
     /// Event fired when a machine is blocked and cannot operate.
     /// </summary>
     public const string MachineBlocked = "Machine.Blocked";
+
+    /// <summary>
+    /// Event fired when a money pickup is collected.
+    /// </summary>
+    public const string MoneyCollected = "Money.Collected";
+
+    /// <summary>
+    /// Event fired when an area collection action collects one or more money pickups.
+    /// </summary>
+    public const string MoneyAreaCollected = "Money.AreaCollected";
+
+    /// <summary>
+    /// Event fired when a machine transfers credits directly without spawning physical money.
+    /// </summary>
+    public const string MoneyAutoTransferred = "Money.AutoTransferred";
 
     /// <summary>
     /// Event fired when a shop purchase succeeds.
@@ -155,6 +231,11 @@ public static class GameFeedbackEventIds
     public const string ResearchDenied = "Research.Denied";
 
     /// <summary>
+    /// Event fired when a research entry contains undiscovered requirements.
+    /// </summary>
+    public const string ResearchUnknownRequirement = "Research.UnknownRequirement";
+
+    /// <summary>
     /// Event fired when the elevator is overweight.
     /// </summary>
     public const string ElevatorOverweight = "Elevator.Overweight";
@@ -173,6 +254,76 @@ public static class GameFeedbackEventIds
     /// Event fired when elevator movement stops.
     /// </summary>
     public const string ElevatorMovementStopped = "Elevator.MovementStopped";
+
+    /// <summary>
+    /// Event fired when a wall drill starts producing ore.
+    /// </summary>
+    public const string WallDrillStarted = "WallDrill.Started";
+
+    /// <summary>
+    /// Event fired when a wall drill production tick completes.
+    /// </summary>
+    public const string WallDrillTick = "WallDrill.Tick";
+
+    /// <summary>
+    /// Event fired when a wall drill reaches output capacity.
+    /// </summary>
+    public const string WallDrillFull = "WallDrill.Full";
+
+    /// <summary>
+    /// Event fired when a wall drill output claim starts.
+    /// </summary>
+    public const string WallDrillClaimed = "WallDrill.Claimed";
+
+    /// <summary>
+    /// Event fired when a wall drill ejects a physical ore output.
+    /// </summary>
+    public const string WallDrillOutputSpawned = "WallDrill.OutputSpawned";
+
+    /// <summary>
+    /// Event fired when a wall drill cannot operate.
+    /// </summary>
+    public const string WallDrillBlocked = "WallDrill.Blocked";
+
+    /// <summary>
+    /// Event fired when a mineral elevator accepts a physical ore item.
+    /// </summary>
+    public const string MineralElevatorItemAccepted = "MineralElevator.ItemAccepted";
+
+    /// <summary>
+    /// Event fired when a mineral elevator rejects input because it is full.
+    /// </summary>
+    public const string MineralElevatorFull = "MineralElevator.Full";
+
+    /// <summary>
+    /// Event fired when a mineral elevator completes a transfer to its output point.
+    /// </summary>
+    public const string MineralElevatorTransferCompleted = "MineralElevator.TransferCompleted";
+
+    /// <summary>
+    /// Event fired when a mineral elevator spawns or releases transported ore at its output point.
+    /// </summary>
+    public const string MineralElevatorOutputSpawned = "MineralElevator.OutputSpawned";
+
+    /// <summary>
+    /// Event fired when the elevator drill module is enabled.
+    /// </summary>
+    public const string ElevatorDrillEnabled = "ElevatorDrill.Enabled";
+
+    /// <summary>
+    /// Event fired when the elevator drill module is disabled.
+    /// </summary>
+    public const string ElevatorDrillDisabled = "ElevatorDrill.Disabled";
+
+    /// <summary>
+    /// Event fired when the elevator drill acquires a mineable target.
+    /// </summary>
+    public const string ElevatorDrillTargetAcquired = "ElevatorDrill.TargetAcquired";
+
+    /// <summary>
+    /// Event fired when the elevator drill breaks a mineable target.
+    /// </summary>
+    public const string ElevatorDrillTargetBroken = "ElevatorDrill.TargetBroken";
 
     /// <summary>
     /// Event fired when the player produces a valid footstep.

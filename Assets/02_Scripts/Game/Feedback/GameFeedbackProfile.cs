@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 
 /// <summary>
@@ -26,6 +27,17 @@ public sealed class GameFeedbackProfile : ScriptableObject
         UpToSurfaceNormal = 0,
         ForwardToSurfaceNormal = 1,
         ForwardIntoSurface = 2
+    }
+
+    /// <summary>
+    /// Describes how a requested event id resolves inside this profile.
+    /// </summary>
+    public enum EventResolutionStatus
+    {
+        InvalidEventId = 0,
+        MissingProfileEvent = 1,
+        DisabledProfileEvent = 2,
+        EnabledProfileEvent = 3
     }
 
     [Serializable]
@@ -135,6 +147,27 @@ public sealed class GameFeedbackProfile : ScriptableObject
         /// Gets whether this feedback entry can currently play.
         /// </summary>
         public bool GetEnabled() => Enabled;
+
+        /// <summary>
+        /// Normalizes inspector-authored values that can safely be clamped or trimmed without changing gameplay intent.
+        /// </summary>
+        public void NormalizeForInspector()
+        {
+            EventId = string.IsNullOrWhiteSpace(EventId) ? string.Empty : EventId.Trim();
+            ParticleDestroyDelay = Mathf.Max(0f, ParticleDestroyDelay);
+            VisualEffectStopDelay = Mathf.Max(0f, VisualEffectStopDelay);
+            VisualEffectDestroyDelay = Mathf.Max(0f, VisualEffectDestroyDelay);
+            DecalSurfaceOffset = Mathf.Max(0f, DecalSurfaceOffset);
+            DecalDestroyDelay = Mathf.Max(0f, DecalDestroyDelay);
+            FeelIntensityMultiplier = Mathf.Max(0f, FeelIntensityMultiplier);
+
+            if (DecalRollMax < DecalRollMin)
+            {
+                float CachedMin = DecalRollMin;
+                DecalRollMin = DecalRollMax;
+                DecalRollMax = CachedMin;
+            }
+        }
 
         /// <summary>
         /// Gets the configured particle prefabs.
@@ -278,8 +311,16 @@ public sealed class GameFeedbackProfile : ScriptableObject
     }
 
     [Header("Events")]
-    [Tooltip("Feedback events available in this profile.")]
+    [Tooltip("Feedback events available in this profile. Event ids must match GameFeedbackEventIds constants exactly.")]
     [SerializeField] private List<GameFeedbackEvent> Events = new();
+
+    /// <summary>
+    /// Gets every event entry configured in this profile, including disabled entries.
+    /// </summary>
+    public IReadOnlyList<GameFeedbackEvent> GetEvents()
+    {
+        return Events;
+    }
 
     /// <summary>
     /// Tries to resolve the configured feedback event matching the provided id.
@@ -289,18 +330,34 @@ public sealed class GameFeedbackProfile : ScriptableObject
     /// <returns>True when a matching enabled event was found.</returns>
     public bool TryGetEvent(string EventId, out GameFeedbackEvent FeedbackEvent)
     {
+        return ResolveEvent(EventId, out FeedbackEvent) == EventResolutionStatus.EnabledProfileEvent;
+    }
+
+    /// <summary>
+    /// Resolves an event id and reports whether the event is missing, disabled or enabled.
+    /// </summary>
+    /// <param name="EventId">Event id requested by gameplay code.</param>
+    /// <param name="FeedbackEvent">Resolved profile entry when one exists.</param>
+    /// <returns>Resolution status for diagnostics and playback.</returns>
+    public EventResolutionStatus ResolveEvent(string EventId, out GameFeedbackEvent FeedbackEvent)
+    {
         FeedbackEvent = null;
 
         if (string.IsNullOrWhiteSpace(EventId))
         {
-            return false;
+            return EventResolutionStatus.InvalidEventId;
+        }
+
+        if (Events == null || Events.Count == 0)
+        {
+            return EventResolutionStatus.MissingProfileEvent;
         }
 
         for (int Index = 0; Index < Events.Count; Index++)
         {
             GameFeedbackEvent Candidate = Events[Index];
 
-            if (Candidate == null || !Candidate.GetEnabled())
+            if (Candidate == null)
             {
                 continue;
             }
@@ -311,9 +368,100 @@ public sealed class GameFeedbackProfile : ScriptableObject
             }
 
             FeedbackEvent = Candidate;
-            return true;
+            return Candidate.GetEnabled() ? EventResolutionStatus.EnabledProfileEvent : EventResolutionStatus.DisabledProfileEvent;
         }
 
-        return false;
+        return EventResolutionStatus.MissingProfileEvent;
+    }
+
+    /// <summary>
+    /// Checks if this profile contains a matching event id.
+    /// </summary>
+    /// <param name="EventId">Event id to check.</param>
+    /// <param name="IncludeDisabled">If true, disabled entries are considered valid matches.</param>
+    /// <returns>True when this profile contains the requested event id.</returns>
+    public bool HasEvent(string EventId, bool IncludeDisabled = true)
+    {
+        EventResolutionStatus Status = ResolveEvent(EventId, out _);
+        return Status == EventResolutionStatus.EnabledProfileEvent || (IncludeDisabled && Status == EventResolutionStatus.DisabledProfileEvent);
+    }
+
+    /// <summary>
+    /// Builds a readable list of configured event ids for inspector diagnostics.
+    /// </summary>
+    /// <returns>Debug summary containing enabled and disabled event ids.</returns>
+    public string BuildDebugSummary()
+    {
+        StringBuilder Builder = new StringBuilder();
+        Builder.AppendLine("[GameFeedbackProfile] Configured events for " + name + ":");
+
+        if (Events == null || Events.Count == 0)
+        {
+            Builder.AppendLine("- No events configured.");
+            return Builder.ToString();
+        }
+
+        for (int Index = 0; Index < Events.Count; Index++)
+        {
+            GameFeedbackEvent FeedbackEvent = Events[Index];
+
+            if (FeedbackEvent == null)
+            {
+                Builder.AppendLine("- <null event entry>");
+                continue;
+            }
+
+            string EventId = string.IsNullOrWhiteSpace(FeedbackEvent.GetEventId()) ? "<empty event id>" : FeedbackEvent.GetEventId();
+            string State = FeedbackEvent.GetEnabled() ? "Enabled" : "Disabled";
+            Builder.AppendLine("- " + EventId + " (" + State + ")");
+        }
+
+        return Builder.ToString();
+    }
+
+    /// <summary>
+    /// Logs configured event ids from the inspector context menu.
+    /// </summary>
+    [ContextMenu("Game Feedback/Log Configured Event Ids")]
+    private void LogConfiguredEventIds()
+    {
+        Debug.Log(BuildDebugSummary(), this);
+    }
+
+    /// <summary>
+    /// Validates authoring data and warns about duplicate event ids.
+    /// </summary>
+    private void OnValidate()
+    {
+        if (Events == null)
+        {
+            Events = new List<GameFeedbackEvent>();
+            return;
+        }
+
+        HashSet<string> SeenEventIds = new HashSet<string>(StringComparer.Ordinal);
+
+        for (int Index = 0; Index < Events.Count; Index++)
+        {
+            GameFeedbackEvent FeedbackEvent = Events[Index];
+
+            if (FeedbackEvent == null)
+            {
+                continue;
+            }
+
+            FeedbackEvent.NormalizeForInspector();
+            string EventId = FeedbackEvent.GetEventId();
+
+            if (string.IsNullOrWhiteSpace(EventId))
+            {
+                continue;
+            }
+
+            if (!SeenEventIds.Add(EventId))
+            {
+                Debug.LogWarning("[GameFeedbackProfile] Duplicate event id detected: " + EventId + " | Profile: " + name, this);
+            }
+        }
     }
 }
