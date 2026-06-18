@@ -153,33 +153,76 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
-    private sealed class DrillPlacementSpotState
+    private sealed class WallDrillInstallationSpotState
     {
         [SerializeField] private string SceneId;
-        [SerializeField] private bool IsBlocked;
-        [SerializeField] private bool IsOccupied;
-        [SerializeField] private string DrillItemId;
         [SerializeField] private float RemainingProductionTimer;
+        [SerializeField] private List<OreItemDataSaveData> StoredOreItems = new List<OreItemDataSaveData>();
 
-        public DrillPlacementSpotState(
-            string SceneIdValue,
-            bool IsBlockedValue,
-            bool IsOccupiedValue,
-            string DrillItemIdValue,
-            float RemainingProductionTimerValue)
+        /// <summary>
+        /// Creates a save payload for the wall drill runtime state owned by a generic placeable installation spot.
+        /// The installed item itself is saved by PlaceableInstallationSpotState.
+        /// </summary>
+        public WallDrillInstallationSpotState(string SceneIdValue, float RemainingProductionTimerValue, List<OreItemData> RuntimeStoredOreItems)
         {
             SceneId = SceneIdValue;
-            IsBlocked = IsBlockedValue;
-            IsOccupied = IsOccupiedValue;
-            DrillItemId = DrillItemIdValue;
-            RemainingProductionTimer = RemainingProductionTimerValue;
+            RemainingProductionTimer = Mathf.Max(0f, RemainingProductionTimerValue);
+            StoredOreItems = new List<OreItemDataSaveData>();
+
+            if (RuntimeStoredOreItems == null)
+            {
+                return;
+            }
+
+            for (int Index = 0; Index < RuntimeStoredOreItems.Count; Index++)
+            {
+                OreItemData RuntimeOre = RuntimeStoredOreItems[Index];
+
+                if (RuntimeOre == null || RuntimeOre.GetOreDefinition() == null)
+                {
+                    continue;
+                }
+
+                StoredOreItems.Add(OreItemDataSaveData.FromRuntime(RuntimeOre));
+            }
         }
 
         public string GetSceneId() => SceneId;
-        public bool GetIsBlocked() => IsBlocked;
-        public bool GetIsOccupied() => IsOccupied;
-        public string GetDrillItemId() => DrillItemId;
         public float GetRemainingProductionTimer() => RemainingProductionTimer;
+
+        /// <summary>
+        /// Restores stored ore payloads from the registered ore definition lookup.
+        /// </summary>
+        public List<OreItemData> ToRuntimeStoredOreItems(Dictionary<string, OreDefinition> DefinitionsById)
+        {
+            List<OreItemData> Result = new List<OreItemData>();
+
+            if (StoredOreItems == null)
+            {
+                return Result;
+            }
+
+            for (int Index = 0; Index < StoredOreItems.Count; Index++)
+            {
+                OreItemDataSaveData SavedOre = StoredOreItems[Index];
+
+                if (SavedOre == null)
+                {
+                    continue;
+                }
+
+                OreItemData RuntimeOre = SavedOre.ToRuntime(DefinitionsById);
+
+                if (RuntimeOre == null || RuntimeOre.GetOreDefinition() == null)
+                {
+                    continue;
+                }
+
+                Result.Add(RuntimeOre);
+            }
+
+            return Result;
+        }
     }
 
     [Serializable]
@@ -486,7 +529,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<MoneyPickupState> MoneyPickups = new();
         [SerializeField] private List<OrePickupState> OrePickups = new();
         [SerializeField] private List<OreSpawnPointState> OreSpawnPoints = new();
-        [SerializeField] private List<DrillPlacementSpotState> DrillPlacementSpots = new();
+        [SerializeField] private List<WallDrillInstallationSpotState> WallDrillInstallationSpots = new();
         [SerializeField] private List<PlaceableInstallationSpotState> PlaceableInstallationSpots = new();
 
         [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
@@ -501,8 +544,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
         public ScannerRuntimeService.ScannerRuntimeSaveData GetScannerRuntime() => ScannerRuntime;
         public void SetScannerRuntime(ScannerRuntimeService.ScannerRuntimeSaveData Value) => ScannerRuntime = Value;
 
-        public List<DrillPlacementSpotState> GetDrillPlacementSpots() => DrillPlacementSpots;
-        public void SetDrillPlacementSpots(List<DrillPlacementSpotState> Value) => DrillPlacementSpots = Value ?? new List<DrillPlacementSpotState>();
+        public List<WallDrillInstallationSpotState> GetWallDrillInstallationSpots() => WallDrillInstallationSpots;
+        public void SetWallDrillInstallationSpots(List<WallDrillInstallationSpotState> Value) => WallDrillInstallationSpots = Value ?? new List<WallDrillInstallationSpotState>();
 
         public List<PlaceableInstallationSpotState> GetPlaceableInstallationSpots() => PlaceableInstallationSpots;
         public void SetPlaceableInstallationSpots(List<PlaceableInstallationSpotState> Value) => PlaceableInstallationSpots = Value ?? new List<PlaceableInstallationSpotState>();
@@ -608,7 +651,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private readonly Dictionary<string, OreDefinition> OreDefinitionsById = new();
     private readonly Dictionary<string, ScenePlacedWorldItemPersistence> SceneWorldItemsById = new();
     private readonly Dictionary<string, OreSpawnPoint> OreSpawnPointsById = new();
-    private readonly Dictionary<string, DrillPlacementSpot> DrillPlacementSpotsById = new();
+    private readonly Dictionary<string, WallDrillInstallationSpot> WallDrillInstallationSpotsById = new();
     private readonly Dictionary<string, PlaceableInstallationSpot> PlaceableInstallationSpotsById = new();
     /// <summary>
     /// Resolves missing scene references and builds lookup caches.
@@ -1079,7 +1122,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetMoneyPickups(CaptureMoneyPickups());
         Data.SetOrePickups(CaptureOrePickups());
         Data.SetOreSpawnPoints(CaptureOreSpawnPoints());
-        Data.SetDrillPlacementSpots(CaptureDrillPlacementSpots());
+        Data.SetWallDrillInstallationSpots(CaptureWallDrillInstallationSpots());
         Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
         Data.SetResearchRuntime(CaptureResearchRuntime());
         Data.SetScannerRuntime(CaptureScannerRuntime());
@@ -1125,7 +1168,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         RestoreOreSpawnPoints(Data.GetOreSpawnPoints());
-        RestoreDrillPlacementSpots(Data.GetDrillPlacementSpots());
         RestoreSceneWorldItems(Data.GetSceneWorldItems());
 
         if (PlayerController != null && Data.GetPlayer() != null)
@@ -1148,6 +1190,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreScannerRuntime(Data.GetScannerRuntime());
         RestoreResearchRuntime(Data.GetResearchRuntime());
         RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
+        RestoreWallDrillInstallationSpots(Data.GetWallDrillInstallationSpots());
         RebuildLookupCaches();
     }
 
@@ -1233,7 +1276,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         OreDefinitionsById.Clear();
         SceneWorldItemsById.Clear();
         OreSpawnPointsById.Clear();
-        DrillPlacementSpotsById.Clear();
+        WallDrillInstallationSpotsById.Clear();
         PlaceableInstallationSpotsById.Clear();
 
         for (int Index = 0; Index < ItemDefinitions.Count; Index++)
@@ -1312,13 +1355,13 @@ public sealed class GameSaveDebugController : MonoBehaviour
             OreSpawnPointsById[SaveId.GetId()] = SpawnPoint;
         }
 
-        DrillPlacementSpot[] DrillSpots = FindObjectsByType<DrillPlacementSpot>(
+        WallDrillInstallationSpot[] WallDrillSpots = FindObjectsByType<WallDrillInstallationSpot>(
             FindObjectsInactive.Include,
             FindObjectsSortMode.None);
 
-        for (int Index = 0; Index < DrillSpots.Length; Index++)
+        for (int Index = 0; Index < WallDrillSpots.Length; Index++)
         {
-            DrillPlacementSpot Spot = DrillSpots[Index];
+            WallDrillInstallationSpot Spot = WallDrillSpots[Index];
 
             if (Spot == null)
             {
@@ -1332,7 +1375,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            DrillPlacementSpotsById[SaveId.GetId()] = Spot;
+            WallDrillInstallationSpotsById[SaveId.GetId()] = Spot;
         }
 
         PlaceableInstallationSpot[] PlaceableSpots = FindObjectsByType<PlaceableInstallationSpot>(
@@ -2203,39 +2246,35 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
-    /// Captures every drill placement spot runtime state in the scene.
+    /// Captures every wall drill runtime companion state in the scene.
+    /// Generic installation state is captured separately by PlaceableInstallationSpot.
     /// </summary>
-    private List<DrillPlacementSpotState> CaptureDrillPlacementSpots()
+    private List<WallDrillInstallationSpotState> CaptureWallDrillInstallationSpots()
     {
-        List<DrillPlacementSpotState> Result = new List<DrillPlacementSpotState>();
+        List<WallDrillInstallationSpotState> Result = new List<WallDrillInstallationSpotState>();
 
-        foreach (KeyValuePair<string, DrillPlacementSpot> Pair in DrillPlacementSpotsById)
+        foreach (KeyValuePair<string, WallDrillInstallationSpot> Pair in WallDrillInstallationSpotsById)
         {
-            DrillPlacementSpot Spot = Pair.Value;
+            WallDrillInstallationSpot Spot = Pair.Value;
 
             if (Spot == null)
             {
                 continue;
             }
 
-            ItemDefinition DrillDefinition = Spot.GetCurrentPlacedDrillItemDefinition();
-            string DrillItemId = DrillDefinition != null ? DrillDefinition.GetItemId() : string.Empty;
-
-            Result.Add(new DrillPlacementSpotState(
+            Result.Add(new WallDrillInstallationSpotState(
                 Pair.Key,
-                Spot.GetIsBlocked(),
-                Spot.GetIsOccupied(),
-                DrillItemId,
-                Spot.GetCurrentRemainingProductionTimer()));
+                Spot.GetCurrentRemainingProductionTimer(),
+                Spot.GetStoredOreItemsSnapshot()));
         }
 
         return Result;
     }
 
     /// <summary>
-    /// Restores every drill placement spot runtime state from save.
+    /// Restores every wall drill runtime companion state after the generic placeable spots have restored their installed prefabs.
     /// </summary>
-    private void RestoreDrillPlacementSpots(List<DrillPlacementSpotState> States)
+    private void RestoreWallDrillInstallationSpots(List<WallDrillInstallationSpotState> States)
     {
         if (States == null)
         {
@@ -2244,31 +2283,23 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         for (int Index = 0; Index < States.Count; Index++)
         {
-            DrillPlacementSpotState State = States[Index];
+            WallDrillInstallationSpotState State = States[Index];
 
             if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
             {
                 continue;
             }
 
-            if (!DrillPlacementSpotsById.TryGetValue(State.GetSceneId(), out DrillPlacementSpot Spot) || Spot == null)
+            if (!WallDrillInstallationSpotsById.TryGetValue(State.GetSceneId(), out WallDrillInstallationSpot Spot) || Spot == null)
             {
+                Log("Saved wall drill spot id was not found in the scene: " + State.GetSceneId());
                 continue;
             }
 
-            ItemDefinition DrillItemDefinition = null;
-
-            if (!string.IsNullOrWhiteSpace(State.GetDrillItemId()))
-            {
-                ItemDefinitionsById.TryGetValue(State.GetDrillItemId(), out DrillItemDefinition);
-            }
-
             Spot.ApplySavedState(
-                State.GetIsBlocked(),
-                State.GetIsOccupied(),
-                DrillItemDefinition,
-                OreRuntimeService,
-                State.GetRemainingProductionTimer());
+                State.GetRemainingProductionTimer(),
+                State.ToRuntimeStoredOreItems(OreDefinitionsById));
         }
     }
+
 }

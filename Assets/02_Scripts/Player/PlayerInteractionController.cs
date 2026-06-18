@@ -71,6 +71,11 @@ public sealed class PlayerInteractionController : MonoBehaviour
     private WorldItem CurrentLookedWorldItem;
 
     /// <summary>
+    /// Drill output claim target currently under the center-screen interaction ray.
+    /// </summary>
+    private IDrillOutputClaimable CurrentLookedDrillOutputClaimable;
+
+    /// <summary>
     /// Whether interaction input is currently blocked by an external modal state.
     /// </summary>
     private bool IsExternalInteractionBlocked;
@@ -201,6 +206,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
     {
         CurrentLookedWorldItem = null;
         CurrentLookedCarryable = null;
+        CurrentLookedDrillOutputClaimable = null;
 
         if (PlayerCamera == null)
         {
@@ -221,6 +227,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         CurrentLookedWorldItem = ResolveWorldItem(HitInfo);
         CurrentLookedCarryable = ResolveCarryable(HitInfo);
+        CurrentLookedDrillOutputClaimable = ResolveDrillOutputClaimable(HitInfo);
     }
 
     /// <summary>
@@ -234,6 +241,11 @@ public sealed class PlayerInteractionController : MonoBehaviour
         }
 
         if (TryOpenNearbyShop())
+        {
+            return;
+        }
+
+        if (TryClaimLookedDrillOutput())
         {
             return;
         }
@@ -293,6 +305,20 @@ public sealed class PlayerInteractionController : MonoBehaviour
         }
 
         return MoneyCollector.TryCollectCurrentLookedMoney();
+    }
+
+    /// <summary>
+    /// Tries to claim output from the currently looked wall drill before generic world item or carry interactions.
+    /// </summary>
+    /// <returns>True when a drill output target consumed the interaction.</returns>
+    private bool TryClaimLookedDrillOutput()
+    {
+        if (CurrentLookedDrillOutputClaimable == null)
+        {
+            return false;
+        }
+
+        return CurrentLookedDrillOutputClaimable.TryClaimOutput();
     }
 
     /// <summary>
@@ -366,6 +392,35 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         HotbarController.SpawnWorldItem(PreviousSelectedItem, SpawnPosition, SpawnRotation, SpawnLinearVelocity, SpawnAngularVelocity, false);
         Log("Swapped looked world item with currently selected hotbar item.");
+    }
+
+    /// <summary>
+    /// Resolves a drill output claim target from the current raycast hit.
+    /// </summary>
+    /// <param name="HitInfo">Raycast hit returned by the interaction ray.</param>
+    /// <returns>Drill output claimable target, or null.</returns>
+    private IDrillOutputClaimable ResolveDrillOutputClaimable(RaycastHit HitInfo)
+    {
+        if (HitInfo.collider == null)
+        {
+            return null;
+        }
+
+        IDrillOutputClaimable Claimable = HitInfo.collider.GetComponent<IDrillOutputClaimable>() ??
+                                          HitInfo.collider.GetComponentInParent<IDrillOutputClaimable>();
+
+        if (Claimable != null)
+        {
+            return Claimable;
+        }
+
+        if (HitInfo.rigidbody != null)
+        {
+            Claimable = HitInfo.rigidbody.GetComponent<IDrillOutputClaimable>() ??
+                        HitInfo.rigidbody.GetComponentInParent<IDrillOutputClaimable>();
+        }
+
+        return Claimable;
     }
 
     /// <summary>

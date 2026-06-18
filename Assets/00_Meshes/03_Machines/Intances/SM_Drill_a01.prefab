@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 3628703059316012067}
   - component: {fileID: 1334365097671423311}
   - component: {fileID: 6928735841627403970}
-  - component: {fileID: 66136264843076554}
+  - component: {fileID: 3173752000442191850}
   m_Layer: 10
   m_Name: SM_Drill_a01
   m_TagString: Untagged
@@ -91,7 +91,7 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!114 &66136264843076554
+--- !u!114 &3173752000442191850
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -100,15 +100,28 @@ MonoBehaviour:
   m_GameObject: {fileID: 2169661944782389618}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7741bca568090fb42a090d7fdd45926d, type: 3}
+  m_Script: {fileID: 11500000, guid: 233972e6a48d4c147a7327454dec1728, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DrillItemBehaviour
+  m_EditorClassIdentifier: Assembly-CSharp::PlaceableItemBehaviour
   PlayerCamera: {fileID: 0}
-  OreRuntimeService: {fileID: 0}
-  PlacementDistance: 5
-  GhostVisibilityRadius: 20
+  PlacementDistance: 4
   PlacementLayers:
     serializedVersion: 2
-    m_Bits: 2048
-  DrawDebugRay: 1
-  DebugLogs: 1
+    m_Bits: 8192
+  RequireDirectTargetForInstall: 1
+  ShowNearbySpotGhost: 1
+  SpotPreviewRadius: 50
+  SpotPreviewRefreshInterval: 0.1
+  MaxPreviewOverlapResults: 64
+  HideGhostWhenInvalid: 1
+  GhostIdleMaterial: {fileID: 2100000, guid: 4b1d1f0ba07df4f439471b70cb2f459b, type: 2}
+  GhostValidMaterial: {fileID: 2100000, guid: cf5a37c0ef586484991bffe90e44df14, type: 2}
+  GhostInvalidMaterial: {fileID: 0}
+  ApplyGhostTint: 1
+  GhostIdleTint: {r: 1, g: 1, b: 1, a: 0.45}
+  GhostValidTint: {r: 0.15, g: 1, b: 0.25, a: 0.55}
+  GhostInvalidTint: {r: 1, g: 0.1, b: 0.05, a: 0.55}
+  BaseColorPropertyName: _BaseColor
+  ColorPropertyName: _Color
+  DrawDebugRay: 0
+  DebugLogs: 0
