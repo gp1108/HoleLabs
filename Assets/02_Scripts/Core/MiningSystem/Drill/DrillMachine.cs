@@ -73,11 +73,23 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
     [Tooltip("Feedback event played when the drill stores one newly produced ore.")]
     [SerializeField] private string ProductionTickEventId = GameFeedbackEventIds.WallDrillTick;
 
+    [Tooltip("Feedback event played when the drill starts or resumes active production.")]
+    [SerializeField] private string ProductionStartedEventId = GameFeedbackEventIds.WallDrillStarted;
+
+    [Tooltip("Feedback event played when active production is paused because the drill is ejecting output or cannot currently produce.")]
+    [SerializeField] private string ProductionPausedEventId = GameFeedbackEventIds.WallDrillPaused;
+
     [Tooltip("Feedback event played when the drill reaches storage capacity.")]
     [SerializeField] private string FullEventId = GameFeedbackEventIds.WallDrillFull;
 
     [Tooltip("Feedback event played when the player starts claiming stored output.")]
     [SerializeField] private string ClaimedEventId = GameFeedbackEventIds.WallDrillClaimed;
+
+    [Tooltip("Feedback event played when the player manually stops output ejection before all stored ore has been spawned.")]
+    [SerializeField] private string EjectionStoppedEventId = GameFeedbackEventIds.WallDrillEjectionStopped;
+
+    [Tooltip("Feedback event played when production can resume after output ejection finishes or is stopped.")]
+    [SerializeField] private string ProductionResumedEventId = GameFeedbackEventIds.WallDrillResumed;
 
     [Tooltip("Feedback event played for every ore pickup spawned during claim output.")]
     [SerializeField] private string OutputSpawnedEventId = GameFeedbackEventIds.WallDrillOutputSpawned;
@@ -100,6 +112,9 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
 
     [Tooltip("Optional animator bool enabled while the storage is full.")]
     [SerializeField] private string IsFullBoolName = "IsFull";
+
+    [Tooltip("Optional animator bool enabled while the drill is ejecting claimed output.")]
+    [SerializeField] private string IsEjectingBoolName = "IsEjecting";
 
     [Header("Debug")]
     [Tooltip("Logs drill production and claim flow.")]
@@ -164,6 +179,11 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
     /// Previous full-state cache used to fire full feedback only once per transition.
     /// </summary>
     private bool WasFullLastFrame;
+
+    /// <summary>
+    /// Previous production-state cache used to fire production start and pause feedback only once per transition.
+    /// </summary>
+    private bool WasProductionActiveLastFrame;
 
     /// <summary>
     /// Gets the drill item definition represented by this placed machine.
@@ -277,6 +297,7 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
         TrimStoredOreToCapacity();
         RefreshAnimatorState();
         WasFullLastFrame = IsStorageFull();
+        WasProductionActiveLastFrame = CanProduce();
     }
 
     /// <summary>
@@ -286,6 +307,7 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
     {
         bool CanProduceNow = CanProduce();
         RefreshAnimatorState();
+        HandleProductionStateTransition(CanProduceNow);
 
         if (!CanProduceNow)
         {
@@ -312,8 +334,13 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
     /// </summary>
     public bool CanClaimOutput()
     {
+        if (IsClaimingOutput())
+        {
+            return true;
+        }
+
         CleanupInvalidStoredOre();
-        return StoredOreItems.Count > 0 && ClaimRoutine == null && OreRuntimeService != null && OreSpawnPoint != null;
+        return StoredOreItems.Count > 0 && OreRuntimeService != null && OreSpawnPoint != null;
     }
 
     /// <summary>
@@ -321,15 +348,30 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
     /// </summary>
     public bool TryClaimOutput()
     {
+        if (IsClaimingOutput())
+        {
+            StopClaimOutputByInteraction();
+            return true;
+        }
+
         if (!CanClaimOutput())
         {
             PlayFeedback(BlockedEventId, transform.position);
-            Log("Claim rejected because no stored output is available or the drill is already claiming.");
+            Log("Claim rejected because no stored output is available.");
             return false;
+        }
+
+        bool WasProducingBeforeClaim = CanProduce();
+
+        if (WasProducingBeforeClaim)
+        {
+            PlayFeedback(ProductionPausedEventId, transform.position);
         }
 
         PlayFeedback(ClaimedEventId, OreSpawnPoint.position);
         ClaimRoutine = StartCoroutine(ClaimStoredOutputRoutine());
+        WasProductionActiveLastFrame = false;
+        RefreshAnimatorState();
         Log("Started claiming stored output. Count=" + StoredOreItems.Count);
         return true;
     }
@@ -339,6 +381,11 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
     /// </summary>
     private bool CanProduce()
     {
+        if (IsClaimingOutput())
+        {
+            return false;
+        }
+
         if (OwnerSpot == null || OreRuntimeService == null)
         {
             return false;
@@ -455,7 +502,50 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
 
         ClaimRoutine = null;
         RefreshAnimatorState();
+        PlayProductionResumedFeedbackIfReady();
         Log("Claim finished. Spawned=" + SpawnedCount + " Remaining=" + StoredOreItems.Count);
+    }
+
+    /// <summary>
+    /// Returns whether the drill is currently ejecting claimed output.
+    /// </summary>
+    private bool IsClaimingOutput()
+    {
+        return ClaimRoutine != null;
+    }
+
+    /// <summary>
+    /// Stops the current output ejection sequence because the player interacted with the drill again.
+    /// Stored ore that has not been spawned remains in internal storage.
+    /// </summary>
+    private void StopClaimOutputByInteraction()
+    {
+        if (ClaimRoutine == null)
+        {
+            return;
+        }
+
+        StopCoroutine(ClaimRoutine);
+        ClaimRoutine = null;
+        RefreshAnimatorState();
+        PlayFeedback(EjectionStoppedEventId, OreSpawnPoint != null ? OreSpawnPoint.position : transform.position);
+        PlayProductionResumedFeedbackIfReady();
+        Log("Claim output stopped by player interaction. Remaining=" + StoredOreItems.Count);
+    }
+
+    /// <summary>
+    /// Plays production resumed feedback only if the drill is able to produce after ejection stops.
+    /// </summary>
+    private void PlayProductionResumedFeedbackIfReady()
+    {
+        if (!CanProduce())
+        {
+            WasProductionActiveLastFrame = false;
+            return;
+        }
+
+        PlayFeedback(ProductionResumedEventId, transform.position);
+        WasProductionActiveLastFrame = true;
     }
 
     /// <summary>
@@ -787,6 +877,26 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
     }
 
     /// <summary>
+    /// Fires production start and pause feedback when production availability changes.
+    /// </summary>
+    /// <param name="IsProductionActiveNow">Whether production is currently active.</param>
+    private void HandleProductionStateTransition(bool IsProductionActiveNow)
+    {
+        if (IsProductionActiveNow && !WasProductionActiveLastFrame)
+        {
+            PlayFeedback(ProductionStartedEventId, transform.position);
+            Log("Drill production active.");
+        }
+        else if (!IsProductionActiveNow && WasProductionActiveLastFrame && !IsStorageFull())
+        {
+            PlayFeedback(ProductionPausedEventId, transform.position);
+            Log("Drill production paused.");
+        }
+
+        WasProductionActiveLastFrame = IsProductionActiveNow;
+    }
+
+    /// <summary>
     /// Fires a full feedback event only when the drill transitions into the full state.
     /// </summary>
     private void HandleFullStateTransition()
@@ -830,6 +940,7 @@ public sealed class DrillMachine : MonoBehaviour, IDrillOutputClaimable
     {
         SetAnimatorBool(IsWorkingBoolName, CanProduce());
         SetAnimatorBool(IsFullBoolName, IsStorageFull());
+        SetAnimatorBool(IsEjectingBoolName, IsClaimingOutput());
     }
 
     /// <summary>

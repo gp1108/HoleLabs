@@ -266,6 +266,16 @@ public static class GameFeedbackEventIds
     public const string WallDrillTick = "WallDrill.Tick";
 
     /// <summary>
+    /// Event fired when a wall drill production is paused because output is being ejected or the drill cannot produce.
+    /// </summary>
+    public const string WallDrillPaused = "WallDrill.Paused";
+
+    /// <summary>
+    /// Event fired when a wall drill production resumes after an output ejection sequence finishes or is stopped.
+    /// </summary>
+    public const string WallDrillResumed = "WallDrill.Resumed";
+
+    /// <summary>
     /// Event fired when a wall drill reaches output capacity.
     /// </summary>
     public const string WallDrillFull = "WallDrill.Full";
@@ -274,6 +284,11 @@ public static class GameFeedbackEventIds
     /// Event fired when a wall drill output claim starts.
     /// </summary>
     public const string WallDrillClaimed = "WallDrill.Claimed";
+
+    /// <summary>
+    /// Event fired when a wall drill output ejection sequence is manually stopped before all stored output is spawned.
+    /// </summary>
+    public const string WallDrillEjectionStopped = "WallDrill.EjectionStopped";
 
     /// <summary>
     /// Event fired when a wall drill ejects a physical ore output.
