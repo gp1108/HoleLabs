@@ -81858,9 +81858,9 @@ MonoBehaviour:
   AvailableOres:
   - OreDefinition: {fileID: 11400000, guid: c09d25e1604b3cb4ba893048debb420b, type: 2}
     Weight: 1
-  ProductionInterval: 0.3
-  MaxStoredOreCount: 100
-  DebugLogs: 0
+  ProductionInterval: 1
+  MaxStoredOreCount: 60
+  DebugLogs: 1
 --- !u!114 &2120531896
 MonoBehaviour:
   m_ObjectHideFlags: 0

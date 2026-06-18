@@ -40,6 +40,28 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     [Tooltip("If true, the magnet stays active continuously while the primary input remains held after activation.")]
     [SerializeField] private bool ContinuousPullWhileHeld = true;
 
+    [Header("Performance Budget")]
+    [Tooltip("Maximum amount of ore pickups that can be actively magnetized at the same time. Higher values move more ores but cost more physics time.")]
+    [SerializeField] private int MaxActivePullTargets = 96;
+
+    [Tooltip("Maximum amount of new ore pickups that can be attached during a single target refresh. This prevents waking too many rigidbodies in the same physics step.")]
+    [SerializeField] private int MaxNewAttachmentsPerRefresh = 32;
+
+    [Tooltip("Seconds between expensive attraction overlap refreshes while the magnet is active.")]
+    [SerializeField] private float TargetRefreshInterval = 0.08f;
+
+    [Tooltip("Reusable collider buffer size used by the non-alloc attraction overlap. Increase this if the debug log reports a saturated candidate buffer.")]
+    [SerializeField] private int CandidateBufferSize = 512;
+
+    [Tooltip("If true, new candidates are attached from nearest to farthest. This costs a small sort but keeps the magnet responsive with many ores.")]
+    [SerializeField] private bool PreferClosestTargets = true;
+
+    [Tooltip("If true, already attached targets are released when they move far away from the current attraction area. Keep disabled for the classic drag-and-carry magnet feel.")]
+    [SerializeField] private bool ReleaseTargetsOutsideAttractionArea = false;
+
+    [Tooltip("Extra distance beyond the attraction radius before outside-area target release is allowed.")]
+    [SerializeField] private float ActiveTargetReleasePadding = 1f;
+
     [Header("Filter Unlocks")]
     [Tooltip("If true, filter controls are enabled without checking upgrade feature flags. Use only for local testing or always-unlocked magnet variants.")]
     [SerializeField] private bool AllowFiltersWithoutUpgradeRequirement = false;
@@ -86,6 +108,49 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     }
 
     /// <summary>
+    /// Lightweight candidate generated during one attraction overlap refresh.
+    /// </summary>
+    private struct MagnetCandidate
+    {
+        /// <summary>
+        /// Ore pickup represented by the candidate.
+        /// </summary>
+        public OrePickup OrePickup;
+
+        /// <summary>
+        /// Carryable component that can be attached to the magnet.
+        /// </summary>
+        public PhysicsCarryable Carryable;
+
+        /// <summary>
+        /// Squared distance from the magnet target point.
+        /// </summary>
+        public float DistanceSqr;
+    }
+
+    /// <summary>
+    /// Sorts candidates from nearest to farthest without allocating comparer instances during play.
+    /// </summary>
+    private sealed class MagnetCandidateDistanceComparer : IComparer<MagnetCandidate>
+    {
+        /// <summary>
+        /// Compares two candidates by squared distance.
+        /// </summary>
+        /// <param name="Left">First candidate.</param>
+        /// <param name="Right">Second candidate.</param>
+        /// <returns>Negative when left is closer, positive when right is closer.</returns>
+        public int Compare(MagnetCandidate Left, MagnetCandidate Right)
+        {
+            return Left.DistanceSqr.CompareTo(Right.DistanceSqr);
+        }
+    }
+
+    /// <summary>
+    /// Shared comparer used by the candidate refresh sort.
+    /// </summary>
+    private static readonly MagnetCandidateDistanceComparer CandidateDistanceComparer = new MagnetCandidateDistanceComparer();
+
+    /// <summary>
     /// Active ore filter ids shared by all runtime instances of the equipped magnet behaviour.
     /// The equipped prefab is destroyed and recreated when changing slots, so storing this statically
     /// prevents the filter from being lost during normal hotbar refreshes in a single gameplay session.
@@ -106,6 +171,36 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     /// List of carryables currently attached to the magnet target.
     /// </summary>
     private readonly List<PhysicsCarryable> ActiveCarryables = new List<PhysicsCarryable>();
+
+    /// <summary>
+    /// Reusable non-alloc collider buffer for attraction overlap checks.
+    /// </summary>
+    private Collider[] CandidateColliders = new Collider[0];
+
+    /// <summary>
+    /// Reusable candidate buffer built from the overlap result.
+    /// </summary>
+    private MagnetCandidate[] CandidateBuffer = new MagnetCandidate[0];
+
+    /// <summary>
+    /// Reusable set used to avoid processing the same carryable more than once when it has multiple colliders.
+    /// </summary>
+    private readonly HashSet<PhysicsCarryable> CandidateCarryables = new HashSet<PhysicsCarryable>();
+
+    /// <summary>
+    /// Next realtime moment when the expensive target search can be performed.
+    /// </summary>
+    private float NextTargetRefreshTime;
+
+    /// <summary>
+    /// Last amount of colliders returned by the overlap query, used only for debug information.
+    /// </summary>
+    private int LastCandidateHitCount;
+
+    /// <summary>
+    /// Last amount of candidates that passed ore, filter and carryable validation.
+    /// </summary>
+    private int LastResolvedCandidateCount;
 
     /// <summary>
     /// Forces the magnet to stop and releases every currently attached carryable.
@@ -207,7 +302,6 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
         }
 
         ApplyMagnetPull();
-        CleanupDetachedCarryables();
     }
 
     /// <summary>
@@ -259,8 +353,15 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     }
 
     /// <summary>
-    /// Attaches all valid ore pickups inside the attraction area to the magnet target.
-    /// Stored carryables can be attached because PhysicsCarryable releases external carry internally.
+    /// Ensures no ore remains attached if the equipped magnet prefab is disabled or destroyed by hotbar changes.
+    /// </summary>
+    private void OnDisable()
+    {
+        StopMagnetPull();
+    }
+
+    /// <summary>
+    /// Refreshes the attraction candidate list on a budget and keeps already attached ores magnetized without recreating joints every physics step.
     /// </summary>
     private void ApplyMagnetPull()
     {
@@ -277,16 +378,109 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
         Vector3 AreaCenter = GetAreaCenter();
         Transform TargetTransform = ResolveTargetTransform();
 
+        if (TargetTransform == null)
+        {
+            return;
+        }
+
         if (DrawDebug)
         {
             Debug.DrawLine(AreaCenter, TargetTransform.position, Color.magenta, Time.fixedDeltaTime);
+            Debug.DrawRay(AreaCenter, Vector3.up * 0.25f, Color.yellow, Time.fixedDeltaTime);
         }
 
-        Collider[] Hits = Physics.OverlapSphere(AreaCenter, AreaRadius, AttractionLayers, QueryTriggerInteraction.Ignore);
+        CleanupDetachedCarryables(AreaCenter);
 
-        for (int HitIndex = 0; HitIndex < Hits.Length; HitIndex++)
+        if (Time.time < NextTargetRefreshTime && ActiveCarryables.Count > 0)
         {
-            Collider CurrentCollider = Hits[HitIndex];
+            return;
+        }
+
+        RefreshMagnetTargets(AreaCenter, TargetTransform);
+        NextTargetRefreshTime = Time.time + Mathf.Max(0.01f, TargetRefreshInterval);
+    }
+
+    /// <summary>
+    /// Performs the expensive overlap query and attaches a limited number of valid ore pickups.
+    /// </summary>
+    /// <param name="AreaCenter">World-space center of the attraction area.</param>
+    /// <param name="TargetTransform">Transform followed by magnetized carryables.</param>
+    private void RefreshMagnetTargets(Vector3 AreaCenter, Transform TargetTransform)
+    {
+        EnsureCandidateBuffers();
+
+        CandidateCarryables.Clear();
+        LastCandidateHitCount = Physics.OverlapSphereNonAlloc(
+            AreaCenter,
+            AreaRadius,
+            CandidateColliders,
+            AttractionLayers,
+            QueryTriggerInteraction.Ignore);
+
+        int CandidateCount = BuildCandidateBuffer(AreaCenter);
+        LastResolvedCandidateCount = CandidateCount;
+
+        if (CandidateCount <= 0)
+        {
+            LogRefreshStatsIfNeeded();
+            return;
+        }
+
+        if (PreferClosestTargets && CandidateCount > 1)
+        {
+            Array.Sort(CandidateBuffer, 0, CandidateCount, CandidateDistanceComparer);
+        }
+
+        int Capacity = Mathf.Max(1, MaxActivePullTargets);
+        int RemainingAttachmentBudget = Mathf.Max(1, MaxNewAttachmentsPerRefresh);
+
+        for (int CandidateIndex = 0; CandidateIndex < CandidateCount; CandidateIndex++)
+        {
+            if (ActiveCarryables.Count >= Capacity || RemainingAttachmentBudget <= 0)
+            {
+                break;
+            }
+
+            PhysicsCarryable Carryable = CandidateBuffer[CandidateIndex].Carryable;
+
+            if (Carryable == null || ActiveCarryables.Contains(Carryable))
+            {
+                continue;
+            }
+
+            if (Carryable.GetIsMagnetized())
+            {
+                ActiveCarryables.Add(Carryable);
+                continue;
+            }
+
+            Carryable.BeginMagnet(TargetTransform, CachedPlayerColliders);
+
+            if (Carryable.GetIsMagnetized())
+            {
+                ActiveCarryables.Add(Carryable);
+                RemainingAttachmentBudget--;
+            }
+        }
+
+        LogRefreshStatsIfNeeded();
+    }
+
+    /// <summary>
+    /// Builds the reusable candidate buffer from the current collider overlap result.
+    /// </summary>
+    /// <param name="AreaCenter">World-space center of the attraction area.</param>
+    /// <returns>Amount of valid candidates written into the buffer.</returns>
+    private int BuildCandidateBuffer(Vector3 AreaCenter)
+    {
+        int CandidateCount = 0;
+        int ColliderCount = Mathf.Min(LastCandidateHitCount, CandidateColliders.Length);
+
+        for (int HitIndex = 0; HitIndex < ColliderCount; HitIndex++)
+        {
+            Collider CurrentCollider = CandidateColliders[HitIndex];
+            CandidateColliders[HitIndex] = null;
+
             if (CurrentCollider == null)
             {
                 continue;
@@ -297,28 +491,67 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
                 continue;
             }
 
-            if (!PassesActiveFilters(OrePickup))
+            if (!CandidateCarryables.Add(Carryable))
             {
                 continue;
             }
 
-            if (IgnoreHeldObjects && Carryable.GetIsHeld())
+            if (!IsValidMagnetCandidate(OrePickup, Carryable))
             {
                 continue;
             }
 
-            if (!Carryable.CanAttachToMagnet() && !Carryable.GetIsMagnetized())
+            if (CandidateCount >= CandidateBuffer.Length)
             {
-                continue;
+                break;
             }
 
-            if (!ActiveCarryables.Contains(Carryable))
-            {
-                ActiveCarryables.Add(Carryable);
-            }
+            Vector3 CandidatePosition = Carryable.Rigidbody != null
+                ? Carryable.Rigidbody.worldCenterOfMass
+                : Carryable.transform.position;
 
-            Carryable.BeginMagnet(TargetTransform, CachedPlayerColliders);
+            CandidateBuffer[CandidateCount] = new MagnetCandidate
+            {
+                OrePickup = OrePickup,
+                Carryable = Carryable,
+                DistanceSqr = (CandidatePosition - AreaCenter).sqrMagnitude
+            };
+
+            CandidateCount++;
         }
+
+        return CandidateCount;
+    }
+
+    /// <summary>
+    /// Returns whether an ore pickup and carryable pair can be controlled by the magnet.
+    /// </summary>
+    /// <param name="OrePickup">Ore pickup being evaluated.</param>
+    /// <param name="Carryable">Carryable being evaluated.</param>
+    /// <returns>True when the candidate can be considered for active magnet attachment.</returns>
+    private bool IsValidMagnetCandidate(OrePickup OrePickup, PhysicsCarryable Carryable)
+    {
+        if (OrePickup == null || Carryable == null)
+        {
+            return false;
+        }
+
+        if (!PassesActiveFilters(OrePickup))
+        {
+            return false;
+        }
+
+        if (IgnoreHeldObjects && Carryable.GetIsHeld())
+        {
+            return false;
+        }
+
+        if (!Carryable.CanAttachToMagnet() && !Carryable.GetIsMagnetized())
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -381,6 +614,8 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
         ActiveFilterOreIds.Clear();
         ActiveFilterOreIds.Add(TargetOreId);
         PlayFeedback(GameFeedbackEventIds.MagnetFilterSet, FeedbackContext);
+        ReleaseActiveCarryablesBlockedByFilters();
+        ForceImmediateTargetRefresh();
         Log("Single magnet filter set to: " + ResolveOreDisplayName(TargetOreDefinition, TargetOreId));
     }
 
@@ -398,6 +633,8 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
         {
             ActiveFilterOreIds.RemoveAt(ExistingIndex);
             PlayFeedback(GameFeedbackEventIds.MagnetFilterRemoved, FeedbackContext);
+            ReleaseActiveCarryablesBlockedByFilters();
+            ForceImmediateTargetRefresh();
             Log("Magnet filter removed: " + ResolveOreDisplayName(TargetOreDefinition, TargetOreId));
             return;
         }
@@ -413,6 +650,8 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
 
         ActiveFilterOreIds.Add(TargetOreId);
         PlayFeedback(GameFeedbackEventIds.MagnetFilterAdded, FeedbackContext);
+        ReleaseActiveCarryablesBlockedByFilters();
+        ForceImmediateTargetRefresh();
         Log("Magnet filter added: " + ResolveOreDisplayName(TargetOreDefinition, TargetOreId));
     }
 
@@ -429,6 +668,11 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
         if (ShouldPlayFeedback && HadFilters)
         {
             PlayFeedback(GameFeedbackEventIds.MagnetFilterCleared, FeedbackContext);
+        }
+
+        if (HadFilters)
+        {
+            ForceImmediateTargetRefresh();
         }
     }
 
@@ -460,18 +704,140 @@ public sealed class MagnetItemBehaviour : AnimationEventEquippedItemBehaviour
     }
 
     /// <summary>
-    /// Removes null or no-longer-magnetized entries from the runtime carryable list.
+    /// Removes null, released or invalid entries from the runtime carryable list.
     /// </summary>
-    private void CleanupDetachedCarryables()
+    /// <param name="AreaCenter">Current attraction area center used by optional outside-area release.</param>
+    private void CleanupDetachedCarryables(Vector3 AreaCenter)
     {
+        float ReleaseDistance = AreaRadius + Mathf.Max(0f, ActiveTargetReleasePadding);
+        float ReleaseDistanceSqr = ReleaseDistance * ReleaseDistance;
+
         for (int CarryableIndex = ActiveCarryables.Count - 1; CarryableIndex >= 0; CarryableIndex--)
         {
             PhysicsCarryable Carryable = ActiveCarryables[CarryableIndex];
             if (Carryable == null || !Carryable.GetIsMagnetized())
             {
                 ActiveCarryables.RemoveAt(CarryableIndex);
+                continue;
+            }
+
+            if (ReleaseTargetsOutsideAttractionArea)
+            {
+                Vector3 CarryablePosition = Carryable.Rigidbody != null ? Carryable.Rigidbody.worldCenterOfMass : Carryable.transform.position;
+                if ((CarryablePosition - AreaCenter).sqrMagnitude > ReleaseDistanceSqr)
+                {
+                    Carryable.EndMagnet();
+                    ActiveCarryables.RemoveAt(CarryableIndex);
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Ensures reusable overlap and candidate buffers match the configured size.
+    /// </summary>
+    private void EnsureCandidateBuffers()
+    {
+        int ClampedSize = Mathf.Max(8, CandidateBufferSize);
+
+        if (CandidateColliders == null || CandidateColliders.Length != ClampedSize)
+        {
+            CandidateColliders = new Collider[ClampedSize];
+        }
+
+        if (CandidateBuffer == null || CandidateBuffer.Length != ClampedSize)
+        {
+            CandidateBuffer = new MagnetCandidate[ClampedSize];
+        }
+    }
+
+    /// <summary>
+    /// Forces the next fixed update to rebuild target candidates immediately.
+    /// </summary>
+    private void ForceImmediateTargetRefresh()
+    {
+        NextTargetRefreshTime = 0f;
+    }
+
+    /// <summary>
+    /// Releases currently attached ores that no longer pass the active ore-type filters.
+    /// </summary>
+    private void ReleaseActiveCarryablesBlockedByFilters()
+    {
+        if (GetCurrentFilterMode() == MagnetFilterMode.Locked || ActiveFilterOreIds.Count <= 0)
+        {
+            return;
+        }
+
+        for (int CarryableIndex = ActiveCarryables.Count - 1; CarryableIndex >= 0; CarryableIndex--)
+        {
+            PhysicsCarryable Carryable = ActiveCarryables[CarryableIndex];
+
+            if (Carryable == null)
+            {
+                ActiveCarryables.RemoveAt(CarryableIndex);
+                continue;
+            }
+
+            OrePickup OrePickup = ResolveOrePickupFromCarryable(Carryable);
+            if (OrePickup == null || !PassesActiveFilters(OrePickup))
+            {
+                Carryable.EndMagnet();
+                ActiveCarryables.RemoveAt(CarryableIndex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves an ore pickup from an active carryable entry.
+    /// </summary>
+    /// <param name="Carryable">Carryable to inspect.</param>
+    /// <returns>Resolved ore pickup, or null when the carryable is no longer an ore pickup.</returns>
+    private OrePickup ResolveOrePickupFromCarryable(PhysicsCarryable Carryable)
+    {
+        if (Carryable == null)
+        {
+            return null;
+        }
+
+        OrePickup OrePickup = Carryable.GetComponent<OrePickup>();
+
+        if (OrePickup == null)
+        {
+            OrePickup = Carryable.GetComponentInParent<OrePickup>();
+        }
+
+        if (OrePickup == null)
+        {
+            OrePickup = Carryable.GetComponentInChildren<OrePickup>(true);
+        }
+
+        return OrePickup;
+    }
+
+    /// <summary>
+    /// Logs budget refresh details when magnet debug logs are enabled.
+    /// </summary>
+    private void LogRefreshStatsIfNeeded()
+    {
+        if (!DebugLogs)
+        {
+            return;
+        }
+
+        if (LastCandidateHitCount >= CandidateColliders.Length)
+        {
+            Debug.LogWarning(
+                "[MagnetItemBehaviour] Candidate buffer saturated. Increase Candidate Buffer Size. Size: " + CandidateColliders.Length,
+                this);
+        }
+
+        Debug.Log(
+            "[MagnetItemBehaviour] Refresh | Hits: " + LastCandidateHitCount +
+            " | Valid: " + LastResolvedCandidateCount +
+            " | Active: " + ActiveCarryables.Count +
+            " | MaxActive: " + Mathf.Max(1, MaxActivePullTargets),
+            this);
     }
 
     /// <summary>
