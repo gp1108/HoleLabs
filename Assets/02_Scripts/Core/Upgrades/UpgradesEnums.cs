@@ -33,7 +33,11 @@ public enum UpgradeStatType
 
     // Wall Drill
     WallDrillProductionInterval = 30,
-    WallDrillStoredOreCapacity = 31
+    WallDrillStoredOreCapacity = 31,
+
+    // Mineral Elevator
+    MineralElevatorStoredOreCapacity = 40,
+    MineralElevatorTransferInterval = 41
 }
 
 /// <summary>

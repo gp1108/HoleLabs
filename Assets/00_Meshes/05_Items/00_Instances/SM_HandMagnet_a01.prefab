@@ -135,6 +135,13 @@ MonoBehaviour:
     m_Bits: 192
   IgnoreHeldObjects: 1
   ContinuousPullWhileHeld: 1
+  MaxActivePullTargets: 500
+  MaxNewAttachmentsPerRefresh: 32
+  TargetRefreshInterval: 0.08
+  CandidateBufferSize: 512
+  PreferClosestTargets: 1
+  ReleaseTargetsOutsideAttractionArea: 0
+  ActiveTargetReleasePadding: 1
   AllowFiltersWithoutUpgradeRequirement: 1
   SingleFilterFeatureFlagId: Magnet.Unlock.SingleFilter
   MultiFilterFeatureFlagId: Magnet.Unlock.MultiFilter

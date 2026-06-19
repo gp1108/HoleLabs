@@ -300,6 +300,32 @@ public static class GameFeedbackEventIds
     /// </summary>
     public const string WallDrillBlocked = "WallDrill.Blocked";
 
+
+    /// <summary>
+    /// Event fired when the shared laboratory mineral elevator hub becomes active.
+    /// </summary>
+    public const string MineralElevatorHubActivated = "MineralElevator.HubActivated";
+
+    /// <summary>
+    /// Event fired when a mineral elevator access point starts visually transferring pending ore to the hub.
+    /// </summary>
+    public const string MineralElevatorTransferStarted = "MineralElevator.TransferStarted";
+
+    /// <summary>
+    /// Event fired when a mineral elevator interaction is blocked for any non-capacity reason.
+    /// </summary>
+    public const string MineralElevatorBlocked = "MineralElevator.Blocked";
+
+    /// <summary>
+    /// Event fired when the player starts claiming stored output from the shared mineral elevator hub.
+    /// </summary>
+    public const string MineralElevatorClaimStarted = "MineralElevator.ClaimStarted";
+
+    /// <summary>
+    /// Event fired when the player manually stops mineral elevator hub output ejection.
+    /// </summary>
+    public const string MineralElevatorClaimStopped = "MineralElevator.ClaimStopped";
+
     /// <summary>
     /// Event fired when a mineral elevator accepts a physical ore item.
     /// </summary>

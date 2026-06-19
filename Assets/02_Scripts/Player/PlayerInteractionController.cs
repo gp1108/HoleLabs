@@ -71,6 +71,11 @@ public sealed class PlayerInteractionController : MonoBehaviour
     private WorldItem CurrentLookedWorldItem;
 
     /// <summary>
+    /// Generic player-interactable target currently under the center-screen interaction ray.
+    /// </summary>
+    private IPlayerInteractable CurrentLookedPlayerInteractable;
+
+    /// <summary>
     /// Drill output claim target currently under the center-screen interaction ray.
     /// </summary>
     private IDrillOutputClaimable CurrentLookedDrillOutputClaimable;
@@ -206,6 +211,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
     {
         CurrentLookedWorldItem = null;
         CurrentLookedCarryable = null;
+        CurrentLookedPlayerInteractable = null;
         CurrentLookedDrillOutputClaimable = null;
 
         if (PlayerCamera == null)
@@ -227,6 +233,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         CurrentLookedWorldItem = ResolveWorldItem(HitInfo);
         CurrentLookedCarryable = ResolveCarryable(HitInfo);
+        CurrentLookedPlayerInteractable = ResolvePlayerInteractable(HitInfo);
         CurrentLookedDrillOutputClaimable = ResolveDrillOutputClaimable(HitInfo);
     }
 
@@ -241,6 +248,11 @@ public sealed class PlayerInteractionController : MonoBehaviour
         }
 
         if (TryOpenNearbyShop())
+        {
+            return;
+        }
+
+        if (TryInteractWithLookedPlayerInteractable())
         {
             return;
         }
@@ -305,6 +317,20 @@ public sealed class PlayerInteractionController : MonoBehaviour
         }
 
         return MoneyCollector.TryCollectCurrentLookedMoney();
+    }
+
+    /// <summary>
+    /// Tries to interact with the currently looked generic player-interactable target before generic world item or carry interactions.
+    /// </summary>
+    /// <returns>True when a generic interactable consumed the interaction.</returns>
+    private bool TryInteractWithLookedPlayerInteractable()
+    {
+        if (CurrentLookedPlayerInteractable == null)
+        {
+            return false;
+        }
+
+        return CurrentLookedPlayerInteractable.TryInteract();
     }
 
     /// <summary>
@@ -392,6 +418,35 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         HotbarController.SpawnWorldItem(PreviousSelectedItem, SpawnPosition, SpawnRotation, SpawnLinearVelocity, SpawnAngularVelocity, false);
         Log("Swapped looked world item with currently selected hotbar item.");
+    }
+
+    /// <summary>
+    /// Resolves a generic player-interactable target from the current raycast hit.
+    /// </summary>
+    /// <param name="HitInfo">Raycast hit returned by the interaction ray.</param>
+    /// <returns>Generic player-interactable target, or null.</returns>
+    private IPlayerInteractable ResolvePlayerInteractable(RaycastHit HitInfo)
+    {
+        if (HitInfo.collider == null)
+        {
+            return null;
+        }
+
+        IPlayerInteractable Interactable = HitInfo.collider.GetComponent<IPlayerInteractable>() ??
+                                           HitInfo.collider.GetComponentInParent<IPlayerInteractable>();
+
+        if (Interactable != null)
+        {
+            return Interactable;
+        }
+
+        if (HitInfo.rigidbody != null)
+        {
+            Interactable = HitInfo.rigidbody.GetComponent<IPlayerInteractable>() ??
+                           HitInfo.rigidbody.GetComponentInParent<IPlayerInteractable>();
+        }
+
+        return Interactable;
     }
 
     /// <summary>
