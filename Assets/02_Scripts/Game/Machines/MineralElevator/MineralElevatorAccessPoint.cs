@@ -44,6 +44,16 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
     [Tooltip("If true, ore currently held by the player or magnetized by the magnet cannot be absorbed.")]
     [SerializeField] private bool IgnorePlayerHeldOrMagnetizedOre = true;
 
+    [Header("Absorption Timing")]
+    [Tooltip("Seconds waited after the player interaction before the first ore is absorbed. Use this to let the machine/button animation start first.")]
+    [SerializeField] private float AbsorptionStartDelay = 0.25f;
+
+    [Tooltip("Seconds waited between each ore absorbed from the input zone.")]
+    [SerializeField] private float AbsorptionInterval = 0.15f;
+
+    [Tooltip("If true, pressing interact while this access point is already absorbing ore is consumed and only plays blocked feedback.")]
+    [SerializeField] private bool BlockInteractionWhileAbsorbing = true;
+
     [Header("Transfer")]
     [Tooltip("Base seconds needed for one absorbed ore payload to visually travel to the laboratory hub.")]
     [SerializeField] private float BaseTransferInterval = 1f;
@@ -61,7 +71,13 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
     [SerializeField] private bool ReturnRejectedTransferOreToWorld = true;
 
     [Header("Feedback Events")]
-    [Tooltip("Feedback event played when this access point absorbs at least one ore pickup.")]
+    [Tooltip("Feedback event played when this access point starts its local ore absorption sequence.")]
+    [SerializeField] private string AbsorptionStartedEventId = GameFeedbackEventIds.MineralElevatorAbsorptionStarted;
+
+    [Tooltip("Feedback event played when this access point finishes or stops its local ore absorption sequence.")]
+    [SerializeField] private string AbsorptionCompletedEventId = GameFeedbackEventIds.MineralElevatorAbsorptionCompleted;
+
+    [Tooltip("Feedback event played every time this access point absorbs one ore pickup.")]
     [SerializeField] private string ItemAcceptedEventId = GameFeedbackEventIds.MineralElevatorItemAccepted;
 
     [Tooltip("Feedback event played when this access point starts or continues a transfer sequence.")]
@@ -97,6 +113,16 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
     /// Reusable unique ore pickup list built from input-zone scan results.
     /// </summary>
     private readonly List<OrePickup> CandidateOrePickups = new List<OrePickup>();
+
+    /// <summary>
+    /// Active absorption coroutine that consumes physical ore pickups from the input zone over time.
+    /// </summary>
+    private Coroutine AbsorptionRoutine;
+
+    /// <summary>
+    /// Snapshot of ore pickups selected by the latest player interaction and waiting for timed absorption.
+    /// </summary>
+    private readonly List<OrePickup> PendingAbsorptionOrePickups = new List<OrePickup>();
 
     /// <summary>
     /// Active transfer coroutine that moves pending payloads to the hub over time.
@@ -146,6 +172,8 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
             InstallationSpot.InstallationChanged -= HandleInstallationChanged;
             InstallationSpot.InstallationCleared -= HandleInstallationCleared;
         }
+
+        StopAbsorptionRoutine();
     }
 
     /// <summary>
@@ -277,7 +305,7 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
     }
 
     /// <summary>
-    /// Attempts to absorb physical ore pickups from the input zone and queue them for timed transfer to the shared hub.
+    /// Starts a timed absorption sequence from the input zone and queues accepted ore payloads for timed transfer to the shared hub.
     /// </summary>
     private bool TryAbsorbInputOre()
     {
@@ -297,11 +325,21 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
             return false;
         }
 
+        if (AbsorptionRoutine != null)
+        {
+            if (BlockInteractionWhileAbsorbing)
+            {
+                PlayFeedback(BlockedEventId, transform.position);
+                Log("Interaction rejected because this access point is already absorbing ore.");
+                return true;
+            }
+
+            return false;
+        }
+
         Hub.ActivateHub();
 
-        int AvailableHubCapacity = Hub.GetAvailableIncomingCapacity();
-
-        if (AvailableHubCapacity <= 0)
+        if (Hub.GetAvailableIncomingCapacity() <= 0)
         {
             PlayFeedback(FullEventId, transform.position);
             Log("Interaction rejected because the shared hub is full or fully reserved.");
@@ -317,6 +355,8 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
             return false;
         }
 
+        PendingAbsorptionOrePickups.Clear();
+
         int RequestedAbsorbCount = CandidateOrePickups.Count;
 
         if (MaxAbsorbedOrePerInteraction > 0)
@@ -324,20 +364,9 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
             RequestedAbsorbCount = Mathf.Min(RequestedAbsorbCount, MaxAbsorbedOrePerInteraction);
         }
 
-        RequestedAbsorbCount = Mathf.Min(RequestedAbsorbCount, AvailableHubCapacity);
+        RequestedAbsorbCount = Mathf.Min(RequestedAbsorbCount, Hub.GetAvailableIncomingCapacity());
 
-        int ReservedSlots = Hub.ReserveIncomingOreSlots(RequestedAbsorbCount);
-
-        if (ReservedSlots <= 0)
-        {
-            PlayFeedback(FullEventId, transform.position);
-            Log("Interaction rejected because the hub did not reserve any incoming slot.");
-            return true;
-        }
-
-        int AbsorbedCount = 0;
-
-        for (int Index = 0; Index < CandidateOrePickups.Count && AbsorbedCount < ReservedSlots; Index++)
+        for (int Index = 0; Index < CandidateOrePickups.Count && PendingAbsorptionOrePickups.Count < RequestedAbsorbCount; Index++)
         {
             OrePickup Pickup = CandidateOrePickups[Index];
 
@@ -346,38 +375,19 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
                 continue;
             }
 
-            OreItemData RuntimeOreData = Pickup.GetOreItemData();
-
-            if (RuntimeOreData == null || RuntimeOreData.GetOreDefinition() == null)
-            {
-                continue;
-            }
-
-            if (!ConsumePhysicalOrePickup(Pickup))
-            {
-                continue;
-            }
-
-            PendingTransferOreItems.Add(RuntimeOreData);
-            AbsorbedCount++;
+            PendingAbsorptionOrePickups.Add(Pickup);
         }
 
-        if (AbsorbedCount < ReservedSlots)
-        {
-            Hub.ReleaseIncomingOreSlots(ReservedSlots - AbsorbedCount);
-        }
-
-        if (AbsorbedCount <= 0)
+        if (PendingAbsorptionOrePickups.Count <= 0)
         {
             PlayFeedback(BlockedEventId, transform.position);
-            Log("Interaction reserved capacity but no ore could be consumed. Released reservations.");
+            Log("Interaction found candidate colliders but no valid OrePickup could be queued for absorption.");
             return false;
         }
 
-        PlayFeedback(ItemAcceptedEventId, transform.position);
-        PlayFeedback(TransferStartedEventId, transform.position);
-        RestartTransferRoutineIfNeeded();
-        Log("Absorbed ores: " + AbsorbedCount + " Pending=" + PendingTransferOreItems.Count);
+        PlayFeedback(AbsorptionStartedEventId, transform.position);
+        AbsorptionRoutine = StartCoroutine(ProcessInputAbsorptionRoutine());
+        Log("Started absorption sequence. Queued candidates=" + PendingAbsorptionOrePickups.Count);
         return true;
     }
 
@@ -497,6 +507,109 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
 
         Destroy(Pickup.gameObject);
         return true;
+    }
+
+    /// <summary>
+    /// Stops the active input absorption routine and clears the selected physical ore snapshot.
+    /// Already consumed payloads remain in PendingTransferOreItems and keep their hub reservations.
+    /// </summary>
+    private void StopAbsorptionRoutine()
+    {
+        if (AbsorptionRoutine != null)
+        {
+            StopCoroutine(AbsorptionRoutine);
+            AbsorptionRoutine = null;
+        }
+
+        PendingAbsorptionOrePickups.Clear();
+    }
+
+    /// <summary>
+    /// Absorbs selected physical ores one by one, with an optional startup delay and interval between each ore.
+    /// Hub capacity is reserved per ore immediately before that physical ore is consumed, preventing overflow from concurrent access points.
+    /// </summary>
+    private IEnumerator ProcessInputAbsorptionRoutine()
+    {
+        if (AbsorptionStartDelay > 0f)
+        {
+            yield return new WaitForSeconds(AbsorptionStartDelay);
+        }
+
+        int AbsorbedCount = 0;
+
+        for (int Index = 0; Index < PendingAbsorptionOrePickups.Count; Index++)
+        {
+            if (!HasInstalledElevator || Hub == null)
+            {
+                PlayFeedback(BlockedEventId, transform.position);
+                Log("Absorption stopped because installation or hub became unavailable.");
+                break;
+            }
+
+            if (Hub.GetAvailableIncomingCapacity() <= 0)
+            {
+                PlayFeedback(FullEventId, transform.position);
+                Log("Absorption stopped because the shared hub reached full reserved capacity.");
+                break;
+            }
+
+            OrePickup Pickup = PendingAbsorptionOrePickups[Index];
+
+            if (!CanAbsorbOrePickup(Pickup))
+            {
+                continue;
+            }
+
+            OreItemData RuntimeOreData = Pickup.GetOreItemData();
+
+            if (RuntimeOreData == null || RuntimeOreData.GetOreDefinition() == null)
+            {
+                continue;
+            }
+
+            int ReservedSlots = Hub.ReserveIncomingOreSlots(1);
+
+            if (ReservedSlots <= 0)
+            {
+                PlayFeedback(FullEventId, transform.position);
+                Log("Absorption stopped because the hub rejected the next reservation.");
+                break;
+            }
+
+            if (!ConsumePhysicalOrePickup(Pickup))
+            {
+                Hub.ReleaseIncomingOreSlots(1);
+                continue;
+            }
+
+            bool WasTransferIdle = PendingTransferOreItems.Count <= 0 && TransferRoutine == null;
+            PendingTransferOreItems.Add(RuntimeOreData);
+            AbsorbedCount++;
+
+            PlayFeedback(ItemAcceptedEventId, transform.position);
+
+            if (WasTransferIdle)
+            {
+                PlayFeedback(TransferStartedEventId, transform.position);
+            }
+
+            RestartTransferRoutineIfNeeded();
+
+            if (AbsorptionInterval > 0f && Index < PendingAbsorptionOrePickups.Count - 1)
+            {
+                yield return new WaitForSeconds(AbsorptionInterval);
+            }
+        }
+
+        PendingAbsorptionOrePickups.Clear();
+        AbsorptionRoutine = null;
+
+        if (AbsorbedCount > 0)
+        {
+            PlayFeedback(AbsorptionCompletedEventId, transform.position);
+        }
+
+        Log("Finished absorption sequence. Absorbed=" + AbsorbedCount + " PendingTransfer=" + PendingTransferOreItems.Count);
     }
 
     /// <summary>
@@ -675,6 +788,7 @@ public sealed class MineralElevatorAccessPoint : MonoBehaviour, IPlayerInteracta
     /// </summary>
     private void HandleInstallationCleared(PlaceableInstallationSpot Spot)
     {
+        StopAbsorptionRoutine();
         StopTransferRoutine();
         ReleaseCurrentPendingReservations();
         PendingTransferOreItems.Clear();

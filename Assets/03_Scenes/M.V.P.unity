@@ -3521,11 +3521,16 @@ MonoBehaviour:
   MaxInputZoneColliders: 128
   MaxAbsorbedOrePerInteraction: 0
   IgnorePlayerHeldOrMagnetizedOre: 1
-  BaseTransferInterval: 1
+  AbsorptionStartDelay: 0.25
+  AbsorptionInterval: 1
+  BlockInteractionWhileAbsorbing: 1
+  BaseTransferInterval: 0.15
   UseUpgradeModifiedTransferInterval: 1
   TransferIntervalStat: 41
   RejectedOreReturnPoint: {fileID: 1141242154}
   ReturnRejectedTransferOreToWorld: 1
+  AbsorptionStartedEventId: MineralElevator.AbsorptionStarted
+  AbsorptionCompletedEventId: MineralElevator.AbsorptionCompleted
   ItemAcceptedEventId: MineralElevator.ItemAccepted
   TransferStartedEventId: MineralElevator.TransferStarted
   TransferCompletedEventId: MineralElevator.TransferCompleted
@@ -58051,11 +58056,16 @@ MonoBehaviour:
   MaxInputZoneColliders: 128
   MaxAbsorbedOrePerInteraction: 0
   IgnorePlayerHeldOrMagnetizedOre: 1
+  AbsorptionStartDelay: 0.25
+  AbsorptionInterval: 0.15
+  BlockInteractionWhileAbsorbing: 1
   BaseTransferInterval: 1
   UseUpgradeModifiedTransferInterval: 1
   TransferIntervalStat: 41
   RejectedOreReturnPoint: {fileID: 1277423959}
   ReturnRejectedTransferOreToWorld: 1
+  AbsorptionStartedEventId: MineralElevator.AbsorptionStarted
+  AbsorptionCompletedEventId: MineralElevator.AbsorptionCompleted
   ItemAcceptedEventId: MineralElevator.ItemAccepted
   TransferStartedEventId: MineralElevator.TransferStarted
   TransferCompletedEventId: MineralElevator.TransferCompleted
@@ -85179,6 +85189,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 779465064456891073, guid: 32694fc50810ddc4cbf9088376bbbdfd, type: 3}
+      propertyPath: Id
+      value: YGJVBFTYBJVHKUYFRDTYDTYYGUb675r
+      objectReference: {fileID: 0}
     - target: {fileID: 4795839848291739385, guid: 32694fc50810ddc4cbf9088376bbbdfd, type: 3}
       propertyPath: m_Name
       value: MineralElevator_b01   (1)

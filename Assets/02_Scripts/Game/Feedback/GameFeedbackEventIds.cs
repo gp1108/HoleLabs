@@ -307,6 +307,16 @@ public static class GameFeedbackEventIds
     public const string MineralElevatorHubActivated = "MineralElevator.HubActivated";
 
     /// <summary>
+    /// Event fired when a mineral elevator access point starts absorbing ore from its local input zone.
+    /// </summary>
+    public const string MineralElevatorAbsorptionStarted = "MineralElevator.AbsorptionStarted";
+
+    /// <summary>
+    /// Event fired when a mineral elevator access point finishes its local absorption sequence.
+    /// </summary>
+    public const string MineralElevatorAbsorptionCompleted = "MineralElevator.AbsorptionCompleted";
+
+    /// <summary>
     /// Event fired when a mineral elevator access point starts visually transferring pending ore to the hub.
     /// </summary>
     public const string MineralElevatorTransferStarted = "MineralElevator.TransferStarted";
