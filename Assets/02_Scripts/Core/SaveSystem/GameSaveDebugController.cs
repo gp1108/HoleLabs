@@ -226,6 +226,26 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
+    private sealed class ElevatorDrillInstallationSpotState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private bool IsEnabled;
+
+        /// <summary>
+        /// Creates a save payload for an elevator drill installation companion state.
+        /// Generic installation state is saved separately by PlaceableInstallationSpotState.
+        /// </summary>
+        public ElevatorDrillInstallationSpotState(string SceneIdValue, bool IsEnabledValue)
+        {
+            SceneId = SceneIdValue;
+            IsEnabled = IsEnabledValue;
+        }
+
+        public string GetSceneId() => SceneId;
+        public bool GetIsEnabled() => IsEnabled;
+    }
+
+    [Serializable]
     private sealed class PlaceableInstallationSpotState
     {
         [SerializeField] private string SceneId;
@@ -678,6 +698,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<WallDrillInstallationSpotState> WallDrillInstallationSpots = new();
         [SerializeField] private List<MineralElevatorHubState> MineralElevatorHubs = new();
         [SerializeField] private List<MineralElevatorAccessPointState> MineralElevatorAccessPoints = new();
+        [SerializeField] private List<ElevatorDrillInstallationSpotState> ElevatorDrillInstallationSpots = new();
         [SerializeField] private List<PlaceableInstallationSpotState> PlaceableInstallationSpots = new();
 
         [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
@@ -700,6 +721,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         public List<MineralElevatorAccessPointState> GetMineralElevatorAccessPoints() => MineralElevatorAccessPoints;
         public void SetMineralElevatorAccessPoints(List<MineralElevatorAccessPointState> Value) => MineralElevatorAccessPoints = Value ?? new List<MineralElevatorAccessPointState>();
+
+        public List<ElevatorDrillInstallationSpotState> GetElevatorDrillInstallationSpots() => ElevatorDrillInstallationSpots;
+        public void SetElevatorDrillInstallationSpots(List<ElevatorDrillInstallationSpotState> Value) => ElevatorDrillInstallationSpots = Value ?? new List<ElevatorDrillInstallationSpotState>();
 
         public List<PlaceableInstallationSpotState> GetPlaceableInstallationSpots() => PlaceableInstallationSpots;
         public void SetPlaceableInstallationSpots(List<PlaceableInstallationSpotState> Value) => PlaceableInstallationSpots = Value ?? new List<PlaceableInstallationSpotState>();
@@ -808,6 +832,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private readonly Dictionary<string, WallDrillInstallationSpot> WallDrillInstallationSpotsById = new();
     private readonly Dictionary<string, MineralElevatorHub> MineralElevatorHubsById = new();
     private readonly Dictionary<string, MineralElevatorAccessPoint> MineralElevatorAccessPointsById = new();
+    private readonly Dictionary<string, ElevatorDrillInstallationSpot> ElevatorDrillInstallationSpotsById = new();
     private readonly Dictionary<string, PlaceableInstallationSpot> PlaceableInstallationSpotsById = new();
     /// <summary>
     /// Resolves missing scene references and builds lookup caches.
@@ -1281,6 +1306,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetWallDrillInstallationSpots(CaptureWallDrillInstallationSpots());
         Data.SetMineralElevatorHubs(CaptureMineralElevatorHubs());
         Data.SetMineralElevatorAccessPoints(CaptureMineralElevatorAccessPoints());
+        Data.SetElevatorDrillInstallationSpots(CaptureElevatorDrillInstallationSpots());
         Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
         Data.SetResearchRuntime(CaptureResearchRuntime());
         Data.SetScannerRuntime(CaptureScannerRuntime());
@@ -1348,6 +1374,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreScannerRuntime(Data.GetScannerRuntime());
         RestoreResearchRuntime(Data.GetResearchRuntime());
         RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
+        RestoreElevatorDrillInstallationSpots(Data.GetElevatorDrillInstallationSpots());
         RestoreWallDrillInstallationSpots(Data.GetWallDrillInstallationSpots());
         RestoreMineralElevatorHubs(Data.GetMineralElevatorHubs());
         RestoreMineralElevatorAccessPoints(Data.GetMineralElevatorAccessPoints());
@@ -1439,6 +1466,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         WallDrillInstallationSpotsById.Clear();
         MineralElevatorHubsById.Clear();
         MineralElevatorAccessPointsById.Clear();
+        ElevatorDrillInstallationSpotsById.Clear();
         PlaceableInstallationSpotsById.Clear();
 
         for (int Index = 0; Index < ItemDefinitions.Count; Index++)
@@ -1584,6 +1612,29 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             MineralElevatorAccessPointsById[SaveId.GetId()] = AccessPoint;
+        }
+
+        ElevatorDrillInstallationSpot[] ElevatorDrillSpots = FindObjectsByType<ElevatorDrillInstallationSpot>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < ElevatorDrillSpots.Length; Index++)
+        {
+            ElevatorDrillInstallationSpot Spot = ElevatorDrillSpots[Index];
+
+            if (Spot == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Spot.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            ElevatorDrillInstallationSpotsById[SaveId.GetId()] = Spot;
         }
 
         PlaceableInstallationSpot[] PlaceableSpots = FindObjectsByType<PlaceableInstallationSpot>(
@@ -2629,6 +2680,60 @@ public sealed class GameSaveDebugController : MonoBehaviour
             AccessPoint.ApplySavedState(
                 State.GetRemainingTransferTimer(),
                 State.ToRuntimePendingOreItems(OreDefinitionsById));
+        }
+    }
+
+    /// <summary>
+    /// Captures every elevator drill installation companion state in the scene.
+    /// Generic installation state is captured separately by PlaceableInstallationSpot.
+    /// </summary>
+    private List<ElevatorDrillInstallationSpotState> CaptureElevatorDrillInstallationSpots()
+    {
+        List<ElevatorDrillInstallationSpotState> Result = new List<ElevatorDrillInstallationSpotState>();
+
+        foreach (KeyValuePair<string, ElevatorDrillInstallationSpot> Pair in ElevatorDrillInstallationSpotsById)
+        {
+            ElevatorDrillInstallationSpot Spot = Pair.Value;
+
+            if (Spot == null)
+            {
+                continue;
+            }
+
+            Result.Add(new ElevatorDrillInstallationSpotState(
+                Pair.Key,
+                Spot.GetCurrentEnabledState()));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores every elevator drill installation companion state after generic placeable spots have restored installed prefabs.
+    /// </summary>
+    private void RestoreElevatorDrillInstallationSpots(List<ElevatorDrillInstallationSpotState> States)
+    {
+        if (States == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < States.Count; Index++)
+        {
+            ElevatorDrillInstallationSpotState State = States[Index];
+
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!ElevatorDrillInstallationSpotsById.TryGetValue(State.GetSceneId(), out ElevatorDrillInstallationSpot Spot) || Spot == null)
+            {
+                Log("Saved elevator drill installation spot id was not found in the scene: " + State.GetSceneId());
+                continue;
+            }
+
+            Spot.ApplySavedState(State.GetIsEnabled());
         }
     }
 

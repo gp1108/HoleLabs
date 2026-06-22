@@ -45,6 +45,12 @@ public struct MiningHitContext
     public Vector3 WorldNormal;
 
     /// <summary>
+    /// True when ore drops produced by this hit may use elevator ore spawn assist volumes.
+    /// Player hits keep their previous behavior through IsPlayerSource, while machine hits must opt in explicitly.
+    /// </summary>
+    public bool AllowElevatorOreSpawnAssist;
+
+    /// <summary>
     /// Creates a new mining hit context without a precise impact point.
     /// </summary>
     /// <param name="SourceTypeValue">Category of the source that caused the hit.</param>
@@ -56,6 +62,7 @@ public struct MiningHitContext
         HasWorldPoint = false;
         WorldPoint = Vector3.zero;
         WorldNormal = Vector3.up;
+        AllowElevatorOreSpawnAssist = false;
     }
 
     /// <summary>
@@ -76,6 +83,30 @@ public struct MiningHitContext
         HasWorldPoint = true;
         WorldPoint = WorldPointValue;
         WorldNormal = WorldNormalValue.sqrMagnitude > 0.0001f ? WorldNormalValue.normalized : Vector3.up;
+        AllowElevatorOreSpawnAssist = false;
+    }
+
+    /// <summary>
+    /// Creates a new mining hit context with a precise impact point, surface normal and explicit elevator spawn assist permission.
+    /// </summary>
+    /// <param name="SourceTypeValue">Category of the source that caused the hit.</param>
+    /// <param name="SourceObjectValue">Optional world object that caused the hit.</param>
+    /// <param name="WorldPointValue">Exact world-space point where the hit landed.</param>
+    /// <param name="WorldNormalValue">Surface normal at the impact point.</param>
+    /// <param name="AllowElevatorOreSpawnAssistValue">True if ore drops created by this hit may use elevator ore spawn assist volumes.</param>
+    public MiningHitContext(
+        HitSourceType SourceTypeValue,
+        GameObject SourceObjectValue,
+        Vector3 WorldPointValue,
+        Vector3 WorldNormalValue,
+        bool AllowElevatorOreSpawnAssistValue)
+    {
+        SourceType = SourceTypeValue;
+        SourceObject = SourceObjectValue;
+        HasWorldPoint = true;
+        WorldPoint = WorldPointValue;
+        WorldNormal = WorldNormalValue.sqrMagnitude > 0.0001f ? WorldNormalValue.normalized : Vector3.up;
+        AllowElevatorOreSpawnAssist = AllowElevatorOreSpawnAssistValue;
     }
 
     /// <summary>
@@ -84,6 +115,14 @@ public struct MiningHitContext
     public bool IsPlayerSource()
     {
         return SourceType == HitSourceType.Player;
+    }
+
+    /// <summary>
+    /// Returns true when ore drops caused by this hit may use elevator ore spawn assist volumes.
+    /// </summary>
+    public bool CanUseElevatorOreSpawnAssist()
+    {
+        return IsPlayerSource() || AllowElevatorOreSpawnAssist;
     }
 
     /// <summary>

@@ -372,9 +372,24 @@ public static class GameFeedbackEventIds
     public const string ElevatorDrillTargetAcquired = "ElevatorDrill.TargetAcquired";
 
     /// <summary>
+    /// Event fired when the elevator drill loses its current mineable target.
+    /// </summary>
+    public const string ElevatorDrillTargetLost = "ElevatorDrill.TargetLost";
+
+    /// <summary>
+    /// Event fired when the elevator drill applies one accepted mining hit.
+    /// </summary>
+    public const string ElevatorDrillMiningTick = "ElevatorDrill.MiningTick";
+
+    /// <summary>
     /// Event fired when the elevator drill breaks a mineable target.
     /// </summary>
     public const string ElevatorDrillTargetBroken = "ElevatorDrill.TargetBroken";
+
+    /// <summary>
+    /// Event fired when the elevator drill cannot mine or interact for the current request.
+    /// </summary>
+    public const string ElevatorDrillBlocked = "ElevatorDrill.Blocked";
 
     /// <summary>
     /// Event fired when the player produces a valid footstep.

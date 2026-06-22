@@ -37,7 +37,12 @@ public enum UpgradeStatType
 
     // Mineral Elevator
     MineralElevatorStoredOreCapacity = 40,
-    MineralElevatorTransferInterval = 41
+    MineralElevatorTransferInterval = 41,
+
+    // Elevator Drill
+    ElevatorDrillMiningDamage = 50,
+    ElevatorDrillMiningInterval = 51,
+    ElevatorDrillRange = 52
 }
 
 /// <summary>

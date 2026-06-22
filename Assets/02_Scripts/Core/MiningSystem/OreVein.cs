@@ -571,8 +571,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
     }
 
     /// <summary>
-    /// Spawns one ore pickup and applies the optional elevator spawn assist only
-    /// when the breaking hit was explicitly caused by the player.
+    /// Spawns one ore pickup and applies optional elevator spawn assist when the hit context allows it.
+    /// Player hits allow this by default, while machine hits must explicitly opt in through MiningHitContext.
     /// </summary>
     /// <param name="OreItemData">Runtime ore payload to spawn.</param>
     /// <param name="DropPosition">World spawn position.</param>
@@ -593,7 +593,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
             return;
         }
 
-        if (!LastMiningHitContext.IsPlayerSource())
+        if (!LastMiningHitContext.CanUseElevatorOreSpawnAssist())
         {
             return;
         }
