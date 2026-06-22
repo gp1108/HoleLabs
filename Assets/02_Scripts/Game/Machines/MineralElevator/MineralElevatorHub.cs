@@ -74,6 +74,28 @@ public sealed class MineralElevatorHub : MonoBehaviour, IPlayerInteractable
     [Tooltip("FixedUpdate steps waited after spawning one ore before the next clearance check starts.")]
     [SerializeField] private int FixedStepsAfterClaimSpawn = 2;
 
+    [Header("Claim Spawn Unstuck")]
+    [Tooltip("If true, ore pickups blocking the output volume are kept awake while the hub waits for clearance.")]
+    [SerializeField] private bool KeepBlockingOreAwake = true;
+
+    [Tooltip("Seconds a blocker can remain inside the output volume before receiving a forward nudge.")]
+    [SerializeField] private float BlockerNudgeDelay = 0.35f;
+
+    [Tooltip("Impulse applied in Output Spawn Point forward direction to blockers that remain inside the output volume.")]
+    [SerializeField] private float BlockerNudgeImpulseForce = 2.5f;
+
+    [Tooltip("Maximum nudge attempts before the optional hard relocation fallback is used. Use 0 to disable the relocation fallback.")]
+    [SerializeField] private int MaxBlockerNudgeAttemptsBeforeRelocation = 3;
+
+    [Tooltip("If true, blockers that refuse to leave after repeated nudges are moved just outside the protected output volume.")]
+    [SerializeField] private bool RelocateBlockerAfterFailedNudges = true;
+
+    [Tooltip("Distance from Output Spawn Point used when relocating a stuck blocker outside the protected output volume.")]
+    [SerializeField] private float BlockerRelocationDistance = 1.1f;
+
+    [Tooltip("Side spacing used when several blockers must be relocated at the same time.")]
+    [SerializeField] private float BlockerRelocationSideSpacing = 0.25f;
+
     [Header("Feedback Events")]
     [Tooltip("Feedback event played when this hub becomes active for the first time.")]
     [SerializeField] private string HubActivatedEventId = GameFeedbackEventIds.MineralElevatorHubActivated;
@@ -124,6 +146,11 @@ public sealed class MineralElevatorHub : MonoBehaviour, IPlayerInteractable
     /// Recently spawned ore roots that must leave the protected output volume before another ore can spawn.
     /// </summary>
     private readonly List<GameObject> ActiveClaimSpawnBlockers = new List<GameObject>();
+
+    /// <summary>
+    /// Temporary blocker root buffer reused by the output unstuck watchdog.
+    /// </summary>
+    private readonly List<GameObject> BlockingOreRootBuffer = new List<GameObject>();
 
     /// <summary>
     /// Whether the laboratory hub is active because at least one access point has been installed at some point.
@@ -531,6 +558,9 @@ public sealed class MineralElevatorHub : MonoBehaviour, IPlayerInteractable
         float Timeout = Mathf.Max(0f, ClaimSpawnClearanceTimeout);
         float ElapsedTime = 0f;
         float CheckInterval = Mathf.Max(0.01f, ClaimSpawnClearanceCheckInterval);
+        float SafeNudgeDelay = Mathf.Max(0.05f, BlockerNudgeDelay);
+        float NextNudgeTime = SafeNudgeDelay;
+        int NudgeAttempts = 0;
 
         while (!IsClaimSpawnVolumeClear())
         {
@@ -538,6 +568,23 @@ public sealed class MineralElevatorHub : MonoBehaviour, IPlayerInteractable
             {
                 ResultCallback?.Invoke(false);
                 yield break;
+            }
+
+            if (KeepBlockingOreAwake)
+            {
+                WakeBlockingOreRoots();
+            }
+
+            if (ElapsedTime >= NextNudgeTime)
+            {
+                NudgeAttempts++;
+
+                bool ShouldRelocate = RelocateBlockerAfterFailedNudges
+                    && MaxBlockerNudgeAttemptsBeforeRelocation > 0
+                    && NudgeAttempts >= MaxBlockerNudgeAttemptsBeforeRelocation;
+
+                NudgeBlockingOreRoots(ShouldRelocate);
+                NextNudgeTime += SafeNudgeDelay;
             }
 
             ElapsedTime += CheckInterval;
@@ -614,6 +661,215 @@ public sealed class MineralElevatorHub : MonoBehaviour, IPlayerInteractable
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Keeps ore roots that are blocking the protected output volume awake so they can keep resolving physics normally.
+    /// </summary>
+    private void WakeBlockingOreRoots()
+    {
+        CollectBlockingOreRoots(BlockingOreRootBuffer);
+
+        for (int Index = 0; Index < BlockingOreRootBuffer.Count; Index++)
+        {
+            Rigidbody BlockingRigidbody = ResolveRootRigidbody(BlockingOreRootBuffer[Index]);
+
+            if (BlockingRigidbody == null || BlockingRigidbody.isKinematic)
+            {
+                continue;
+            }
+
+            BlockingRigidbody.WakeUp();
+        }
+    }
+
+    /// <summary>
+    /// Applies a forward nudge to blockers that remain inside the output volume, optionally relocating them after repeated failed nudges.
+    /// </summary>
+    /// <param name="AllowRelocation">Whether blockers may be moved just outside the protected volume as a final fallback.</param>
+    private void NudgeBlockingOreRoots(bool AllowRelocation)
+    {
+        if (OutputSpawnPoint == null)
+        {
+            return;
+        }
+
+        CollectBlockingOreRoots(BlockingOreRootBuffer);
+
+        if (BlockingOreRootBuffer.Count <= 0)
+        {
+            return;
+        }
+
+        Vector3 ForwardDirection = OutputSpawnPoint.forward.sqrMagnitude > 0.0001f
+            ? OutputSpawnPoint.forward.normalized
+            : transform.forward;
+
+        Vector3 RightDirection = OutputSpawnPoint.right.sqrMagnitude > 0.0001f
+            ? OutputSpawnPoint.right.normalized
+            : transform.right;
+
+        float SafeImpulse = Mathf.Max(0f, BlockerNudgeImpulseForce);
+        float SafeRelocationDistance = Mathf.Max(GetEffectiveClaimSpawnClearanceRadius() + 0.1f, BlockerRelocationDistance);
+        float SafeSideSpacing = Mathf.Max(0f, BlockerRelocationSideSpacing);
+
+        for (int Index = 0; Index < BlockingOreRootBuffer.Count; Index++)
+        {
+            GameObject BlockingRoot = BlockingOreRootBuffer[Index];
+
+            if (BlockingRoot == null || !BlockingRoot.activeInHierarchy)
+            {
+                continue;
+            }
+
+            Rigidbody BlockingRigidbody = ResolveRootRigidbody(BlockingRoot);
+
+            if (BlockingRigidbody != null && !BlockingRigidbody.isKinematic)
+            {
+                BlockingRigidbody.WakeUp();
+
+                if (SafeImpulse > 0f)
+                {
+                    BlockingRigidbody.AddForce(ForwardDirection * SafeImpulse, ForceMode.Impulse);
+                }
+            }
+
+            if (!AllowRelocation)
+            {
+                continue;
+            }
+
+            Vector3 SideOffset = RightDirection * ((Index % 2 == 0 ? 1f : -1f) * Mathf.Ceil(Index * 0.5f) * SafeSideSpacing);
+            Vector3 RelocationPosition = OutputSpawnPoint.position + ForwardDirection * SafeRelocationDistance + SideOffset;
+
+            if (BlockingRigidbody != null && !BlockingRigidbody.isKinematic)
+            {
+                BlockingRigidbody.linearVelocity = Vector3.zero;
+                BlockingRigidbody.angularVelocity = Vector3.zero;
+                BlockingRigidbody.position = RelocationPosition;
+                BlockingRigidbody.WakeUp();
+            }
+            else
+            {
+                BlockingRoot.transform.position = RelocationPosition;
+            }
+
+            Log("Relocated stuck hub output blocker: " + BlockingRoot.name);
+        }
+
+        Physics.SyncTransforms();
+    }
+
+    /// <summary>
+    /// Collects unique ore roots currently intersecting the protected output volume.
+    /// </summary>
+    /// <param name="Result">Reusable list filled with blocking ore roots.</param>
+    private void CollectBlockingOreRoots(List<GameObject> Result)
+    {
+        if (Result == null)
+        {
+            return;
+        }
+
+        Result.Clear();
+
+        if (OutputSpawnPoint == null)
+        {
+            return;
+        }
+
+        float SafeRadius = GetEffectiveClaimSpawnClearanceRadius();
+
+        for (int Index = ActiveClaimSpawnBlockers.Count - 1; Index >= 0; Index--)
+        {
+            GameObject Blocker = ActiveClaimSpawnBlockers[Index];
+
+            if (Blocker == null || !Blocker.activeInHierarchy)
+            {
+                ActiveClaimSpawnBlockers.RemoveAt(Index);
+                continue;
+            }
+
+            if (IsOreRootIntersectingSpawnVolume(Blocker, SafeRadius))
+            {
+                AddUniqueBlockingRoot(Result, Blocker);
+            }
+        }
+
+        EnsureClaimSpawnClearanceBuffer();
+
+        int HitCount = Physics.OverlapSphereNonAlloc(
+            OutputSpawnPoint.position,
+            SafeRadius,
+            ClaimSpawnClearanceBuffer,
+            ~0,
+            QueryTriggerInteraction.Collide);
+
+        for (int Index = 0; Index < HitCount; Index++)
+        {
+            Collider CandidateCollider = ClaimSpawnClearanceBuffer[Index];
+            ClaimSpawnClearanceBuffer[Index] = null;
+
+            if (CandidateCollider == null || !CandidateCollider.enabled)
+            {
+                continue;
+            }
+
+            if (CandidateCollider.transform == transform || CandidateCollider.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            OrePickup CandidateOrePickup = CandidateCollider.GetComponentInParent<OrePickup>();
+
+            if (CandidateOrePickup == null)
+            {
+                continue;
+            }
+
+            GameObject CandidateRoot = CandidateOrePickup.GetRuntimeRoot() != null
+                ? CandidateOrePickup.GetRuntimeRoot().gameObject
+                : CandidateOrePickup.gameObject;
+
+            if (CandidateRoot == null || !CandidateRoot.activeInHierarchy)
+            {
+                continue;
+            }
+
+            if (IsOreRootIntersectingSpawnVolume(CandidateRoot, SafeRadius))
+            {
+                AddUniqueBlockingRoot(Result, CandidateRoot);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adds one blocker root to a list only when it is not already present.
+    /// </summary>
+    private void AddUniqueBlockingRoot(List<GameObject> Result, GameObject Root)
+    {
+        if (Result == null || Root == null)
+        {
+            return;
+        }
+
+        if (!Result.Contains(Root))
+        {
+            Result.Add(Root);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the Rigidbody that controls one ore root.
+    /// </summary>
+    private Rigidbody ResolveRootRigidbody(GameObject Root)
+    {
+        if (Root == null)
+        {
+            return null;
+        }
+
+        return Root.GetComponent<Rigidbody>() ?? Root.GetComponentInChildren<Rigidbody>();
     }
 
     /// <summary>
