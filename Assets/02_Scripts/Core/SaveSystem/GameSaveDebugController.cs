@@ -1507,7 +1507,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             ScenePlacedWorldItemPersistence SceneItem = SceneWorldItems[Index];
 
-            if (SceneItem == null)
+            if (SceneItem == null || !SceneItem.ShouldPreserveAsScenePlacedItem())
             {
                 continue;
             }
@@ -1690,6 +1690,24 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
     }
 
+
+    /// <summary>
+    /// Gets whether the provided world item belongs to a preserved scene-placed item.
+    /// Runtime-spawned clones with accidental scene persistence components are treated as runtime items.
+    /// </summary>
+    /// <param name="WorldItem">World item to inspect.</param>
+    /// <returns>True when the item is owned by a preserved scene item.</returns>
+    private bool IsOwnedByPreservedSceneWorldItem(WorldItem WorldItem)
+    {
+        if (WorldItem == null)
+        {
+            return false;
+        }
+
+        ScenePlacedWorldItemPersistence ScenePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+        return ScenePersistence != null && ScenePersistence.ShouldPreserveAsScenePlacedItem();
+    }
+
     /// <summary>
     /// Captures every scene-placed world item state.
     /// </summary>
@@ -1749,7 +1767,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            if (WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>() != null)
+            if (IsOwnedByPreservedSceneWorldItem(WorldItem))
             {
                 continue;
             }
@@ -2239,7 +2257,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            if (WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>() != null)
+            if (IsOwnedByPreservedSceneWorldItem(WorldItem))
             {
                 continue;
             }

@@ -356,6 +356,8 @@ public sealed class ShopProductStation : MonoBehaviour
         Quaternion Rotation = UseDeliveryPointRotation ? DeliveryPoint.rotation : Quaternion.identity;
 
         GameObject WorldObject = Instantiate(WorldPrefab, DeliveryPoint.position, Rotation);
+        ScenePlacedWorldItemPersistence.MarkRuntimeSpawnedObject(WorldObject);
+
         WorldItem WorldItem = WorldObject.GetComponent<WorldItem>() ?? WorldObject.GetComponentInChildren<WorldItem>(true);
 
         if (WorldItem != null)

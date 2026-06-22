@@ -365,7 +365,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
-        ScenePlacedWorldItemPersistence ScenePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+        ScenePlacedWorldItemPersistence ScenePersistence = ResolvePreservedScenePersistence(WorldItem);
 
         int InsertedSlotIndex;
         bool WasAdded = HotbarController.TryAddItem(WorldItemInstance.Clone(), HotbarController.GetSelectedIndex(), out InsertedSlotIndex);
@@ -374,14 +374,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
         {
             Log("Picked world item into hotbar slot: " + InsertedSlotIndex);
 
-            if (ScenePersistence != null)
-            {
-                ScenePersistence.SetPresent(false);
-            }
-            else
-            {
-                Destroy(WorldItem.gameObject);
-            }
+            RemoveWorldItemFromScene(WorldItem, ScenePersistence);
 
             CurrentLookedWorldItem = null;
             return;
@@ -398,14 +391,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
         Vector3 SpawnLinearVelocity = WorldItem.GetLinearVelocity();
         Vector3 SpawnAngularVelocity = WorldItem.GetAngularVelocity();
 
-        if (ScenePersistence != null)
-        {
-            ScenePersistence.SetPresent(false);
-        }
-        else
-        {
-            Destroy(WorldItem.gameObject);
-        }
+        RemoveWorldItemFromScene(WorldItem, ScenePersistence);
 
         CurrentLookedWorldItem = null;
 
@@ -419,6 +405,61 @@ public sealed class PlayerInteractionController : MonoBehaviour
         HotbarController.SpawnWorldItem(PreviousSelectedItem, SpawnPosition, SpawnRotation, SpawnLinearVelocity, SpawnAngularVelocity, false);
         Log("Swapped looked world item with currently selected hotbar item.");
     }
+
+
+
+    /// <summary>
+    /// Resolves the scene persistence wrapper only when it really belongs to a preserved scene item.
+    /// Runtime-spawned clones are intentionally ignored so they are destroyed when collected.
+    /// </summary>
+    /// <param name="WorldItem">World item being collected or swapped.</param>
+    /// <returns>Preserved scene persistence component, or null for runtime world items.</returns>
+    private ScenePlacedWorldItemPersistence ResolvePreservedScenePersistence(WorldItem WorldItem)
+    {
+        if (WorldItem == null)
+        {
+            return null;
+        }
+
+        ScenePlacedWorldItemPersistence ScenePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+
+        if (ScenePersistence == null || !ScenePersistence.ShouldPreserveAsScenePlacedItem())
+        {
+            return null;
+        }
+
+        return ScenePersistence;
+    }
+
+    /// <summary>
+    /// Removes a world item after it has been collected by the player.
+    /// True scene-placed items are hidden for save/load, while runtime-spawned items are destroyed.
+    /// </summary>
+    /// <param name="WorldItem">World item to remove.</param>
+    /// <param name="ScenePersistence">Optional preserved scene persistence wrapper.</param>
+    private void RemoveWorldItemFromScene(WorldItem WorldItem, ScenePlacedWorldItemPersistence ScenePersistence)
+    {
+        if (ScenePersistence != null)
+        {
+            ScenePersistence.SetPresent(false);
+            return;
+        }
+
+        if (WorldItem == null)
+        {
+            return;
+        }
+
+        ScenePlacedWorldItemPersistence RuntimePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+        if (RuntimePersistence != null)
+        {
+            Destroy(RuntimePersistence.gameObject);
+            return;
+        }
+
+        Destroy(WorldItem.gameObject);
+    }
+
 
     /// <summary>
     /// Resolves a generic player-interactable target from the current raycast hit.
