@@ -60,6 +60,8 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         {
             GetRuntimeRoot().name = "OrePickup_" + OreItemData.GetOreDefinition().GetDisplayName();
         }
+
+        RuntimeWorldObjectRegistry.RegisterOrePickup(this);
     }
 
     /// <summary>
@@ -96,6 +98,7 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         EnsureCachedReferences();
         ResetPhysicsState();
         SetCollidersEnabled(false);
+        RuntimeWorldObjectRegistry.UnregisterOrePickup(this);
         NotifyScannerInstanceRemoved();
         ScannerInstanceId = string.Empty;
         OreItemData = null;
@@ -233,6 +236,7 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     /// </summary>
     private void OnDestroy()
     {
+        RuntimeWorldObjectRegistry.UnregisterOrePickup(this);
         NotifyScannerInstanceRemoved();
     }
 

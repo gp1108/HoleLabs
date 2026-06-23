@@ -43,6 +43,31 @@ public sealed class WorldItem : MonoBehaviour, IWeightProvider
 
 
     /// <summary>
+    /// Registers this active world item in the runtime object registry.
+    /// </summary>
+    private void OnEnable()
+    {
+        RuntimeWorldObjectRegistry.RegisterWorldItem(this);
+    }
+
+    /// <summary>
+    /// Removes this world item from the runtime object registry when it becomes inactive.
+    /// </summary>
+    private void OnDisable()
+    {
+        RuntimeWorldObjectRegistry.UnregisterWorldItem(this);
+    }
+
+    /// <summary>
+    /// Removes this world item from the runtime object registry when it is destroyed.
+    /// </summary>
+    private void OnDestroy()
+    {
+        RuntimeWorldObjectRegistry.UnregisterWorldItem(this);
+    }
+
+
+    /// <summary>
     /// Gets the static definition currently assigned to this world item.
     /// Save and registry systems use this to resolve derived item definitions such as pickaxes.
     /// </summary>
