@@ -30,6 +30,9 @@ public sealed class PlayerInputReader : MonoBehaviour
     [Tooltip("Exact action name used for the interact input.")]
     [SerializeField] private string InteractActionName = "Interact";
 
+    [Tooltip("Exact action name used for physical object grab and release input. This action is optional during migration and is resolved safely when present in the Input Action Asset.")]
+    [SerializeField] private string PhysicalGrabActionName = "GrabPhysical";
+
     [Tooltip("Exact action name used for crouch input.")]
     [SerializeField] private string CrouchActionName = "Crouch";
 
@@ -133,6 +136,11 @@ public sealed class PlayerInputReader : MonoBehaviour
     public event Action InteractPerformed;
 
     /// <summary>
+    /// Fired when physical grab is pressed this frame.
+    /// </summary>
+    public event Action PhysicalGrabPerformed;
+
+    /// <summary>
     /// Fired when primary use is pressed this frame.
     /// </summary>
     public event Action UsePrimaryPerformed;
@@ -190,6 +198,9 @@ public sealed class PlayerInputReader : MonoBehaviour
 
     [Tooltip("Cached interact action.")]
     [SerializeField] private InputAction InteractAction;
+
+    [Tooltip("Cached physical grab action. Optional until the Input Action Asset has been migrated.")]
+    [SerializeField] private InputAction PhysicalGrabAction;
 
     [Tooltip("Cached crouch action.")]
     [SerializeField] private InputAction CrouchAction;
@@ -303,6 +314,7 @@ public sealed class PlayerInputReader : MonoBehaviour
         UsePrimaryAction = PlayerInput.actions[UsePrimaryActionName];
         UseSecondaryAction = PlayerInput.actions[UseSecondaryActionName];
         InteractAction = PlayerInput.actions[InteractActionName];
+        PhysicalGrabAction = FindOptionalAction(PhysicalGrabActionName);
         CrouchAction = PlayerInput.actions[CrouchActionName];
         JumpAction = PlayerInput.actions[JumpActionName];
         PreviousAction = PlayerInput.actions[PreviousActionName];
@@ -325,9 +337,25 @@ public sealed class PlayerInputReader : MonoBehaviour
         Log(
             "Actions cached. " +
             "InteractAction=" + (InteractAction != null) +
+            " | PhysicalGrabAction=" + (PhysicalGrabAction != null) +
             " | JumpAction=" + (JumpAction != null) +
             " | MoveAction=" + (MoveAction != null)
         );
+    }
+
+    /// <summary>
+    /// Resolves an optional action without throwing when the current Input Action Asset has not been migrated yet.
+    /// </summary>
+    /// <param name="ActionName">Action name to resolve.</param>
+    /// <returns>The resolved action, or null when the action does not exist.</returns>
+    private InputAction FindOptionalAction(string ActionName)
+    {
+        if (PlayerInput == null || PlayerInput.actions == null || string.IsNullOrWhiteSpace(ActionName))
+        {
+            return null;
+        }
+
+        return PlayerInput.actions.FindAction(ActionName, false);
     }
 
     /// <summary>
@@ -366,6 +394,12 @@ public sealed class PlayerInputReader : MonoBehaviour
         {
             InteractPerformed?.Invoke();
             Log("Interact pressed.");
+        }
+
+        if (PhysicalGrabAction != null && PhysicalGrabAction.WasPressedThisFrame())
+        {
+            PhysicalGrabPerformed?.Invoke();
+            Log("PhysicalGrab pressed.");
         }
 
         if (UsePrimaryAction != null && UsePrimaryAction.WasPressedThisFrame())

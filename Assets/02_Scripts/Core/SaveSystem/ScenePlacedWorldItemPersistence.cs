@@ -104,6 +104,13 @@ public sealed class ScenePlacedWorldItemPersistence : MonoBehaviour
     /// <param name="IsPresent">True to show the item, false to hide it.</param>
     public void SetPresent(bool IsPresent)
     {
+        ResolveReferences();
+
+        if (!IsPresent && WorldItem != null)
+        {
+            WorldItem.PrepareForInventoryPickup();
+        }
+
         if (!IsPresent && !ShouldPreserveAsScenePlacedItem())
         {
             Destroy(gameObject);
@@ -175,6 +182,15 @@ public sealed class ScenePlacedWorldItemPersistence : MonoBehaviour
     /// </summary>
     private void ResetPhysicsState()
     {
+        ResolveReferences();
+
+        if (WorldItem != null)
+        {
+            WorldItem.ResetPhysicsForSceneRestore();
+            CachedRigidbody = WorldItem.GetRigidbody();
+            return;
+        }
+
         if (CachedRigidbody == null)
         {
             return;

@@ -38,6 +38,13 @@ public sealed class PlayerInteractionController : MonoBehaviour
     [Tooltip("Layers considered valid for interaction raycasts.")]
     [SerializeField] private LayerMask InteractionLayers = ~0;
 
+    [Header("Physical Grab")]
+    [Tooltip("If true, the dedicated physical grab input can pick up and release PhysicsCarryable objects, including WorldItem prefabs that also have PhysicsCarryable.")]
+    [SerializeField] private bool UseDedicatedPhysicalGrabInput = true;
+
+    [Tooltip("Temporary migration fallback. If true, Interact can still pick up and release carryables when no higher-priority interaction consumes it. Disable this after the GrabPhysical input has been added and validated.")]
+    [SerializeField] private bool UseInteractAsPhysicalGrabFallback = false;
+
     [Header("Hold Anchor")]
     [Tooltip("If true, a hold anchor will be created automatically as a child of the camera when none is assigned.")]
     [SerializeField] private bool AutoCreateHoldAnchor = true;
@@ -149,6 +156,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
         if (PlayerInputReader != null)
         {
             PlayerInputReader.InteractPerformed += HandleInteractPerformed;
+            PlayerInputReader.PhysicalGrabPerformed += HandlePhysicalGrabPerformed;
         }
     }
 
@@ -160,6 +168,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
         if (PlayerInputReader != null)
         {
             PlayerInputReader.InteractPerformed -= HandleInteractPerformed;
+            PlayerInputReader.PhysicalGrabPerformed -= HandlePhysicalGrabPerformed;
         }
 
         if (CurrentHeldCarryable != null)
@@ -268,15 +277,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
-        if (CurrentHeldCarryable != null)
+        if (UseInteractAsPhysicalGrabFallback && TryTogglePhysicalGrab())
         {
-            DropCurrentCarryable();
-            return;
-        }
-
-        if (CurrentLookedCarryable != null)
-        {
-            PickUpCarryable(CurrentLookedCarryable);
             return;
         }
 
@@ -286,6 +288,45 @@ public sealed class PlayerInteractionController : MonoBehaviour
         }
 
         Log("Interact pressed but no valid contextual target was found.");
+    }
+
+    /// <summary>
+    /// Resolves the dedicated physical grab input without competing with contextual interact or hotbar pickup.
+    /// </summary>
+    private void HandlePhysicalGrabPerformed()
+    {
+        if (IsExternalInteractionBlocked || !UseDedicatedPhysicalGrabInput)
+        {
+            return;
+        }
+
+        if (TryTogglePhysicalGrab())
+        {
+            return;
+        }
+
+        Log("Physical grab pressed but no valid carryable target was found.");
+    }
+
+    /// <summary>
+    /// Drops the currently held carryable or picks up the currently looked carryable.
+    /// </summary>
+    /// <returns>True when a carryable was picked up or released.</returns>
+    private bool TryTogglePhysicalGrab()
+    {
+        if (CurrentHeldCarryable != null)
+        {
+            DropCurrentCarryable();
+            return true;
+        }
+
+        if (CurrentLookedCarryable == null)
+        {
+            return false;
+        }
+
+        PickUpCarryable(CurrentLookedCarryable);
+        return CurrentHeldCarryable != null;
     }
 
     /// <summary>
@@ -357,6 +398,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
         {
             return;
         }
+
+        WorldItem.PrepareForInventoryPickup();
 
         ItemInstance WorldItemInstance = WorldItem.CreateItemInstance();
         if (WorldItemInstance == null)
@@ -454,6 +497,13 @@ public sealed class PlayerInteractionController : MonoBehaviour
         if (RuntimePersistence != null)
         {
             Destroy(RuntimePersistence.gameObject);
+            return;
+        }
+
+        GameObject RemovalRoot = WorldItem.GetRuntimeRemovalRoot();
+        if (RemovalRoot != null)
+        {
+            Destroy(RemovalRoot);
             return;
         }
 

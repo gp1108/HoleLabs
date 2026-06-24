@@ -16,8 +16,10 @@ GameObject:
   - component: {fileID: 1327330422039333175}
   - component: {fileID: 5002018752496156906}
   - component: {fileID: 8663445350423540580}
-  - component: {fileID: 7821387106150306602}
-  - component: {fileID: -664196837548831081}
+  - component: {fileID: -9045972186618165827}
+  - component: {fileID: -6824847840981023792}
+  - component: {fileID: 5223541995623207015}
+  - component: {fileID: 3725105946523874313}
   m_Layer: 6
   m_Name: SM_HandMagnet_b01
   m_TagString: Untagged
@@ -114,6 +116,9 @@ MonoBehaviour:
   UpgradeLevel: 0
   Durability: -1
   CachedRigidbody: {fileID: 326515293891280070}
+  CachedCarryable: {fileID: 3725105946523874313}
+  AutoResolvePhysicsReferences: 1
+  DestroyCarryableRootWhenRuntimeCollected: 1
 --- !u!54 &326515293891280070
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -204,7 +209,7 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.10728855, y: 0.08495435, z: 0.33638936}
   m_Center: {x: -0.0018874779, y: 0.07083678, z: 0.14718102}
---- !u!114 &7821387106150306602
+--- !u!114 &-9045972186618165827
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -213,12 +218,10 @@ MonoBehaviour:
   m_GameObject: {fileID: 8032385564765958399}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2c2f214a4af42a842b9b3c1262a230cb, type: 3}
+  m_Script: {fileID: 11500000, guid: 219e7d9474a546e4c8f45aeedc35c12e, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ScenePlacedWorldItemPersistence
-  WorldItem: {fileID: 8601301581036100867}
-  CachedRigidbody: {fileID: 326515293891280070}
---- !u!114 &-664196837548831081
+  m_EditorClassIdentifier: Assembly-CSharp::CarryableAttachmentDriver
+--- !u!114 &-6824847840981023792
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -227,7 +230,62 @@ MonoBehaviour:
   m_GameObject: {fileID: 8032385564765958399}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6b26a3ae03d2d0b4b825865d3e45a2a6, type: 3}
+  m_Script: {fileID: 11500000, guid: d0931b220fddf5c479089d43acbb0634, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SceneSaveId
-  Id: d6add96108234ad6879193589df9f404
+  m_EditorClassIdentifier: Assembly-CSharp::CarryablePlayerCollisionGate
+  IgnoredByPlayerLayerName: PlayerIgnoredPhysicsObjects
+--- !u!114 &5223541995623207015
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8032385564765958399}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dbb545cf3287ae747bfec5fe5d13169b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarryableSleepController
+  Settings:
+    RequiredStillTime: 0.25
+    MaxLinearSpeed: 0.05
+    MaxAngularSpeed: 0.075
+    MinimumSupportNormalY: 0.45
+--- !u!114 &3725105946523874313
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8032385564765958399}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7ac77d39939de7b40a77a96a2ef1c1cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PhysicsCarryable
+  SharedRuntimePhysics:
+    ForceInterpolationWhileAttached: 1
+    AttachmentCollisionDetectionMode: 2
+  HoldSettings:
+    Spring: 115
+    Damper: 22
+    MaxDistance: 0.02
+    LinearDamping: 3
+    AngularDamping: 1.2
+    DisableGravity: 0
+    BreakDistance: 2.6
+  MagnetSettings:
+    Spring: 100
+    Damper: 25
+    MaxDistance: 0.01
+    LinearDamping: 3
+    AngularDamping: 1.5
+    DisableGravity: 0
+    BreakDistance: 1.9
+  ReleaseConfig:
+    IgnoreMinimumTime: 0.15
+    IgnoreMaximumTime: 1.25
+    RestoreOnSleep: 1
+    HeldReleaseVelocityInfluence: 0.35
+    MagnetLaunchImpulseMultiplier: 1
+  DebugLogs: 0

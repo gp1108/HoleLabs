@@ -773,6 +773,13 @@ MonoBehaviour:
     _defaultValue: 
     IgnoreConnectionDefaults: 0
     ConnectionObject: {fileID: 11400000, guid: 84f90ebbfb38ee44a93b23a427e2d34a, type: 2}
+  - _isActive: 1
+    ID: InputBinding.Player.GrabPhysical.Keyboard.f
+    ApplyImmediately: 1
+    _groups: []
+    _defaultValue: 
+    IgnoreConnectionDefaults: 0
+    ConnectionObject: {fileID: 11400000, guid: 007fa02e06ba3404394626e5ab4c2494, type: 2}
   _colors: []
   _colorOptions: []
   _keyCombinations:
