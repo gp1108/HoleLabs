@@ -194,6 +194,15 @@
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
+                },
+                {
+                    "name": "GrabPhysical",
+                    "type": "Button",
+                    "id": "d040f82d-830b-49c1-b942-6c4e906a490f",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
                 }
             ],
             "bindings": [
@@ -766,6 +775,17 @@
                     "processors": "",
                     "groups": "",
                     "action": "Slot9",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "a5dd17a4-574e-416f-a834-73b255be05fc",
+                    "path": "<Keyboard>/f",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Keyboard&Mouse",
+                    "action": "GrabPhysical",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

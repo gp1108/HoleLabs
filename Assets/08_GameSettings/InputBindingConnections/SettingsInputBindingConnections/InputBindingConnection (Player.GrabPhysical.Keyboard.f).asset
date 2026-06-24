@@ -13,4 +13,4 @@ MonoBehaviour:
   m_Name: InputBindingConnection (Player.GrabPhysical.Keyboard.f)
   m_EditorClassIdentifier: Kamgam.SettingsGenerator::Kamgam.SettingsGenerator.InputBindingConnectionSO
   InputActionAsset: {fileID: -944628639613478452, guid: a817e2ff30931c444b7948859c818d8c, type: 3}
-  BindingId: c8112213-a63e-4716-8f31-94d472f58f09
+  BindingId: a5dd17a4-574e-416f-a834-73b255be05fc
