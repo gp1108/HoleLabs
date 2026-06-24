@@ -21,8 +21,7 @@ MonoBehaviour:
     AlignParticlesToSurfaceNormal: 0
     ParentParticlesToContextParent: 0
     ParticleDestroyDelay: 0
-    VisualEffectPrefabs:
-    - {fileID: 4137103958427211503, guid: 403e9175ab4f99149948cab3105386cb, type: 3}
+    VisualEffectPrefabs: []
     VisualEffectSelectionMode: 0
     VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
     AlignVisualEffectsToSurfaceNormal: 1
@@ -53,8 +52,7 @@ MonoBehaviour:
     AlignParticlesToSurfaceNormal: 0
     ParentParticlesToContextParent: 0
     ParticleDestroyDelay: 0
-    VisualEffectPrefabs:
-    - {fileID: 6352997674844084943, guid: 695e246f07a69c945924a282fb800f22, type: 3}
+    VisualEffectPrefabs: []
     VisualEffectSelectionMode: 0
     VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
     AlignVisualEffectsToSurfaceNormal: 1
@@ -102,7 +100,8 @@ MonoBehaviour:
     DecalRollMax: 360
     ParentDecalsToContextParent: 0
     DecalDestroyDelay: 15
-    AudioEvents: []
+    AudioEvents:
+    - {fileID: 11400000, guid: d957e0ed4900ad64992b0df2f0fe19ce, type: 2}
     AudioSelectionMode: 0
     PlayAudioAtWorldPosition: 0
     FeelIntensityMultiplier: 0
@@ -133,6 +132,37 @@ MonoBehaviour:
     ParentDecalsToContextParent: 0
     DecalDestroyDelay: 15
     AudioEvents: []
+    AudioSelectionMode: 0
+    PlayAudioAtWorldPosition: 0
+    FeelIntensityMultiplier: 0
+  - EventId: Tool.PrimaryStarted
+    Enabled: 1
+    ParticlePrefabs: []
+    ParticleSelectionMode: 0
+    ParticlePositionOffset: {x: 0, y: 0, z: 0}
+    AlignParticlesToSurfaceNormal: 0
+    ParentParticlesToContextParent: 0
+    ParticleDestroyDelay: 0
+    VisualEffectPrefabs: []
+    VisualEffectSelectionMode: 0
+    VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
+    AlignVisualEffectsToSurfaceNormal: 1
+    ParentVisualEffectsToContextParent: 0
+    ReinitializeVisualEffectsBeforePlay: 1
+    VisualEffectStopDelay: 0.25
+    VisualEffectDestroyDelay: 5
+    DecalPrefabs: []
+    DecalSelectionMode: 1
+    DecalAlignmentMode: 2
+    DecalPositionOffset: {x: 0, y: 0, z: 0}
+    DecalSurfaceOffset: 0.01
+    RandomizeDecalRoll: 1
+    DecalRollMin: 0
+    DecalRollMax: 360
+    ParentDecalsToContextParent: 0
+    DecalDestroyDelay: 15
+    AudioEvents:
+    - {fileID: 11400000, guid: 4090bbcf5cb9a264dbe56d0bcb804d40, type: 2}
     AudioSelectionMode: 0
     PlayAudioAtWorldPosition: 0
     FeelIntensityMultiplier: 0

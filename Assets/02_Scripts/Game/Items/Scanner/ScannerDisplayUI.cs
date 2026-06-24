@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// Controls the scanner world-space UI using separate panels for ore and vein targets.
@@ -25,6 +26,9 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     [Tooltip("Text used to display the dropped ore mineral type.")]
     [SerializeField] private TMP_Text OreMineralTypeText;
 
+    [Tooltip("Text used to display the dropped ore required mining tier.")]
+    [SerializeField] private TMP_Text OreMiningTierText;
+
     [Tooltip("Text used to display the dropped ore purity.")]
     [SerializeField] private TMP_Text OrePurityText;
 
@@ -35,8 +39,11 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     [SerializeField] private TMP_Text OreWeightText;
 
     [Tooltip("Text used to display the dropped ore credit value.")]
+    [FormerlySerializedAs("OrePriceGoldText")]
     [SerializeField] private TMP_Text OreCreditValueText;
 
+    [Tooltip("Legacy research value field kept only to preserve scene references during migration. It is cleared by this UI.")]
+    [SerializeField, HideInInspector] private TMP_Text OrePriceResearchText;
 
     [Tooltip("Optional status text placed inside the ore panel.")]
     [SerializeField] private TMP_Text OrePanelStatusText;
@@ -44,6 +51,9 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     [Header("Vein Panel Fields")]
     [Tooltip("Text used to display the vein mineral type.")]
     [SerializeField] private TMP_Text VeinMineralTypeText;
+
+    [Tooltip("Text used to display the vein required mining tier.")]
+    [SerializeField] private TMP_Text VeinMiningTierText;
 
     [Tooltip("Text used to display the vein drop amount range.")]
     [SerializeField] private TMP_Text VeinDropAmountText;
@@ -94,12 +104,13 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     /// <summary>
     /// Displays final scan data for a vein and hides the ore panel.
     /// </summary>
-    public void ShowVeinResult(string MineralType, bool ShowDropRange, int MinDropCount, int MaxDropCount)
+    public void ShowVeinResult(string MineralType, MiningTier RequiredMiningTier, bool ShowDropRange, int MinDropCount, int MaxDropCount)
     {
         SetOrePanelVisible(false);
         SetVeinPanelVisible(true);
 
         SetText(VeinMineralTypeText, "Mineral Type: " + MineralType);
+        SetText(VeinMiningTierText, "Required Tier: " + RequiredMiningTier);
         SetText(
             VeinDropAmountText,
             ShowDropRange
@@ -116,8 +127,11 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     /// </summary>
     public void ShowOreResult(
         string MineralType,
+        MiningTier RequiredMiningTier,
         bool ShowCreditValue,
         float CreditValue,
+        bool ShowLegacyResearchValue,
+        float LegacyResearchValue,
         bool ShowPurity,
         float Purity,
         bool ShowSize,
@@ -129,7 +143,9 @@ public sealed class ScannerDisplayUI : MonoBehaviour
         SetVeinPanelVisible(false);
 
         SetText(OreMineralTypeText, "Mineral Type: " + MineralType);
+        SetText(OreMiningTierText, "Required Tier: " + RequiredMiningTier);
         SetText(OreCreditValueText, ShowCreditValue ? "Credit Value: " + CreditValue.ToString("0.00") + " C" : "Credit Value: Locked");
+        SetText(OrePriceResearchText, string.Empty);
         SetText(OrePurityText, ShowPurity ? "Purity: " + Purity.ToString("0.00") : "Purity: Locked");
         SetText(OreSizeText, ShowSize ? "Size: " + Size.ToString("0.00") : "Size: Locked");
         SetText(OreWeightText, ShowWeight ? "Weight: " + Weight.ToString("0.00") : "Weight: Locked");
@@ -145,10 +161,12 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     private void ClearOreFields()
     {
         SetText(OreMineralTypeText, "Mineral Type: -");
+        SetText(OreMiningTierText, "Required Tier: -");
         SetText(OrePurityText, "Purity: -");
         SetText(OreSizeText, "Size: -");
         SetText(OreWeightText, "Weight: -");
         SetText(OreCreditValueText, "Credit Value: -");
+        SetText(OrePriceResearchText, string.Empty);
     }
 
     /// <summary>
@@ -157,6 +175,7 @@ public sealed class ScannerDisplayUI : MonoBehaviour
     private void ClearVeinFields()
     {
         SetText(VeinMineralTypeText, "Mineral Type: -");
+        SetText(VeinMiningTierText, "Required Tier: -");
         SetText(VeinDropAmountText, "Drop Amount: -");
     }
 

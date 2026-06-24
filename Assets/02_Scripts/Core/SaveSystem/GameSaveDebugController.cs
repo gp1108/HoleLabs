@@ -153,33 +153,96 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
-    private sealed class DrillPlacementSpotState
+    private sealed class WallDrillInstallationSpotState
     {
         [SerializeField] private string SceneId;
-        [SerializeField] private bool IsBlocked;
-        [SerializeField] private bool IsOccupied;
-        [SerializeField] private string DrillItemId;
         [SerializeField] private float RemainingProductionTimer;
+        [SerializeField] private List<OreItemDataSaveData> StoredOreItems = new List<OreItemDataSaveData>();
 
-        public DrillPlacementSpotState(
-            string SceneIdValue,
-            bool IsBlockedValue,
-            bool IsOccupiedValue,
-            string DrillItemIdValue,
-            float RemainingProductionTimerValue)
+        /// <summary>
+        /// Creates a save payload for the wall drill runtime state owned by a generic placeable installation spot.
+        /// The installed item itself is saved by PlaceableInstallationSpotState.
+        /// </summary>
+        public WallDrillInstallationSpotState(string SceneIdValue, float RemainingProductionTimerValue, List<OreItemData> RuntimeStoredOreItems)
         {
             SceneId = SceneIdValue;
-            IsBlocked = IsBlockedValue;
-            IsOccupied = IsOccupiedValue;
-            DrillItemId = DrillItemIdValue;
-            RemainingProductionTimer = RemainingProductionTimerValue;
+            RemainingProductionTimer = Mathf.Max(0f, RemainingProductionTimerValue);
+            StoredOreItems = new List<OreItemDataSaveData>();
+
+            if (RuntimeStoredOreItems == null)
+            {
+                return;
+            }
+
+            for (int Index = 0; Index < RuntimeStoredOreItems.Count; Index++)
+            {
+                OreItemData RuntimeOre = RuntimeStoredOreItems[Index];
+
+                if (RuntimeOre == null || RuntimeOre.GetOreDefinition() == null)
+                {
+                    continue;
+                }
+
+                StoredOreItems.Add(OreItemDataSaveData.FromRuntime(RuntimeOre));
+            }
         }
 
         public string GetSceneId() => SceneId;
-        public bool GetIsBlocked() => IsBlocked;
-        public bool GetIsOccupied() => IsOccupied;
-        public string GetDrillItemId() => DrillItemId;
         public float GetRemainingProductionTimer() => RemainingProductionTimer;
+
+        /// <summary>
+        /// Restores stored ore payloads from the registered ore definition lookup.
+        /// </summary>
+        public List<OreItemData> ToRuntimeStoredOreItems(Dictionary<string, OreDefinition> DefinitionsById)
+        {
+            List<OreItemData> Result = new List<OreItemData>();
+
+            if (StoredOreItems == null)
+            {
+                return Result;
+            }
+
+            for (int Index = 0; Index < StoredOreItems.Count; Index++)
+            {
+                OreItemDataSaveData SavedOre = StoredOreItems[Index];
+
+                if (SavedOre == null)
+                {
+                    continue;
+                }
+
+                OreItemData RuntimeOre = SavedOre.ToRuntime(DefinitionsById);
+
+                if (RuntimeOre == null || RuntimeOre.GetOreDefinition() == null)
+                {
+                    continue;
+                }
+
+                Result.Add(RuntimeOre);
+            }
+
+            return Result;
+        }
+    }
+
+    [Serializable]
+    private sealed class ElevatorDrillInstallationSpotState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private bool IsEnabled;
+
+        /// <summary>
+        /// Creates a save payload for an elevator drill installation companion state.
+        /// Generic installation state is saved separately by PlaceableInstallationSpotState.
+        /// </summary>
+        public ElevatorDrillInstallationSpotState(string SceneIdValue, bool IsEnabledValue)
+        {
+            SceneId = SceneIdValue;
+            IsEnabled = IsEnabledValue;
+        }
+
+        public string GetSceneId() => SceneId;
+        public bool GetIsEnabled() => IsEnabled;
     }
 
     [Serializable]
@@ -415,19 +478,26 @@ public sealed class GameSaveDebugController : MonoBehaviour
     {
         [SerializeField] private string SourcePrefabName;
         [SerializeField] private OreItemDataSaveData OreData;
+        [SerializeField] private string ScannerInstanceId;
         [SerializeField] private Vector3 Position;
         [SerializeField] private Quaternion Rotation;
 
-        public OrePickupState(string SourcePrefabNameValue, OreItemDataSaveData OreDataValue, Vector3 PositionValue, Quaternion RotationValue)
+        /// <summary>
+        /// Creates a serializable save state for one physical ore pickup.
+        /// The scanner instance id is stored only to preserve per-pickup scan knowledge when the pickup itself persists across save/load.
+        /// </summary>
+        public OrePickupState(string SourcePrefabNameValue, OreItemDataSaveData OreDataValue, string ScannerInstanceIdValue, Vector3 PositionValue, Quaternion RotationValue)
         {
             SourcePrefabName = SourcePrefabNameValue;
             OreData = OreDataValue;
+            ScannerInstanceId = ScannerInstanceIdValue;
             Position = PositionValue;
             Rotation = RotationValue;
         }
 
         public string GetSourcePrefabName() => SourcePrefabName;
         public OreItemDataSaveData GetOreData() => OreData;
+        public string GetScannerInstanceId() => ScannerInstanceId;
         public Vector3 GetPosition() => Position;
         public Quaternion GetRotation() => Rotation;
     }
@@ -466,6 +536,168 @@ public sealed class GameSaveDebugController : MonoBehaviour
         public float GetRespawnTimerRemaining() => RespawnTimerRemaining;
     }
 
+
+    [Serializable]
+    private sealed class MineralElevatorHubState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private bool IsActivated;
+        [SerializeField] private List<OreItemDataSaveData> StoredOreItems = new List<OreItemDataSaveData>();
+
+        /// <summary>
+        /// Creates a save payload for one shared laboratory mineral elevator hub.
+        /// </summary>
+        public MineralElevatorHubState(string SceneIdValue, bool IsActivatedValue, List<OreItemData> RuntimeStoredOreItems)
+        {
+            SceneId = SceneIdValue;
+            IsActivated = IsActivatedValue;
+            StoredOreItems = new List<OreItemDataSaveData>();
+
+            if (RuntimeStoredOreItems == null)
+            {
+                return;
+            }
+
+            for (int Index = 0; Index < RuntimeStoredOreItems.Count; Index++)
+            {
+                OreItemData RuntimeOre = RuntimeStoredOreItems[Index];
+
+                if (RuntimeOre == null || RuntimeOre.GetOreDefinition() == null)
+                {
+                    continue;
+                }
+
+                StoredOreItems.Add(OreItemDataSaveData.FromRuntime(RuntimeOre));
+            }
+        }
+
+        public string GetSceneId() => SceneId;
+        public bool GetIsActivated() => IsActivated;
+
+        /// <summary>
+        /// Restores stored ore payloads from the registered ore definition lookup.
+        /// </summary>
+        public List<OreItemData> ToRuntimeStoredOreItems(Dictionary<string, OreDefinition> DefinitionsById)
+        {
+            List<OreItemData> Result = new List<OreItemData>();
+
+            if (StoredOreItems == null)
+            {
+                return Result;
+            }
+
+            for (int Index = 0; Index < StoredOreItems.Count; Index++)
+            {
+                OreItemDataSaveData SavedOre = StoredOreItems[Index];
+
+                if (SavedOre == null)
+                {
+                    continue;
+                }
+
+                OreItemData RuntimeOre = SavedOre.ToRuntime(DefinitionsById);
+
+                if (RuntimeOre == null || RuntimeOre.GetOreDefinition() == null)
+                {
+                    continue;
+                }
+
+                Result.Add(RuntimeOre);
+            }
+
+            return Result;
+        }
+    }
+
+    [Serializable]
+    private sealed class MineralElevatorAccessPointState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private float RemainingTransferTimer;
+        [SerializeField] private List<OreItemDataSaveData> PendingTransferOreItems = new List<OreItemDataSaveData>();
+
+        /// <summary>
+        /// Creates a save payload for one mineral elevator access point pending transfer queue.
+        /// Generic installation state is saved separately by PlaceableInstallationSpotState.
+        /// </summary>
+        public MineralElevatorAccessPointState(string SceneIdValue, float RemainingTransferTimerValue, List<OreItemData> RuntimePendingOreItems)
+        {
+            SceneId = SceneIdValue;
+            RemainingTransferTimer = Mathf.Max(0f, RemainingTransferTimerValue);
+            PendingTransferOreItems = new List<OreItemDataSaveData>();
+
+            if (RuntimePendingOreItems == null)
+            {
+                return;
+            }
+
+            for (int Index = 0; Index < RuntimePendingOreItems.Count; Index++)
+            {
+                OreItemData RuntimeOre = RuntimePendingOreItems[Index];
+
+                if (RuntimeOre == null || RuntimeOre.GetOreDefinition() == null)
+                {
+                    continue;
+                }
+
+                PendingTransferOreItems.Add(OreItemDataSaveData.FromRuntime(RuntimeOre));
+            }
+        }
+
+        public string GetSceneId() => SceneId;
+        public float GetRemainingTransferTimer() => RemainingTransferTimer;
+
+        /// <summary>
+        /// Restores pending in-transit payloads from the registered ore definition lookup.
+        /// </summary>
+        public List<OreItemData> ToRuntimePendingOreItems(Dictionary<string, OreDefinition> DefinitionsById)
+        {
+            List<OreItemData> Result = new List<OreItemData>();
+
+            if (PendingTransferOreItems == null)
+            {
+                return Result;
+            }
+
+            for (int Index = 0; Index < PendingTransferOreItems.Count; Index++)
+            {
+                OreItemDataSaveData SavedOre = PendingTransferOreItems[Index];
+
+                if (SavedOre == null)
+                {
+                    continue;
+                }
+
+                OreItemData RuntimeOre = SavedOre.ToRuntime(DefinitionsById);
+
+                if (RuntimeOre == null || RuntimeOre.GetOreDefinition() == null)
+                {
+                    continue;
+                }
+
+                Result.Add(RuntimeOre);
+            }
+
+            return Result;
+        }
+    }
+
+    [Serializable]
+    private sealed class AbyssFieldState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private AbyssFieldSaveData AbyssSaveData;
+
+        public AbyssFieldState(string SceneIdValue, AbyssFieldSaveData AbyssSaveDataValue)
+        {
+            SceneId = SceneIdValue;
+            AbyssSaveData = AbyssSaveDataValue;
+        }
+
+        public string GetSceneId() => SceneId;
+        public AbyssFieldSaveData GetAbyssSaveData() => AbyssSaveData;
+    }
+
     [Serializable]
     private sealed class SaveData
     {
@@ -479,17 +711,39 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<MoneyPickupState> MoneyPickups = new();
         [SerializeField] private List<OrePickupState> OrePickups = new();
         [SerializeField] private List<OreSpawnPointState> OreSpawnPoints = new();
-        [SerializeField] private List<DrillPlacementSpotState> DrillPlacementSpots = new();
+        [SerializeField] private List<WallDrillInstallationSpotState> WallDrillInstallationSpots = new();
+        [SerializeField] private List<MineralElevatorHubState> MineralElevatorHubs = new();
+        [SerializeField] private List<MineralElevatorAccessPointState> MineralElevatorAccessPoints = new();
+        [SerializeField] private List<ElevatorDrillInstallationSpotState> ElevatorDrillInstallationSpots = new();
+        [SerializeField] private List<AbyssFieldState> AbyssFields = new();
         [SerializeField] private List<PlaceableInstallationSpotState> PlaceableInstallationSpots = new();
 
         [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
         [SerializeField] private ResearchRuntimeService.ResearchRuntimeSaveData ResearchRuntime;
 
+        [Tooltip("Global scanner knowledge state. This keeps discovered ore types independent from any specific scanner item instance.")]
+        [SerializeField] private ScannerRuntimeService.ScannerRuntimeSaveData ScannerRuntime;
+
         public ResearchRuntimeService.ResearchRuntimeSaveData GetResearchRuntime() => ResearchRuntime;
         public void SetResearchRuntime(ResearchRuntimeService.ResearchRuntimeSaveData Value) => ResearchRuntime = Value;
 
-        public List<DrillPlacementSpotState> GetDrillPlacementSpots() => DrillPlacementSpots;
-        public void SetDrillPlacementSpots(List<DrillPlacementSpotState> Value) => DrillPlacementSpots = Value ?? new List<DrillPlacementSpotState>();
+        public ScannerRuntimeService.ScannerRuntimeSaveData GetScannerRuntime() => ScannerRuntime;
+        public void SetScannerRuntime(ScannerRuntimeService.ScannerRuntimeSaveData Value) => ScannerRuntime = Value;
+
+        public List<WallDrillInstallationSpotState> GetWallDrillInstallationSpots() => WallDrillInstallationSpots;
+        public void SetWallDrillInstallationSpots(List<WallDrillInstallationSpotState> Value) => WallDrillInstallationSpots = Value ?? new List<WallDrillInstallationSpotState>();
+
+        public List<MineralElevatorHubState> GetMineralElevatorHubs() => MineralElevatorHubs;
+        public void SetMineralElevatorHubs(List<MineralElevatorHubState> Value) => MineralElevatorHubs = Value ?? new List<MineralElevatorHubState>();
+
+        public List<MineralElevatorAccessPointState> GetMineralElevatorAccessPoints() => MineralElevatorAccessPoints;
+        public void SetMineralElevatorAccessPoints(List<MineralElevatorAccessPointState> Value) => MineralElevatorAccessPoints = Value ?? new List<MineralElevatorAccessPointState>();
+
+        public List<ElevatorDrillInstallationSpotState> GetElevatorDrillInstallationSpots() => ElevatorDrillInstallationSpots;
+        public void SetElevatorDrillInstallationSpots(List<ElevatorDrillInstallationSpotState> Value) => ElevatorDrillInstallationSpots = Value ?? new List<ElevatorDrillInstallationSpotState>();
+
+        public List<AbyssFieldState> GetAbyssFields() => AbyssFields;
+        public void SetAbyssFields(List<AbyssFieldState> Value) => AbyssFields = Value ?? new List<AbyssFieldState>();
 
         public List<PlaceableInstallationSpotState> GetPlaceableInstallationSpots() => PlaceableInstallationSpots;
         public void SetPlaceableInstallationSpots(List<PlaceableInstallationSpotState> Value) => PlaceableInstallationSpots = Value ?? new List<PlaceableInstallationSpotState>();
@@ -542,6 +796,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
     [Tooltip("Global research runtime service restored from save. This should live in the scene independently from any placed researcher machine.")]
     [SerializeField] private ResearchRuntimeService ResearchRuntimeServiceReference;
 
+    [Tooltip("Global scanner runtime service restored from save. This stores ore discovery knowledge independently from scanner item instances.")]
+    [SerializeField] private ScannerRuntimeService ScannerRuntimeServiceReference;
+
     [Tooltip("Authoritative elevator motor restored from save.")]
     [SerializeField] private ElevatorPhysicalMotor ElevatorPhysicalMotor;
 
@@ -592,7 +849,10 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private readonly Dictionary<string, OreDefinition> OreDefinitionsById = new();
     private readonly Dictionary<string, ScenePlacedWorldItemPersistence> SceneWorldItemsById = new();
     private readonly Dictionary<string, OreSpawnPoint> OreSpawnPointsById = new();
-    private readonly Dictionary<string, DrillPlacementSpot> DrillPlacementSpotsById = new();
+    private readonly Dictionary<string, WallDrillInstallationSpot> WallDrillInstallationSpotsById = new();
+    private readonly Dictionary<string, MineralElevatorHub> MineralElevatorHubsById = new();
+    private readonly Dictionary<string, MineralElevatorAccessPoint> MineralElevatorAccessPointsById = new();
+    private readonly Dictionary<string, ElevatorDrillInstallationSpot> ElevatorDrillInstallationSpotsById = new();
     private readonly Dictionary<string, PlaceableInstallationSpot> PlaceableInstallationSpotsById = new();
     /// <summary>
     /// Resolves missing scene references and builds lookup caches.
@@ -622,6 +882,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
         if (ResearchRuntimeServiceReference == null)
         {
             ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
+        }
+
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
         }
 
         if (ElevatorPhysicalMotor == null)
@@ -1058,9 +1323,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetMoneyPickups(CaptureMoneyPickups());
         Data.SetOrePickups(CaptureOrePickups());
         Data.SetOreSpawnPoints(CaptureOreSpawnPoints());
-        Data.SetDrillPlacementSpots(CaptureDrillPlacementSpots());
+        Data.SetWallDrillInstallationSpots(CaptureWallDrillInstallationSpots());
+        Data.SetMineralElevatorHubs(CaptureMineralElevatorHubs());
+        Data.SetMineralElevatorAccessPoints(CaptureMineralElevatorAccessPoints());
+        Data.SetElevatorDrillInstallationSpots(CaptureElevatorDrillInstallationSpots());
+        Data.SetAbyssFields(CaptureAbyssFields());
         Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
         Data.SetResearchRuntime(CaptureResearchRuntime());
+        Data.SetScannerRuntime(CaptureScannerRuntime());
 
         return Data;
     }
@@ -1103,7 +1373,6 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         RestoreOreSpawnPoints(Data.GetOreSpawnPoints());
-        RestoreDrillPlacementSpots(Data.GetDrillPlacementSpots());
         RestoreSceneWorldItems(Data.GetSceneWorldItems());
 
         if (PlayerController != null && Data.GetPlayer() != null)
@@ -1123,8 +1392,14 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreRuntimeWorldItems(Data.GetRuntimeWorldItems());
         RestoreMoneyPickups(Data.GetMoneyPickups());
         RestoreOrePickups(Data.GetOrePickups());
+        RestoreScannerRuntime(Data.GetScannerRuntime());
         RestoreResearchRuntime(Data.GetResearchRuntime());
         RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
+        RestoreElevatorDrillInstallationSpots(Data.GetElevatorDrillInstallationSpots());
+        RestoreAbyssFields(Data.GetAbyssFields());
+        RestoreWallDrillInstallationSpots(Data.GetWallDrillInstallationSpots());
+        RestoreMineralElevatorHubs(Data.GetMineralElevatorHubs());
+        RestoreMineralElevatorAccessPoints(Data.GetMineralElevatorAccessPoints());
         RebuildLookupCaches();
     }
 
@@ -1201,11 +1476,19 @@ public sealed class GameSaveDebugController : MonoBehaviour
             ResearchRuntimeServiceReference = FindFirstObjectByType<ResearchRuntimeService>();
         }
 
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
+        }
+
         ItemDefinitionsById.Clear();
         OreDefinitionsById.Clear();
         SceneWorldItemsById.Clear();
         OreSpawnPointsById.Clear();
-        DrillPlacementSpotsById.Clear();
+        WallDrillInstallationSpotsById.Clear();
+        MineralElevatorHubsById.Clear();
+        MineralElevatorAccessPointsById.Clear();
+        ElevatorDrillInstallationSpotsById.Clear();
         PlaceableInstallationSpotsById.Clear();
 
         for (int Index = 0; Index < ItemDefinitions.Count; Index++)
@@ -1246,7 +1529,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             ScenePlacedWorldItemPersistence SceneItem = SceneWorldItems[Index];
 
-            if (SceneItem == null)
+            if (SceneItem == null || !SceneItem.ShouldPreserveAsScenePlacedItem())
             {
                 continue;
             }
@@ -1284,13 +1567,13 @@ public sealed class GameSaveDebugController : MonoBehaviour
             OreSpawnPointsById[SaveId.GetId()] = SpawnPoint;
         }
 
-        DrillPlacementSpot[] DrillSpots = FindObjectsByType<DrillPlacementSpot>(
+        WallDrillInstallationSpot[] WallDrillSpots = FindObjectsByType<WallDrillInstallationSpot>(
             FindObjectsInactive.Include,
             FindObjectsSortMode.None);
 
-        for (int Index = 0; Index < DrillSpots.Length; Index++)
+        for (int Index = 0; Index < WallDrillSpots.Length; Index++)
         {
-            DrillPlacementSpot Spot = DrillSpots[Index];
+            WallDrillInstallationSpot Spot = WallDrillSpots[Index];
 
             if (Spot == null)
             {
@@ -1304,7 +1587,76 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            DrillPlacementSpotsById[SaveId.GetId()] = Spot;
+            WallDrillInstallationSpotsById[SaveId.GetId()] = Spot;
+        }
+
+        MineralElevatorHub[] MineralElevatorHubs = FindObjectsByType<MineralElevatorHub>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < MineralElevatorHubs.Length; Index++)
+        {
+            MineralElevatorHub Hub = MineralElevatorHubs[Index];
+
+            if (Hub == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Hub.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            MineralElevatorHubsById[SaveId.GetId()] = Hub;
+        }
+
+        MineralElevatorAccessPoint[] MineralElevatorAccessPoints = FindObjectsByType<MineralElevatorAccessPoint>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < MineralElevatorAccessPoints.Length; Index++)
+        {
+            MineralElevatorAccessPoint AccessPoint = MineralElevatorAccessPoints[Index];
+
+            if (AccessPoint == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = AccessPoint.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            MineralElevatorAccessPointsById[SaveId.GetId()] = AccessPoint;
+        }
+
+        ElevatorDrillInstallationSpot[] ElevatorDrillSpots = FindObjectsByType<ElevatorDrillInstallationSpot>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < ElevatorDrillSpots.Length; Index++)
+        {
+            ElevatorDrillInstallationSpot Spot = ElevatorDrillSpots[Index];
+
+            if (Spot == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Spot.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            ElevatorDrillInstallationSpotsById[SaveId.GetId()] = Spot;
         }
 
         PlaceableInstallationSpot[] PlaceableSpots = FindObjectsByType<PlaceableInstallationSpot>(
@@ -1358,6 +1710,24 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
             MagnetBehaviours[Index].ForceStopMagnetForSave();
         }
+    }
+
+
+    /// <summary>
+    /// Gets whether the provided world item belongs to a preserved scene-placed item.
+    /// Runtime-spawned clones with accidental scene persistence components are treated as runtime items.
+    /// </summary>
+    /// <param name="WorldItem">World item to inspect.</param>
+    /// <returns>True when the item is owned by a preserved scene item.</returns>
+    private bool IsOwnedByPreservedSceneWorldItem(WorldItem WorldItem)
+    {
+        if (WorldItem == null)
+        {
+            return false;
+        }
+
+        ScenePlacedWorldItemPersistence ScenePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+        return ScenePersistence != null && ScenePersistence.ShouldPreserveAsScenePlacedItem();
     }
 
     /// <summary>
@@ -1419,7 +1789,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            if (WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>() != null)
+            if (IsOwnedByPreservedSceneWorldItem(WorldItem))
             {
                 continue;
             }
@@ -1510,6 +1880,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             Result.Add(new OrePickupState(
                 SourcePrefabName,
                 OreData,
+                Pickup.GetScannerInstanceId(),
                 Pickup.GetRuntimeRoot().position,
                 Pickup.GetRuntimeRoot().rotation));
         }
@@ -1774,6 +2145,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             Pickup.Initialize(RuntimeOreData);
+            Pickup.SetScannerInstanceId(State.GetScannerInstanceId());
 
             Rigidbody RigidbodyComponent = Pickup.GetComponent<Rigidbody>();
             if (RigidbodyComponent == null)
@@ -1907,7 +2279,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            if (WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>() != null)
+            if (IsOwnedByPreservedSceneWorldItem(WorldItem))
             {
                 continue;
             }
@@ -2023,6 +2395,86 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
+    /// Captures every abyss field state keyed by its SceneSaveId.
+    /// </summary>
+    private List<AbyssFieldState> CaptureAbyssFields()
+    {
+        List<AbyssFieldState> Result = new List<AbyssFieldState>();
+        AbyssFieldController[] Fields = FindObjectsByType<AbyssFieldController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < Fields.Length; Index++)
+        {
+            AbyssFieldController Field = Fields[Index];
+
+            if (Field == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Field.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            Result.Add(new AbyssFieldState(SaveId.GetId(), Field.CreateSaveSnapshot()));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores abyss field progress from save data.
+    /// </summary>
+    private void RestoreAbyssFields(List<AbyssFieldState> SavedStates)
+    {
+        if (SavedStates == null || SavedStates.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<string, AbyssFieldController> FieldsBySceneId = new Dictionary<string, AbyssFieldController>();
+        AbyssFieldController[] Fields = FindObjectsByType<AbyssFieldController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < Fields.Length; Index++)
+        {
+            AbyssFieldController Field = Fields[Index];
+
+            if (Field == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Field.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            FieldsBySceneId[SaveId.GetId()] = Field;
+        }
+
+        for (int Index = 0; Index < SavedStates.Count; Index++)
+        {
+            AbyssFieldState SavedState = SavedStates[Index];
+
+            if (SavedState == null || string.IsNullOrWhiteSpace(SavedState.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!FieldsBySceneId.TryGetValue(SavedState.GetSceneId(), out AbyssFieldController Field) || Field == null)
+            {
+                continue;
+            }
+
+            Field.ApplySaveState(SavedState.GetAbyssSaveData());
+        }
+    }
+
+    /// <summary>
     /// Captures the global research runtime state.
     /// </summary>
     private ResearchRuntimeService.ResearchRuntimeSaveData CaptureResearchRuntime()
@@ -2055,6 +2507,41 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         ResearchRuntimeServiceReference.ApplySaveState(RuntimeState);
+    }
+
+    /// <summary>
+    /// Captures the global scanner runtime knowledge state.
+    /// </summary>
+    private ScannerRuntimeService.ScannerRuntimeSaveData CaptureScannerRuntime()
+    {
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
+        }
+
+        return ScannerRuntimeServiceReference != null
+            ? ScannerRuntimeServiceReference.CreateSaveSnapshot()
+            : new ScannerRuntimeService.ScannerRuntimeSaveData();
+    }
+
+    /// <summary>
+    /// Restores the global scanner runtime knowledge state.
+    /// </summary>
+    /// <param name="RuntimeState">Saved global scanner state.</param>
+    private void RestoreScannerRuntime(ScannerRuntimeService.ScannerRuntimeSaveData RuntimeState)
+    {
+        if (ScannerRuntimeServiceReference == null)
+        {
+            ScannerRuntimeServiceReference = FindFirstObjectByType<ScannerRuntimeService>();
+        }
+
+        if (ScannerRuntimeServiceReference == null)
+        {
+            Log("Scanner runtime service was not found. Scanner knowledge cannot be restored.");
+            return;
+        }
+
+        ScannerRuntimeServiceReference.ApplySaveState(RuntimeState);
     }
 
     /// <summary>
@@ -2138,39 +2625,35 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
-    /// Captures every drill placement spot runtime state in the scene.
+    /// Captures every wall drill runtime companion state in the scene.
+    /// Generic installation state is captured separately by PlaceableInstallationSpot.
     /// </summary>
-    private List<DrillPlacementSpotState> CaptureDrillPlacementSpots()
+    private List<WallDrillInstallationSpotState> CaptureWallDrillInstallationSpots()
     {
-        List<DrillPlacementSpotState> Result = new List<DrillPlacementSpotState>();
+        List<WallDrillInstallationSpotState> Result = new List<WallDrillInstallationSpotState>();
 
-        foreach (KeyValuePair<string, DrillPlacementSpot> Pair in DrillPlacementSpotsById)
+        foreach (KeyValuePair<string, WallDrillInstallationSpot> Pair in WallDrillInstallationSpotsById)
         {
-            DrillPlacementSpot Spot = Pair.Value;
+            WallDrillInstallationSpot Spot = Pair.Value;
 
             if (Spot == null)
             {
                 continue;
             }
 
-            ItemDefinition DrillDefinition = Spot.GetCurrentPlacedDrillItemDefinition();
-            string DrillItemId = DrillDefinition != null ? DrillDefinition.GetItemId() : string.Empty;
-
-            Result.Add(new DrillPlacementSpotState(
+            Result.Add(new WallDrillInstallationSpotState(
                 Pair.Key,
-                Spot.GetIsBlocked(),
-                Spot.GetIsOccupied(),
-                DrillItemId,
-                Spot.GetCurrentRemainingProductionTimer()));
+                Spot.GetCurrentRemainingProductionTimer(),
+                Spot.GetStoredOreItemsSnapshot()));
         }
 
         return Result;
     }
 
     /// <summary>
-    /// Restores every drill placement spot runtime state from save.
+    /// Restores every wall drill runtime companion state after the generic placeable spots have restored their installed prefabs.
     /// </summary>
-    private void RestoreDrillPlacementSpots(List<DrillPlacementSpotState> States)
+    private void RestoreWallDrillInstallationSpots(List<WallDrillInstallationSpotState> States)
     {
         if (States == null)
         {
@@ -2179,31 +2662,199 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         for (int Index = 0; Index < States.Count; Index++)
         {
-            DrillPlacementSpotState State = States[Index];
+            WallDrillInstallationSpotState State = States[Index];
 
             if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
             {
                 continue;
             }
 
-            if (!DrillPlacementSpotsById.TryGetValue(State.GetSceneId(), out DrillPlacementSpot Spot) || Spot == null)
+            if (!WallDrillInstallationSpotsById.TryGetValue(State.GetSceneId(), out WallDrillInstallationSpot Spot) || Spot == null)
+            {
+                Log("Saved wall drill spot id was not found in the scene: " + State.GetSceneId());
+                continue;
+            }
+
+            Spot.ApplySavedState(
+                State.GetRemainingProductionTimer(),
+                State.ToRuntimeStoredOreItems(OreDefinitionsById));
+        }
+    }
+
+
+    /// <summary>
+    /// Captures every shared mineral elevator hub state in the scene.
+    /// </summary>
+    private List<MineralElevatorHubState> CaptureMineralElevatorHubs()
+    {
+        List<MineralElevatorHubState> Result = new List<MineralElevatorHubState>();
+
+        foreach (KeyValuePair<string, MineralElevatorHub> Pair in MineralElevatorHubsById)
+        {
+            MineralElevatorHub Hub = Pair.Value;
+
+            if (Hub == null)
             {
                 continue;
             }
 
-            ItemDefinition DrillItemDefinition = null;
+            Result.Add(new MineralElevatorHubState(
+                Pair.Key,
+                Hub.GetIsActivated(),
+                Hub.GetStoredOreItemsSnapshot()));
+        }
 
-            if (!string.IsNullOrWhiteSpace(State.GetDrillItemId()))
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores every shared mineral elevator hub before restoring access point pending transfer queues.
+    /// </summary>
+    private void RestoreMineralElevatorHubs(List<MineralElevatorHubState> States)
+    {
+        foreach (KeyValuePair<string, MineralElevatorHub> Pair in MineralElevatorHubsById)
+        {
+            if (Pair.Value != null)
             {
-                ItemDefinitionsById.TryGetValue(State.GetDrillItemId(), out DrillItemDefinition);
+                Pair.Value.ApplySavedState(false, null);
+            }
+        }
+
+        if (States == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < States.Count; Index++)
+        {
+            MineralElevatorHubState State = States[Index];
+
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+            {
+                continue;
             }
 
-            Spot.ApplySavedState(
-                State.GetIsBlocked(),
-                State.GetIsOccupied(),
-                DrillItemDefinition,
-                OreRuntimeService,
-                State.GetRemainingProductionTimer());
+            if (!MineralElevatorHubsById.TryGetValue(State.GetSceneId(), out MineralElevatorHub Hub) || Hub == null)
+            {
+                Log("Saved mineral elevator hub id was not found in the scene: " + State.GetSceneId());
+                continue;
+            }
+
+            Hub.ApplySavedState(
+                State.GetIsActivated(),
+                State.ToRuntimeStoredOreItems(OreDefinitionsById));
         }
     }
+
+    /// <summary>
+    /// Captures every mineral elevator access point pending transfer state in the scene.
+    /// Generic installation state is captured separately by PlaceableInstallationSpot.
+    /// </summary>
+    private List<MineralElevatorAccessPointState> CaptureMineralElevatorAccessPoints()
+    {
+        List<MineralElevatorAccessPointState> Result = new List<MineralElevatorAccessPointState>();
+
+        foreach (KeyValuePair<string, MineralElevatorAccessPoint> Pair in MineralElevatorAccessPointsById)
+        {
+            MineralElevatorAccessPoint AccessPoint = Pair.Value;
+
+            if (AccessPoint == null)
+            {
+                continue;
+            }
+
+            Result.Add(new MineralElevatorAccessPointState(
+                Pair.Key,
+                AccessPoint.GetRemainingTransferTimer(),
+                AccessPoint.GetPendingTransferOreItemsSnapshot()));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores every mineral elevator access point pending transfer state after generic placeable spots and shared hubs have been restored.
+    /// </summary>
+    private void RestoreMineralElevatorAccessPoints(List<MineralElevatorAccessPointState> States)
+    {
+        if (States == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < States.Count; Index++)
+        {
+            MineralElevatorAccessPointState State = States[Index];
+
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!MineralElevatorAccessPointsById.TryGetValue(State.GetSceneId(), out MineralElevatorAccessPoint AccessPoint) || AccessPoint == null)
+            {
+                Log("Saved mineral elevator access point id was not found in the scene: " + State.GetSceneId());
+                continue;
+            }
+
+            AccessPoint.ApplySavedState(
+                State.GetRemainingTransferTimer(),
+                State.ToRuntimePendingOreItems(OreDefinitionsById));
+        }
+    }
+
+    /// <summary>
+    /// Captures every elevator drill installation companion state in the scene.
+    /// Generic installation state is captured separately by PlaceableInstallationSpot.
+    /// </summary>
+    private List<ElevatorDrillInstallationSpotState> CaptureElevatorDrillInstallationSpots()
+    {
+        List<ElevatorDrillInstallationSpotState> Result = new List<ElevatorDrillInstallationSpotState>();
+
+        foreach (KeyValuePair<string, ElevatorDrillInstallationSpot> Pair in ElevatorDrillInstallationSpotsById)
+        {
+            ElevatorDrillInstallationSpot Spot = Pair.Value;
+
+            if (Spot == null)
+            {
+                continue;
+            }
+
+            Result.Add(new ElevatorDrillInstallationSpotState(
+                Pair.Key,
+                Spot.GetCurrentEnabledState()));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores every elevator drill installation companion state after generic placeable spots have restored installed prefabs.
+    /// </summary>
+    private void RestoreElevatorDrillInstallationSpots(List<ElevatorDrillInstallationSpotState> States)
+    {
+        if (States == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < States.Count; Index++)
+        {
+            ElevatorDrillInstallationSpotState State = States[Index];
+
+            if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!ElevatorDrillInstallationSpotsById.TryGetValue(State.GetSceneId(), out ElevatorDrillInstallationSpot Spot) || Spot == null)
+            {
+                Log("Saved elevator drill installation spot id was not found in the scene: " + State.GetSceneId());
+                continue;
+            }
+
+            Spot.ApplySavedState(State.GetIsEnabled());
+        }
+    }
+
 }

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 /// <summary>
@@ -90,6 +91,16 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     private Collider[] ObstructionResults;
 
     /// <summary>
+    /// Raised after this spot installs or restores an item and its installed visual has been spawned.
+    /// </summary>
+    public event Action<PlaceableInstallationSpot, ItemInstance, GameObject> InstallationChanged;
+
+    /// <summary>
+    /// Raised after this spot clears its installed runtime state.
+    /// </summary>
+    public event Action<PlaceableInstallationSpot> InstallationCleared;
+
+    /// <summary>
     /// Resolves missing references.
     /// </summary>
     private void Awake()
@@ -151,6 +162,16 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     }
 
     /// <summary>
+    /// Gets the currently spawned installed visual object owned by this spot.
+    /// This should be used by companion systems that need to initialize components on the installed prefab without owning placement.
+    /// </summary>
+    /// <returns>Installed visual instance, or null when the spot is empty or the installed definition has no visual prefab.</returns>
+    public GameObject GetCurrentInstalledVisual()
+    {
+        return CurrentInstalledVisual;
+    }
+
+    /// <summary>
     /// Gets a cloned runtime item instance representing the currently installed item.
     /// </summary>
     /// <returns>Installed item clone, or null when this spot is empty.</returns>
@@ -176,6 +197,7 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
     {
         ClearInstalledVisual();
         CurrentInstalledItem = null;
+        NotifyInstallationCleared();
     }
 
     /// <summary>
@@ -212,6 +234,7 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
             ApplyInstalledUpgrade(PlaceableDefinition);
         }
 
+        NotifyInstallationChanged();
         Log("Restored installed item: " + PlaceableDefinition.GetDisplayName());
     }
 
@@ -344,6 +367,7 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
         CurrentInstalledItem = ConsumedItem.Clone();
         SpawnInstalledVisual(PlaceableDefinition);
         ApplyInstalledUpgrade(PlaceableDefinition);
+        NotifyInstallationChanged();
 
         Log("Installed item: " + PlaceableDefinition.GetDisplayName());
         return true;
@@ -380,6 +404,7 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
         }
 
         CurrentInstalledItem = null;
+        NotifyInstallationCleared();
     }
 
     /// <summary>
@@ -548,6 +573,22 @@ public sealed class PlaceableInstallationSpot : MonoBehaviour
 
         Destroy(CurrentInstalledVisual);
         CurrentInstalledVisual = null;
+    }
+
+    /// <summary>
+    /// Notifies companion systems that the installed visual has changed.
+    /// </summary>
+    private void NotifyInstallationChanged()
+    {
+        InstallationChanged?.Invoke(this, CurrentInstalledItem != null ? CurrentInstalledItem.Clone() : null, CurrentInstalledVisual);
+    }
+
+    /// <summary>
+    /// Notifies companion systems that the installed state has been cleared.
+    /// </summary>
+    private void NotifyInstallationCleared()
+    {
+        InstallationCleared?.Invoke(this);
     }
 
     /// <summary>

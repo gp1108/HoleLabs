@@ -106,11 +106,17 @@ public sealed class GameFeedbackEmitter : MonoBehaviour
 
         bool PlayedSomething = false;
         GameFeedbackProfile.GameFeedbackEvent FeedbackEvent = null;
+        GameFeedbackProfile.EventResolutionStatus ProfileStatus = GameFeedbackProfile.EventResolutionStatus.MissingProfileEvent;
 
-        if (FeedbackProfile != null && FeedbackProfile.TryGetEvent(EventId, out FeedbackEvent))
+        if (FeedbackProfile != null)
         {
-            PlayProfileEvent(FeedbackEvent, Context);
-            PlayedSomething = true;
+            ProfileStatus = FeedbackProfile.ResolveEvent(EventId, out FeedbackEvent);
+
+            if (ProfileStatus == GameFeedbackProfile.EventResolutionStatus.EnabledProfileEvent)
+            {
+                PlayProfileEvent(FeedbackEvent, Context);
+                PlayedSomething = true;
+            }
         }
 
         if (PlayLocalBindings(EventId, FeedbackEvent, Context))
@@ -120,7 +126,7 @@ public sealed class GameFeedbackEmitter : MonoBehaviour
 
         if (!PlayedSomething)
         {
-            Log("No feedback configured for event id: " + EventId);
+            Log(BuildMissingFeedbackMessage(EventId, ProfileStatus));
             return;
         }
 
@@ -780,6 +786,34 @@ public sealed class GameFeedbackEmitter : MonoBehaviour
     private Transform GetFallbackRoot()
     {
         return FallbackFeedbackRoot != null ? FallbackFeedbackRoot : transform;
+    }
+
+    /// <summary>
+    /// Builds a precise diagnostic message for missing or disabled feedback requests.
+    /// </summary>
+    /// <param name="EventId">Requested event id.</param>
+    /// <param name="ProfileStatus">Resolution status returned by the profile.</param>
+    /// <returns>Readable diagnostic message.</returns>
+    private string BuildMissingFeedbackMessage(string EventId, GameFeedbackProfile.EventResolutionStatus ProfileStatus)
+    {
+        if (FeedbackProfile == null)
+        {
+            return "No feedback profile assigned. Event id: " + EventId;
+        }
+
+        switch (ProfileStatus)
+        {
+            case GameFeedbackProfile.EventResolutionStatus.InvalidEventId:
+                return "Ignored feedback request because the event id is empty.";
+            case GameFeedbackProfile.EventResolutionStatus.DisabledProfileEvent:
+                return "Feedback event exists but is disabled. Event id: " + EventId + " | Profile: " + FeedbackProfile.name;
+            case GameFeedbackProfile.EventResolutionStatus.MissingProfileEvent:
+                return "No profile event configured for event id: " + EventId + " | Profile: " + FeedbackProfile.name;
+            case GameFeedbackProfile.EventResolutionStatus.EnabledProfileEvent:
+                return "Feedback event resolved but nothing was played. Check empty prefab/audio/local binding lists. Event id: " + EventId + " | Profile: " + FeedbackProfile.name;
+            default:
+                return "No feedback configured for event id: " + EventId + " | Profile: " + FeedbackProfile.name;
+        }
     }
 
     /// <summary>

@@ -43,6 +43,31 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     [Tooltip("If true, an event relay is automatically installed on child Animator objects so animation events can reach this behaviour even when the Animator is not on the same GameObject.")]
     [SerializeField] protected bool AutoInstallAnimatorEventRelay = true;
 
+    [Header("Animation Variants")]
+    [Tooltip("Animator int parameter set before the primary action trigger is fired. Leave empty to disable primary animation variants.")]
+    [SerializeField] protected string PrimaryAnimationVariantParameterName = "PrimaryVariant";
+
+    [Tooltip("Amount of authored primary action variants available in the Animator. Variant indexes are zero-based.")]
+    [SerializeField] protected int PrimaryAnimationVariantCount = 1;
+
+    [Tooltip("If true, the primary animation variant is selected randomly before each primary action starts.")]
+    [SerializeField] protected bool RandomizePrimaryAnimationVariant = false;
+
+    [Tooltip("If true and more than one variant exists, the same primary variant is not selected twice in a row.")]
+    [SerializeField] protected bool PreventImmediatePrimaryVariantRepeat = true;
+
+    [Tooltip("Animator int parameter set before the secondary action trigger is fired. Leave empty to disable secondary animation variants.")]
+    [SerializeField] protected string SecondaryAnimationVariantParameterName = "SecondaryVariant";
+
+    [Tooltip("Amount of authored secondary action variants available in the Animator. Variant indexes are zero-based.")]
+    [SerializeField] protected int SecondaryAnimationVariantCount = 1;
+
+    [Tooltip("If true, the secondary animation variant is selected randomly before each secondary action starts.")]
+    [SerializeField] protected bool RandomizeSecondaryAnimationVariant = false;
+
+    [Tooltip("If true and more than one variant exists, the same secondary variant is not selected twice in a row.")]
+    [SerializeField] protected bool PreventImmediateSecondaryVariantRepeat = true;
+
     [Header("Behaviour")]
     [Tooltip("If true, holding the primary input starts a new action when the current one finishes.")]
     [SerializeField] protected bool AllowPrimaryHoldRepeat = true;
@@ -73,6 +98,16 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
     /// Whether a new secondary action should be started as soon as the Animator is ready.
     /// </summary>
     protected bool PendingSecondaryRepeat;
+
+    /// <summary>
+    /// Last primary animation variant index selected by this item.
+    /// </summary>
+    private int LastPrimaryAnimationVariantIndex = -1;
+
+    /// <summary>
+    /// Last secondary animation variant index selected by this item.
+    /// </summary>
+    private int LastSecondaryAnimationVariantIndex = -1;
 
     /// <summary>
     /// Initializes runtime references and resolves missing animator references.
@@ -324,6 +359,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
 
         IsPrimaryActionRunning = true;
         SetAnimatorUsingState(true);
+        ApplyPrimaryAnimationVariant();
         TryPlayAnimatorTrigger(PrimaryUseTriggerName);
         OnPrimaryActionStarted();
     }
@@ -340,6 +376,7 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
 
         IsSecondaryActionRunning = true;
         SetAnimatorUsingState(true);
+        ApplySecondaryAnimationVariant();
         TryPlayAnimatorTrigger(SecondaryUseTriggerName);
         OnSecondaryActionStarted();
     }
@@ -560,6 +597,87 @@ public abstract class AnimationEventEquippedItemBehaviour : EquippedItemBehaviou
         {
             PendingSecondaryRepeat = true;
         }
+    }
+
+    /// <summary>
+    /// Selects and applies the primary animation variant parameter before the primary trigger is fired.
+    /// The Animator can then route the same primary trigger to different authored states using this integer.
+    /// </summary>
+    protected virtual void ApplyPrimaryAnimationVariant()
+    {
+        int VariantIndex = ResolveAnimationVariantIndex(
+            PrimaryAnimationVariantCount,
+            RandomizePrimaryAnimationVariant,
+            PreventImmediatePrimaryVariantRepeat,
+            LastPrimaryAnimationVariantIndex);
+
+        LastPrimaryAnimationVariantIndex = VariantIndex;
+        TrySetAnimatorInteger(PrimaryAnimationVariantParameterName, VariantIndex);
+    }
+
+    /// <summary>
+    /// Selects and applies the secondary animation variant parameter before the secondary trigger is fired.
+    /// </summary>
+    protected virtual void ApplySecondaryAnimationVariant()
+    {
+        int VariantIndex = ResolveAnimationVariantIndex(
+            SecondaryAnimationVariantCount,
+            RandomizeSecondaryAnimationVariant,
+            PreventImmediateSecondaryVariantRepeat,
+            LastSecondaryAnimationVariantIndex);
+
+        LastSecondaryAnimationVariantIndex = VariantIndex;
+        TrySetAnimatorInteger(SecondaryAnimationVariantParameterName, VariantIndex);
+    }
+
+    /// <summary>
+    /// Resolves one animation variant index using either deterministic zero or random selection.
+    /// </summary>
+    /// <param name="VariantCount">Amount of authored variants available.</param>
+    /// <param name="RandomizeVariant">Whether a random variant should be selected.</param>
+    /// <param name="PreventImmediateRepeat">Whether the previous variant should be avoided when possible.</param>
+    /// <param name="LastVariantIndex">Previously selected variant index.</param>
+    /// <returns>Resolved zero-based variant index.</returns>
+    private int ResolveAnimationVariantIndex(int VariantCount, bool RandomizeVariant, bool PreventImmediateRepeat, int LastVariantIndex)
+    {
+        int SafeVariantCount = Mathf.Max(1, VariantCount);
+
+        if (!RandomizeVariant || SafeVariantCount <= 1)
+        {
+            return 0;
+        }
+
+        int VariantIndex = Random.Range(0, SafeVariantCount);
+
+        if (PreventImmediateRepeat && SafeVariantCount > 1 && VariantIndex == LastVariantIndex)
+        {
+            VariantIndex = (VariantIndex + Random.Range(1, SafeVariantCount)) % SafeVariantCount;
+        }
+
+        return VariantIndex;
+    }
+
+    /// <summary>
+    /// Sets an Animator integer parameter if it exists on the current Animator Controller.
+    /// Missing parameters are ignored so items that do not use variants keep working unchanged.
+    /// </summary>
+    /// <param name="ParameterName">Animator integer parameter name.</param>
+    /// <param name="Value">Integer value assigned to the Animator.</param>
+    protected void TrySetAnimatorInteger(string ParameterName, int Value)
+    {
+        if (ItemAnimator == null || string.IsNullOrWhiteSpace(ParameterName))
+        {
+            return;
+        }
+
+        if (!HasAnimatorParameter(ParameterName, AnimatorControllerParameterType.Int))
+        {
+            Log("Animator int parameter not found or has the wrong type: " + ParameterName + " on " + ItemAnimator.name);
+            return;
+        }
+
+        ItemAnimator.SetInteger(ParameterName, Value);
+        Log("Animator int parameter set: " + ParameterName + " = " + Value + " on " + ItemAnimator.name);
     }
 
     /// <summary>

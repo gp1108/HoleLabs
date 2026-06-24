@@ -100,6 +100,15 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Tooltip("Pool used to reuse money prefabs instead of instantiating and destroying them.")]
     [SerializeField] private MoneyPickupPool MoneyPickupPool;
 
+    [Tooltip("Wallet credited directly when the automatic transfer upgrade is unlocked.")]
+    [SerializeField] private CurrencyWallet CurrencyWallet;
+
+    [Tooltip("Upgrade manager queried to know whether automatic transfer is unlocked.")]
+    [SerializeField] private UpgradeManager UpgradeManager;
+
+    [Tooltip("Optional feedback emitter used by machine payout events.")]
+    [SerializeField] private GameFeedbackEmitter FeedbackEmitter;
+
     [Header("Eject Points")]
     [Tooltip("World point and orientation used to eject coins.")]
     [SerializeField] private Transform CoinEjectPoint;
@@ -166,6 +175,25 @@ public sealed class OreSellTrigger : MonoBehaviour
     [Header("Payout Rules")]
     [Tooltip("Available physical denominations used to compose the emitted credit value exactly.")]
     [SerializeField] private List<MoneyDenomination> MoneyDenominations = new();
+
+    [Header("Automatic Credit Transfer Upgrade")]
+    [Tooltip("If true, automatic credit transfer is active without requiring an upgrade feature flag. Use this only for validation.")]
+    [SerializeField] private bool AllowAutomaticTransferWithoutUpgradeRequirement = false;
+
+    [Tooltip("Feature flag required for this machine to transfer credits directly instead of ejecting physical money.")]
+    [SerializeField] private string AutomaticTransferFeatureFlagId = "Money.Unlock.AutoTransfer";
+
+    [Tooltip("If true, the machine falls back to physical payout when the wallet is missing even if automatic transfer is unlocked.")]
+    [SerializeField] private bool FallbackToPhysicalPayoutWhenWalletMissing = true;
+
+    [Tooltip("Optional transform used as the feedback position for direct credit transfer events. Falls back to the coin eject point or this transform.")]
+    [SerializeField] private Transform AutomaticTransferFeedbackPoint;
+
+    [Tooltip("Event fired for each automatic credit transfer tick.")]
+    [SerializeField] private string AutomaticTransferFeedbackEventId = GameFeedbackEventIds.MoneyAutoTransferred;
+
+    [Tooltip("If true, automatic transfer feedback is played for every virtual money piece transferred to the wallet.")]
+    [SerializeField] private bool PlayAutomaticTransferFeedbackPerPiece = true;
 
     [Header("Emission Order")]
     [Tooltip("If true, emitted denomination order is shuffled slightly for visual variation after the optimal amount of pieces has been calculated.")]
@@ -303,6 +331,7 @@ public sealed class OreSellTrigger : MonoBehaviour
     /// </summary>
     private void Awake()
     {
+        ResolveOptionalReferences();
         CacheSortedDenominations();
 
         if (CoinEjectPoint == null)
@@ -317,6 +346,27 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         InitializeProcessingAnimationState();
         RefreshBatchDisplay();
+    }
+
+    /// <summary>
+    /// Resolves optional scene references used by upgrade-gated payout modes and feedback.
+    /// </summary>
+    private void ResolveOptionalReferences()
+    {
+        if (CurrencyWallet == null)
+        {
+            CurrencyWallet = FindFirstObjectByType<CurrencyWallet>();
+        }
+
+        if (UpgradeManager == null)
+        {
+            UpgradeManager = FindFirstObjectByType<UpgradeManager>();
+        }
+
+        if (FeedbackEmitter == null)
+        {
+            FeedbackEmitter = GetComponent<GameFeedbackEmitter>() ?? GetComponentInChildren<GameFeedbackEmitter>(true);
+        }
     }
 
     /// <summary>
@@ -1104,6 +1154,34 @@ public sealed class OreSellTrigger : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Queues one virtual transfer entry for the whole batch when automatic transfer is active
+    /// and physical denominations are not available. This keeps the upgraded machine functional
+    /// even when physical money prefabs are intentionally removed from its configuration.
+    /// </summary>
+    /// <param name="TargetMinorUnits">Credit value to transfer in minor currency units.</param>
+    /// <param name="BatchId">Batch identifier that owns the transfer.</param>
+    /// <returns>True when a virtual transfer was queued.</returns>
+    private bool TryEnqueueSingleAutomaticTransferPayout(int TargetMinorUnits, int BatchId)
+    {
+        int ClampedTargetMinorUnits = Mathf.Max(0, TargetMinorUnits);
+
+        if (ClampedTargetMinorUnits <= 0)
+        {
+            return true;
+        }
+
+        PendingMoneyEmissions.Enqueue(new PendingMoneyEmission
+        {
+            Denomination = null,
+            CreditMinorUnits = ClampedTargetMinorUnits,
+            BatchId = BatchId
+        });
+
+        Log("Queued single automatic transfer payout for batch value " + FromMinorUnits(ClampedTargetMinorUnits).ToString("0.00") + ".");
+        return true;
+    }
+
     private void EmitNextMoneyPiece()
     {
         if (PendingMoneyEmissions.Count == 0)
@@ -1113,17 +1191,115 @@ public sealed class OreSellTrigger : MonoBehaviour
 
         PendingMoneyEmission PendingMoneyEmission = PendingMoneyEmissions.Dequeue();
 
-        if (PendingMoneyEmission == null || PendingMoneyEmission.Denomination == null)
+        if (PendingMoneyEmission == null)
         {
             return;
         }
 
-        bool WasEmitted = EmitMoneyDenomination(PendingMoneyEmission.Denomination);
+        bool WasPaid = false;
 
-        if (WasEmitted)
+        if (IsAutomaticCreditTransferActive())
+        {
+            WasPaid = TransferMoneyEmissionDirectly(PendingMoneyEmission);
+        }
+
+        if (!WasPaid && PendingMoneyEmission.Denomination != null)
+        {
+            WasPaid = EmitMoneyDenomination(PendingMoneyEmission.Denomination);
+        }
+
+        if (WasPaid)
         {
             RegisterBatchPaidValue(PendingMoneyEmission.CreditMinorUnits, PendingMoneyEmission.BatchId);
         }
+    }
+
+    /// <summary>
+    /// Transfers one pending money emission directly into the player wallet without spawning physical money.
+    /// </summary>
+    /// <param name="PendingMoneyEmission">Pending payout entry to transfer.</param>
+    /// <returns>True when the wallet was credited.</returns>
+    private bool TransferMoneyEmissionDirectly(PendingMoneyEmission PendingMoneyEmission)
+    {
+        if (PendingMoneyEmission == null || PendingMoneyEmission.CreditMinorUnits <= 0)
+        {
+            return false;
+        }
+
+        if (CurrencyWallet == null)
+        {
+            if (!FallbackToPhysicalPayoutWhenWalletMissing)
+            {
+                Log("Automatic transfer is unlocked but CurrencyWallet is missing. Transfer skipped.");
+            }
+
+            return false;
+        }
+
+        float CreditValue = FromMinorUnits(PendingMoneyEmission.CreditMinorUnits);
+        CurrencyWallet.AddCurrency(global::CurrencyWallet.CurrencyType.Credits, CreditValue);
+
+        if (PlayAutomaticTransferFeedbackPerPiece)
+        {
+            PlayMachineFeedback(AutomaticTransferFeedbackEventId, GetAutomaticTransferFeedbackPosition(), Mathf.Max(1f, CreditValue));
+        }
+
+        Log("Automatically transferred payout value to wallet: " + CreditValue.ToString("0.00"));
+        return true;
+    }
+
+    /// <summary>
+    /// Returns whether the machine should currently transfer credits directly instead of spawning money pickups.
+    /// </summary>
+    /// <returns>True when direct transfer is unlocked and usable.</returns>
+    private bool IsAutomaticCreditTransferActive()
+    {
+        if (AllowAutomaticTransferWithoutUpgradeRequirement)
+        {
+            return CurrencyWallet != null || !FallbackToPhysicalPayoutWhenWalletMissing;
+        }
+
+        if (UpgradeManager == null || !UpgradeManager.IsFeatureUnlocked(AutomaticTransferFeatureFlagId))
+        {
+            return false;
+        }
+
+        return CurrencyWallet != null || !FallbackToPhysicalPayoutWhenWalletMissing;
+    }
+
+    /// <summary>
+    /// Gets the preferred world position for automatic transfer feedback.
+    /// </summary>
+    /// <returns>World position used by the feedback event.</returns>
+    private Vector3 GetAutomaticTransferFeedbackPosition()
+    {
+        if (AutomaticTransferFeedbackPoint != null)
+        {
+            return AutomaticTransferFeedbackPoint.position;
+        }
+
+        if (CoinEjectPoint != null)
+        {
+            return CoinEjectPoint.position;
+        }
+
+        return transform.position;
+    }
+
+    /// <summary>
+    /// Plays optional machine feedback at the provided position.
+    /// </summary>
+    /// <param name="EventId">Feedback event id.</param>
+    /// <param name="Position">World position used by the feedback context.</param>
+    /// <param name="Intensity">Feedback intensity multiplier.</param>
+    private void PlayMachineFeedback(string EventId, Vector3 Position, float Intensity)
+    {
+        if (FeedbackEmitter == null || string.IsNullOrWhiteSpace(EventId))
+        {
+            return;
+        }
+
+        FeedbackEmitter.Play(EventId, GameFeedbackContext.FromPosition(Position, transform, Intensity));
     }
 
     /// <summary>
@@ -1567,6 +1743,11 @@ public sealed class OreSellTrigger : MonoBehaviour
         CurrentBatchPaidMinorUnits = 0;
 
         bool CouldBuildExactPayout = TryEnqueueExactMoneyPayout(CurrentBatchTotalMinorUnits, CurrentBatchId);
+
+        if (!CouldBuildExactPayout && IsAutomaticCreditTransferActive())
+        {
+            CouldBuildExactPayout = TryEnqueueSingleAutomaticTransferPayout(CurrentBatchTotalMinorUnits, CurrentBatchId);
+        }
 
         if (!CouldBuildExactPayout)
         {

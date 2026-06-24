@@ -17,6 +17,10 @@ GameObject:
   - component: {fileID: 5895088863414305983}
   - component: {fileID: 3622449594008275767}
   - component: {fileID: -561447929441681643}
+  - component: {fileID: 6383115789683984968}
+  - component: {fileID: 5621533135766016866}
+  - component: {fileID: -2732505692235735224}
+  - component: {fileID: -3204563113337006312}
   m_Layer: 6
   m_Name: SM_Escaner_b01
   m_TagString: Untagged
@@ -182,6 +186,9 @@ MonoBehaviour:
   UpgradeLevel: 0
   Durability: -1
   CachedRigidbody: {fileID: 3216760429089776331}
+  CachedCarryable: {fileID: 0}
+  AutoResolvePhysicsReferences: 1
+  DestroyCarryableRootWhenRuntimeCollected: 1
 --- !u!114 &3622449594008275767
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -196,6 +203,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ScenePlacedWorldItemPersistence
   WorldItem: {fileID: 5895088863414305983}
   CachedRigidbody: {fileID: 3216760429089776331}
+  PreserveWhenCollected: 1
 --- !u!114 &-561447929441681643
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -209,3 +217,83 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SceneSaveId
   Id: 54d61d71390a452aa0c901341e43af93
+--- !u!114 &6383115789683984968
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2881106816910279862}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 219e7d9474a546e4c8f45aeedc35c12e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarryableAttachmentDriver
+--- !u!114 &5621533135766016866
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2881106816910279862}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0931b220fddf5c479089d43acbb0634, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarryablePlayerCollisionGate
+  IgnoredByPlayerLayerName: PlayerIgnoredPhysicsObjects
+--- !u!114 &-2732505692235735224
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2881106816910279862}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dbb545cf3287ae747bfec5fe5d13169b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarryableSleepController
+  Settings:
+    RequiredStillTime: 0.25
+    MaxLinearSpeed: 0.05
+    MaxAngularSpeed: 0.075
+    MinimumSupportNormalY: 0.45
+--- !u!114 &-3204563113337006312
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2881106816910279862}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7ac77d39939de7b40a77a96a2ef1c1cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PhysicsCarryable
+  SharedRuntimePhysics:
+    ForceInterpolationWhileAttached: 1
+    AttachmentCollisionDetectionMode: 2
+  HoldSettings:
+    Spring: 115
+    Damper: 22
+    MaxDistance: 0.02
+    LinearDamping: 3
+    AngularDamping: 1.2
+    DisableGravity: 0
+    BreakDistance: 2.6
+  MagnetSettings:
+    Spring: 100
+    Damper: 25
+    MaxDistance: 0.01
+    LinearDamping: 3
+    AngularDamping: 1.5
+    DisableGravity: 0
+    BreakDistance: 1.9
+  ReleaseConfig:
+    IgnoreMinimumTime: 0.15
+    IgnoreMaximumTime: 1.25
+    RestoreOnSleep: 1
+    HeldReleaseVelocityInfluence: 0.35
+    MagnetLaunchImpulseMultiplier: 1
+  DebugLogs: 0

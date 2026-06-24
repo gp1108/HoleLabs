@@ -112,11 +112,22 @@ MonoBehaviour:
   ActionAnimatorLayer: 0
   ActionStateTag: Action
   WaitUntilAnimatorLeavesActionState: 1
+  AutoInstallAnimatorEventRelay: 1
+  PrimaryAnimationVariantParameterName: PrimaryVariant
+  PrimaryAnimationVariantCount: 1
+  RandomizePrimaryAnimationVariant: 0
+  PreventImmediatePrimaryVariantRepeat: 1
+  SecondaryAnimationVariantParameterName: SecondaryVariant
+  SecondaryAnimationVariantCount: 1
+  RandomizeSecondaryAnimationVariant: 0
+  PreventImmediateSecondaryVariantRepeat: 1
   AllowPrimaryHoldRepeat: 1
   AllowSecondaryHoldRepeat: 0
   DebugLogs: 0
   PlayerCamera: {fileID: 0}
   MagnetTargetPoint: {fileID: 5791848616672613024}
+  UpgradeManager: {fileID: 0}
+  FeedbackEmitter: {fileID: 0}
   AreaForwardDistance: 2.5
   AreaRadius: 2.2
   AttractionLayers:
@@ -124,6 +135,21 @@ MonoBehaviour:
     m_Bits: 192
   IgnoreHeldObjects: 1
   ContinuousPullWhileHeld: 1
+  MaxActivePullTargets: 500
+  MaxNewAttachmentsPerRefresh: 32
+  TargetRefreshInterval: 0.08
+  CandidateBufferSize: 512
+  PreferClosestTargets: 1
+  ReleaseTargetsOutsideAttractionArea: 0
+  ActiveTargetReleasePadding: 1
+  AllowFiltersWithoutUpgradeRequirement: 1
+  SingleFilterFeatureFlagId: Magnet.Unlock.SingleFilter
+  MultiFilterFeatureFlagId: Magnet.Unlock.MultiFilter
+  MultiFilterCapacity: 2
+  FilterRayDistance: 6
+  FilterRayLayers:
+    serializedVersion: 2
+    m_Bits: 64
   DrawDebug: 0
   CachedPlayerColliders: []
 --- !u!95 &5887290701256158960

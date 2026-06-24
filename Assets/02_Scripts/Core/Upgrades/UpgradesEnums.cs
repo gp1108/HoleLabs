@@ -29,7 +29,20 @@ public enum UpgradeStatType
     OreYieldAmountMin = 18,
     OreYieldAmountMax = 19,
     OreSellValueMultiplierPerOre = 20,
-    OreSellValueFlatBonusPerOre = 21
+    OreSellValueFlatBonusPerOre = 21,
+
+    // Wall Drill
+    WallDrillProductionInterval = 30,
+    WallDrillStoredOreCapacity = 31,
+
+    // Mineral Elevator
+    MineralElevatorStoredOreCapacity = 40,
+    MineralElevatorTransferInterval = 41,
+
+    // Elevator Drill
+    ElevatorDrillMiningDamage = 50,
+    ElevatorDrillMiningInterval = 51,
+    ElevatorDrillRange = 52
 }
 
 /// <summary>

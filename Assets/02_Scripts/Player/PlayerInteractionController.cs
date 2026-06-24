@@ -38,6 +38,13 @@ public sealed class PlayerInteractionController : MonoBehaviour
     [Tooltip("Layers considered valid for interaction raycasts.")]
     [SerializeField] private LayerMask InteractionLayers = ~0;
 
+    [Header("Physical Grab")]
+    [Tooltip("If true, the dedicated physical grab input can pick up and release PhysicsCarryable objects, including WorldItem prefabs that also have PhysicsCarryable.")]
+    [SerializeField] private bool UseDedicatedPhysicalGrabInput = true;
+
+    [Tooltip("Temporary migration fallback. If true, Interact can still pick up and release carryables when no higher-priority interaction consumes it. Disable this after the GrabPhysical input has been added and validated.")]
+    [SerializeField] private bool UseInteractAsPhysicalGrabFallback = false;
+
     [Header("Hold Anchor")]
     [Tooltip("If true, a hold anchor will be created automatically as a child of the camera when none is assigned.")]
     [SerializeField] private bool AutoCreateHoldAnchor = true;
@@ -69,6 +76,16 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// World item currently under the center-screen interaction ray.
     /// </summary>
     private WorldItem CurrentLookedWorldItem;
+
+    /// <summary>
+    /// Generic player-interactable target currently under the center-screen interaction ray.
+    /// </summary>
+    private IPlayerInteractable CurrentLookedPlayerInteractable;
+
+    /// <summary>
+    /// Drill output claim target currently under the center-screen interaction ray.
+    /// </summary>
+    private IDrillOutputClaimable CurrentLookedDrillOutputClaimable;
 
     /// <summary>
     /// Whether interaction input is currently blocked by an external modal state.
@@ -139,6 +156,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
         if (PlayerInputReader != null)
         {
             PlayerInputReader.InteractPerformed += HandleInteractPerformed;
+            PlayerInputReader.PhysicalGrabPerformed += HandlePhysicalGrabPerformed;
         }
     }
 
@@ -150,6 +168,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
         if (PlayerInputReader != null)
         {
             PlayerInputReader.InteractPerformed -= HandleInteractPerformed;
+            PlayerInputReader.PhysicalGrabPerformed -= HandlePhysicalGrabPerformed;
         }
 
         if (CurrentHeldCarryable != null)
@@ -201,6 +220,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
     {
         CurrentLookedWorldItem = null;
         CurrentLookedCarryable = null;
+        CurrentLookedPlayerInteractable = null;
+        CurrentLookedDrillOutputClaimable = null;
 
         if (PlayerCamera == null)
         {
@@ -221,6 +242,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         CurrentLookedWorldItem = ResolveWorldItem(HitInfo);
         CurrentLookedCarryable = ResolveCarryable(HitInfo);
+        CurrentLookedPlayerInteractable = ResolvePlayerInteractable(HitInfo);
+        CurrentLookedDrillOutputClaimable = ResolveDrillOutputClaimable(HitInfo);
     }
 
     /// <summary>
@@ -238,21 +261,24 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
+        if (TryInteractWithLookedPlayerInteractable())
+        {
+            return;
+        }
+
+        if (TryClaimLookedDrillOutput())
+        {
+            return;
+        }
+
         if (CurrentLookedWorldItem != null)
         {
             TryInteractWithWorldItem(CurrentLookedWorldItem);
             return;
         }
 
-        if (CurrentHeldCarryable != null)
+        if (UseInteractAsPhysicalGrabFallback && TryTogglePhysicalGrab())
         {
-            DropCurrentCarryable();
-            return;
-        }
-
-        if (CurrentLookedCarryable != null)
-        {
-            PickUpCarryable(CurrentLookedCarryable);
             return;
         }
 
@@ -262,6 +288,45 @@ public sealed class PlayerInteractionController : MonoBehaviour
         }
 
         Log("Interact pressed but no valid contextual target was found.");
+    }
+
+    /// <summary>
+    /// Resolves the dedicated physical grab input without competing with contextual interact or hotbar pickup.
+    /// </summary>
+    private void HandlePhysicalGrabPerformed()
+    {
+        if (IsExternalInteractionBlocked || !UseDedicatedPhysicalGrabInput)
+        {
+            return;
+        }
+
+        if (TryTogglePhysicalGrab())
+        {
+            return;
+        }
+
+        Log("Physical grab pressed but no valid carryable target was found.");
+    }
+
+    /// <summary>
+    /// Drops the currently held carryable or picks up the currently looked carryable.
+    /// </summary>
+    /// <returns>True when a carryable was picked up or released.</returns>
+    private bool TryTogglePhysicalGrab()
+    {
+        if (CurrentHeldCarryable != null)
+        {
+            DropCurrentCarryable();
+            return true;
+        }
+
+        if (CurrentLookedCarryable == null)
+        {
+            return false;
+        }
+
+        PickUpCarryable(CurrentLookedCarryable);
+        return CurrentHeldCarryable != null;
     }
 
     /// <summary>
@@ -296,6 +361,34 @@ public sealed class PlayerInteractionController : MonoBehaviour
     }
 
     /// <summary>
+    /// Tries to interact with the currently looked generic player-interactable target before generic world item or carry interactions.
+    /// </summary>
+    /// <returns>True when a generic interactable consumed the interaction.</returns>
+    private bool TryInteractWithLookedPlayerInteractable()
+    {
+        if (CurrentLookedPlayerInteractable == null)
+        {
+            return false;
+        }
+
+        return CurrentLookedPlayerInteractable.TryInteract();
+    }
+
+    /// <summary>
+    /// Tries to claim output from the currently looked wall drill before generic world item or carry interactions.
+    /// </summary>
+    /// <returns>True when a drill output target consumed the interaction.</returns>
+    private bool TryClaimLookedDrillOutput()
+    {
+        if (CurrentLookedDrillOutputClaimable == null)
+        {
+            return false;
+        }
+
+        return CurrentLookedDrillOutputClaimable.TryClaimOutput();
+    }
+
+    /// <summary>
     /// Attempts to insert the looked world item into the hotbar or swap it with the selected slot.
     /// Scene-placed persistent world items are hidden instead of destroyed so they can be restored by save/load.
     /// </summary>
@@ -306,6 +399,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
+        WorldItem.PrepareForInventoryPickup();
+
         ItemInstance WorldItemInstance = WorldItem.CreateItemInstance();
         if (WorldItemInstance == null)
         {
@@ -313,7 +408,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
-        ScenePlacedWorldItemPersistence ScenePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+        ScenePlacedWorldItemPersistence ScenePersistence = ResolvePreservedScenePersistence(WorldItem);
 
         int InsertedSlotIndex;
         bool WasAdded = HotbarController.TryAddItem(WorldItemInstance.Clone(), HotbarController.GetSelectedIndex(), out InsertedSlotIndex);
@@ -322,14 +417,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
         {
             Log("Picked world item into hotbar slot: " + InsertedSlotIndex);
 
-            if (ScenePersistence != null)
-            {
-                ScenePersistence.SetPresent(false);
-            }
-            else
-            {
-                Destroy(WorldItem.gameObject);
-            }
+            RemoveWorldItemFromScene(WorldItem, ScenePersistence);
 
             CurrentLookedWorldItem = null;
             return;
@@ -346,14 +434,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
         Vector3 SpawnLinearVelocity = WorldItem.GetLinearVelocity();
         Vector3 SpawnAngularVelocity = WorldItem.GetAngularVelocity();
 
-        if (ScenePersistence != null)
-        {
-            ScenePersistence.SetPresent(false);
-        }
-        else
-        {
-            Destroy(WorldItem.gameObject);
-        }
+        RemoveWorldItemFromScene(WorldItem, ScenePersistence);
 
         CurrentLookedWorldItem = null;
 
@@ -366,6 +447,126 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         HotbarController.SpawnWorldItem(PreviousSelectedItem, SpawnPosition, SpawnRotation, SpawnLinearVelocity, SpawnAngularVelocity, false);
         Log("Swapped looked world item with currently selected hotbar item.");
+    }
+
+
+
+    /// <summary>
+    /// Resolves the scene persistence wrapper only when it really belongs to a preserved scene item.
+    /// Runtime-spawned clones are intentionally ignored so they are destroyed when collected.
+    /// </summary>
+    /// <param name="WorldItem">World item being collected or swapped.</param>
+    /// <returns>Preserved scene persistence component, or null for runtime world items.</returns>
+    private ScenePlacedWorldItemPersistence ResolvePreservedScenePersistence(WorldItem WorldItem)
+    {
+        if (WorldItem == null)
+        {
+            return null;
+        }
+
+        ScenePlacedWorldItemPersistence ScenePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+
+        if (ScenePersistence == null || !ScenePersistence.ShouldPreserveAsScenePlacedItem())
+        {
+            return null;
+        }
+
+        return ScenePersistence;
+    }
+
+    /// <summary>
+    /// Removes a world item after it has been collected by the player.
+    /// True scene-placed items are hidden for save/load, while runtime-spawned items are destroyed.
+    /// </summary>
+    /// <param name="WorldItem">World item to remove.</param>
+    /// <param name="ScenePersistence">Optional preserved scene persistence wrapper.</param>
+    private void RemoveWorldItemFromScene(WorldItem WorldItem, ScenePlacedWorldItemPersistence ScenePersistence)
+    {
+        if (ScenePersistence != null)
+        {
+            ScenePersistence.SetPresent(false);
+            return;
+        }
+
+        if (WorldItem == null)
+        {
+            return;
+        }
+
+        ScenePlacedWorldItemPersistence RuntimePersistence = WorldItem.GetComponentInParent<ScenePlacedWorldItemPersistence>();
+        if (RuntimePersistence != null)
+        {
+            Destroy(RuntimePersistence.gameObject);
+            return;
+        }
+
+        GameObject RemovalRoot = WorldItem.GetRuntimeRemovalRoot();
+        if (RemovalRoot != null)
+        {
+            Destroy(RemovalRoot);
+            return;
+        }
+
+        Destroy(WorldItem.gameObject);
+    }
+
+
+    /// <summary>
+    /// Resolves a generic player-interactable target from the current raycast hit.
+    /// </summary>
+    /// <param name="HitInfo">Raycast hit returned by the interaction ray.</param>
+    /// <returns>Generic player-interactable target, or null.</returns>
+    private IPlayerInteractable ResolvePlayerInteractable(RaycastHit HitInfo)
+    {
+        if (HitInfo.collider == null)
+        {
+            return null;
+        }
+
+        IPlayerInteractable Interactable = HitInfo.collider.GetComponent<IPlayerInteractable>() ??
+                                           HitInfo.collider.GetComponentInParent<IPlayerInteractable>();
+
+        if (Interactable != null)
+        {
+            return Interactable;
+        }
+
+        if (HitInfo.rigidbody != null)
+        {
+            Interactable = HitInfo.rigidbody.GetComponent<IPlayerInteractable>() ??
+                           HitInfo.rigidbody.GetComponentInParent<IPlayerInteractable>();
+        }
+
+        return Interactable;
+    }
+
+    /// <summary>
+    /// Resolves a drill output claim target from the current raycast hit.
+    /// </summary>
+    /// <param name="HitInfo">Raycast hit returned by the interaction ray.</param>
+    /// <returns>Drill output claimable target, or null.</returns>
+    private IDrillOutputClaimable ResolveDrillOutputClaimable(RaycastHit HitInfo)
+    {
+        if (HitInfo.collider == null)
+        {
+            return null;
+        }
+
+        IDrillOutputClaimable Claimable = HitInfo.collider.GetComponent<IDrillOutputClaimable>() ??
+                                          HitInfo.collider.GetComponentInParent<IDrillOutputClaimable>();
+
+        if (Claimable != null)
+        {
+            return Claimable;
+        }
+
+        if (HitInfo.rigidbody != null)
+        {
+            Claimable = HitInfo.rigidbody.GetComponent<IDrillOutputClaimable>() ??
+                        HitInfo.rigidbody.GetComponentInParent<IDrillOutputClaimable>();
+        }
+
+        return Claimable;
     }
 
     /// <summary>

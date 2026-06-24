@@ -581,6 +581,7 @@ public sealed class HotbarController : MonoBehaviour
         }
 
         GameObject WorldObject = Instantiate(WorldPrefab, Position, Rotation);
+        ScenePlacedWorldItemPersistence.MarkRuntimeSpawnedObject(WorldObject);
 
         WorldItem WorldItem = WorldObject.GetComponent<WorldItem>();
         if (WorldItem == null)

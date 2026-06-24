@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 /// <summary>
@@ -21,6 +22,10 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
 
     [Tooltip("Optional collider array enabled again when the pickup is reused by the pool.")]
     [SerializeField] private Collider[] CachedColliders;
+
+    [Header("Scanner Runtime")]
+    [Tooltip("Stable runtime id used by ScannerRuntimeService to remember this exact physical ore pickup while it exists.")]
+    [SerializeField] private string ScannerInstanceId;
 
     private OrePickupPool OwnerPool;
     private GameObject SourcePrefab;
@@ -47,12 +52,16 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     /// </summary>
     public void Initialize(OreItemData oreItemData)
     {
+        NotifyScannerInstanceRemoved();
+        ScannerInstanceId = Guid.NewGuid().ToString("N");
         OreItemData = oreItemData;
 
         if (OreItemData != null && OreItemData.GetOreDefinition() != null)
         {
             GetRuntimeRoot().name = "OrePickup_" + OreItemData.GetOreDefinition().GetDisplayName();
         }
+
+        RuntimeWorldObjectRegistry.RegisterOrePickup(this);
     }
 
     /// <summary>
@@ -89,6 +98,9 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         EnsureCachedReferences();
         ResetPhysicsState();
         SetCollidersEnabled(false);
+        RuntimeWorldObjectRegistry.UnregisterOrePickup(this);
+        NotifyScannerInstanceRemoved();
+        ScannerInstanceId = string.Empty;
         OreItemData = null;
         runtimeRoot.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "OrePickup_Pooled";
 
@@ -118,6 +130,40 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     public OreItemData GetOreItemData()
     {
         return OreItemData;
+    }
+
+    /// <summary>
+    /// Gets the stable scanner instance id assigned to this physical pickup while it exists.
+    /// </summary>
+    /// <returns>Stable scanner instance id for this runtime pickup.</returns>
+    public string GetScannerInstanceId()
+    {
+        if (string.IsNullOrWhiteSpace(ScannerInstanceId))
+        {
+            ScannerInstanceId = Guid.NewGuid().ToString("N");
+        }
+
+        return ScannerInstanceId;
+    }
+
+    /// <summary>
+    /// Applies a scanner instance id restored from save.
+    /// This should only be called by save/load code after Initialize has restored the ore payload.
+    /// </summary>
+    /// <param name="ScannerInstanceIdValue">Saved scanner instance id.</param>
+    public void SetScannerInstanceId(string ScannerInstanceIdValue)
+    {
+        if (string.IsNullOrWhiteSpace(ScannerInstanceIdValue))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ScannerInstanceId) && !string.Equals(ScannerInstanceId, ScannerInstanceIdValue, StringComparison.Ordinal))
+        {
+            NotifyScannerInstanceRemoved();
+        }
+
+        ScannerInstanceId = ScannerInstanceIdValue;
     }
 
     /// <summary>
@@ -160,6 +206,38 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         }
 
         CachedRigidbody.Sleep();
+    }
+
+    /// <summary>
+    /// Notifies the scanner runtime service that this physical pickup instance no longer exists as a valid scanned target.
+    /// </summary>
+    private void NotifyScannerInstanceRemoved()
+    {
+        if (string.IsNullOrWhiteSpace(ScannerInstanceId))
+        {
+            return;
+        }
+
+        ScannerRuntimeService RuntimeService = ScannerRuntimeService.Instance;
+
+        if (RuntimeService == null)
+        {
+            RuntimeService = FindFirstObjectByType<ScannerRuntimeService>();
+        }
+
+        if (RuntimeService != null)
+        {
+            RuntimeService.ForgetOrePickupInstanceId(ScannerInstanceId);
+        }
+    }
+
+    /// <summary>
+    /// Ensures scanner instance cache is cleaned when this pickup is destroyed outside its pool flow.
+    /// </summary>
+    private void OnDestroy()
+    {
+        RuntimeWorldObjectRegistry.UnregisterOrePickup(this);
+        NotifyScannerInstanceRemoved();
     }
 
     /// <summary>

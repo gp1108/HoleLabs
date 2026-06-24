@@ -333,6 +333,37 @@ public sealed class ResearchStation : MonoBehaviour
             : new List<ResearchRuntimeService.OreRequirementProgress>();
     }
 
+
+    /// <summary>
+    /// Returns whether every valid ore requirement on the provided research has been discovered by the scanner system.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition to evaluate.</param>
+    public bool AreOreRequirementsDiscovered(ResearchDefinition ResearchDefinition)
+    {
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null && RuntimeService.AreOreRequirementsDiscovered(ResearchDefinition);
+    }
+
+    /// <summary>
+    /// Returns whether one ore requirement is known by the scanner system.
+    /// </summary>
+    /// <param name="Requirement">Requirement to evaluate.</param>
+    public bool IsOreRequirementDiscovered(ResearchDefinition.OreRequirement Requirement)
+    {
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null && RuntimeService.IsOreRequirementDiscovered(Requirement);
+    }
+
+    /// <summary>
+    /// Counts valid ore requirements that still reference undiscovered ore types.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition to evaluate.</param>
+    public int CountUndiscoveredOreRequirements(ResearchDefinition ResearchDefinition)
+    {
+        ResearchRuntimeService RuntimeService = GetResearchRuntimeService();
+        return RuntimeService != null ? RuntimeService.CountUndiscoveredOreRequirements(ResearchDefinition) : 0;
+    }
+
     /// <summary>
     /// Processes matching physical ore pickups from all registered ore input zones.
     /// </summary>

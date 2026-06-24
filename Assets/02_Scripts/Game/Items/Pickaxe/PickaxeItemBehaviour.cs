@@ -51,6 +51,12 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     [Tooltip("If true, a PickaxeItemDefinition feedback profile overrides the profile currently assigned to the emitter.")]
     [SerializeField] private bool UseItemDefinitionFeedbackProfile = true;
 
+    [Tooltip("If true, a feedback event is played immediately when the primary swing animation starts. Use this for swing or whoosh audio.")]
+    [SerializeField] private bool PlayPrimaryStartedFeedback = true;
+
+    [Tooltip("Feedback event id played when the primary action starts.")]
+    [SerializeField] private string PrimaryStartedFeedbackEventId = GameFeedbackEventIds.ToolPrimaryStarted;
+
     [Tooltip("If true, a feedback event is played when the mining ray hits nothing.")]
     [SerializeField] private bool PlayMissFeedbackWhenRayHitsNothing = false;
 
@@ -199,6 +205,11 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     {
         base.OnPrimaryActionStarted();
         LastPrimaryActionStartTime = Time.time;
+
+        if (PlayPrimaryStartedFeedback)
+        {
+            PlayFeedback(PrimaryStartedFeedbackEventId, GameFeedbackContext.FromTransform(transform));
+        }
     }
 
     /// <summary>

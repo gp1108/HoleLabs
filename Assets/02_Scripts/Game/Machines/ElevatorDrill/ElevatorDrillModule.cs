@@ -1,0 +1,1073 @@
+using System;
+using UnityEngine;
+
+/// <summary>
+/// Runtime elevator-mounted drill module that can be toggled by player interaction and automatically mines nearby ore veins.
+/// The module does not own placement. It is intended to live on the installed prefab spawned by a PlaceableInstallationSpot.
+/// </summary>
+[DisallowMultipleComponent]
+public sealed class ElevatorDrillModule : MonoBehaviour, IPlayerInteractable
+{
+    [Header("References")]
+    [Tooltip("Optional transform used as the origin for target detection and mining rays. If empty, this transform is used.")]
+    [SerializeField] private Transform AimOrigin;
+
+    [Tooltip("Optional visual transform rotated towards the current target. This can be the turret head or laser root.")]
+    [SerializeField] private Transform AimRoot;
+
+    [Tooltip("Upgrade manager used to resolve optional global elevator drill stat modifiers.")]
+    [SerializeField] private UpgradeManager UpgradeManager;
+
+    [Tooltip("Optional feedback emitter used for elevator drill events.")]
+    [SerializeField] private GameFeedbackEmitter FeedbackEmitter;
+
+    [Tooltip("Optional animator driven by the drill runtime state.")]
+    [SerializeField] private Animator DrillAnimator;
+
+    [Header("Runtime State")]
+    [Tooltip("If true, the module starts enabled when installed or spawned without saved state.")]
+    [SerializeField] private bool StartEnabled = false;
+
+    [Tooltip("If true, the player can toggle this module by looking at its collider and pressing interact.")]
+    [SerializeField] private bool CanToggleByInteraction = true;
+
+    [Header("Targeting")]
+    [Tooltip("Base world radius used when box detection is disabled. Also used by old serialized setups that still rely on a spherical scan.")]
+    [SerializeField] private float BaseDetectionRadius = 6f;
+
+    [Tooltip("If true, the drill uses an oriented box volume instead of a spherical radius when searching ore targets. This prevents the module from targeting veins far above or below the elevator.")]
+    [SerializeField] private bool UseBoxDetectionVolume = true;
+
+    [Tooltip("Optional transform that defines the center and rotation of the detection box. If empty, Aim Origin is used.")]
+    [SerializeField] private Transform DetectionVolumeTransform;
+
+    [Tooltip("Local offset from the detection volume transform used as the center of the box scan.")]
+    [SerializeField] private Vector3 DetectionBoxCenterOffset = Vector3.zero;
+
+    [Tooltip("Base local size of the box scan before upgrades are applied. X is local width, Y is local height, Z is local depth.")]
+    [SerializeField] private Vector3 BaseDetectionBoxSize = new Vector3(6f, 2f, 6f);
+
+    [Tooltip("Layers considered mineable by the elevator drill. Put ore vein colliders in this mask.")]
+    [SerializeField] private LayerMask MineableLayers = ~0;
+
+    [Tooltip("Trigger policy used while detecting mineable targets.")]
+    [SerializeField] private QueryTriggerInteraction TargetQueryTriggerInteraction = QueryTriggerInteraction.Ignore;
+
+    [Tooltip("Seconds between target refresh scans. The drill keeps the current valid target between scans.")]
+    [SerializeField] private float TargetRefreshInterval = 0.15f;
+
+    [Tooltip("Maximum colliders considered during one target refresh scan.")]
+    [SerializeField] private int TargetBufferSize = 64;
+
+    [Tooltip("If true, a raycast is used to reject targets hidden behind blocking geometry.")]
+    [SerializeField] private bool RequireLineOfSight = true;
+
+    [Tooltip("Layers that block the drill view before reaching the ore. Configure this as everything that can physically block the beam, excluding the mining layer itself.")]
+    [SerializeField] private LayerMask LineOfSightBlockerLayers = ~0;
+
+    [Tooltip("Maximum blocking hits processed during one line-of-sight check. Higher values are safer when the ray starts near the elevator's own colliders.")]
+    [SerializeField] private int LineOfSightHitBufferSize = 16;
+
+    [Tooltip("Trigger policy used by optional line of sight checks.")]
+    [SerializeField] private QueryTriggerInteraction LineOfSightQueryTriggerInteraction = QueryTriggerInteraction.Ignore;
+
+    [Header("Mining")]
+    [Tooltip("Base mining damage applied per automatic drill hit before upgrades are applied.")]
+    [SerializeField] private float BaseMiningDamage = 1f;
+
+    [Tooltip("Base seconds between automatic mining hits before upgrades are applied.")]
+    [SerializeField] private float BaseMiningInterval = 0.75f;
+
+    [Tooltip("If true, the module uses the highest MiningTier currently defined in code.")]
+    [SerializeField] private bool UseHighestDefinedMiningTier = true;
+
+    [Tooltip("Fallback mining tier used when highest-defined-tier mode is disabled.")]
+    [SerializeField] private MiningTier FallbackMiningTier = MiningTier.TierIV;
+
+    [Tooltip("Extraction quality multiplier passed to mined ore drops.")]
+    [SerializeField] private float ExtractionQualityMultiplier = 1f;
+
+    [Tooltip("If true, ore drops created by this machine source can use ElevatorOreSpawnMagnet assist volumes.")]
+    [SerializeField] private bool AllowElevatorOreSpawnAssist = true;
+
+    [Tooltip("If true, optional UpgradeManager stat modifiers affect detection radius, mining damage and mining interval.")]
+    [SerializeField] private bool UseUpgradeModifiedValues = true;
+
+    [Header("Upgrade Stats")]
+    [Tooltip("Upgrade stat used to modify elevator drill detection radius.")]
+    [SerializeField] private UpgradeStatType DetectionRadiusStat = UpgradeStatType.ElevatorDrillRange;
+
+    [Tooltip("Upgrade stat used to modify elevator drill mining damage.")]
+    [SerializeField] private UpgradeStatType MiningDamageStat = UpgradeStatType.ElevatorDrillMiningDamage;
+
+    [Tooltip("Upgrade stat used to modify seconds between elevator drill mining hits.")]
+    [SerializeField] private UpgradeStatType MiningIntervalStat = UpgradeStatType.ElevatorDrillMiningInterval;
+
+    [Header("Aiming")]
+    [Tooltip("If true, Aim Root rotates towards the current target while the module has one.")]
+    [SerializeField] private bool RotateAimRootToTarget = true;
+
+    [Tooltip("Maximum degrees per second used when rotating Aim Root towards a target.")]
+    [SerializeField] private float AimRotationSpeed = 540f;
+
+    [Tooltip("If true, Aim Root uses full 3D look rotation. If false, only yaw is changed.")]
+    [SerializeField] private bool UseFullAimRotation = true;
+
+    [Header("Feedback")]
+    [Tooltip("Feedback event played when the module is enabled.")]
+    [SerializeField] private string EnabledEventId = GameFeedbackEventIds.ElevatorDrillEnabled;
+
+    [Tooltip("Feedback event played when the module is disabled.")]
+    [SerializeField] private string DisabledEventId = GameFeedbackEventIds.ElevatorDrillDisabled;
+
+    [Tooltip("Feedback event played when the module acquires a valid target.")]
+    [SerializeField] private string TargetAcquiredEventId = GameFeedbackEventIds.ElevatorDrillTargetAcquired;
+
+    [Tooltip("Feedback event played when the module loses its current target.")]
+    [SerializeField] private string TargetLostEventId = GameFeedbackEventIds.ElevatorDrillTargetLost;
+
+    [Tooltip("Feedback event played when the module applies an accepted mining hit.")]
+    [SerializeField] private string MiningTickEventId = GameFeedbackEventIds.ElevatorDrillMiningTick;
+
+    [Tooltip("Feedback event played when the module breaks a mineable target.")]
+    [SerializeField] private string TargetBrokenEventId = GameFeedbackEventIds.ElevatorDrillTargetBroken;
+
+    [Tooltip("Feedback event played when interaction or mining is blocked.")]
+    [SerializeField] private string BlockedEventId = GameFeedbackEventIds.ElevatorDrillBlocked;
+
+    [Header("Animator")]
+    [Tooltip("Animator bool enabled while the module is enabled.")]
+    [SerializeField] private string IsEnabledBoolName = "IsEnabled";
+
+    [Tooltip("Animator bool enabled while the module has a valid target.")]
+    [SerializeField] private string HasTargetBoolName = "HasTarget";
+
+    [Tooltip("Animator trigger fired every time an automatic mining hit is applied.")]
+    [SerializeField] private string FireTriggerName = "Fire";
+
+    [Header("Debug")]
+    [Tooltip("Logs target acquisition, mining results and toggle operations.")]
+    [SerializeField] private bool DebugLogs = false;
+
+    [Tooltip("Draws the active detection volume around the detection origin while selected.")]
+    [SerializeField] private bool DrawDetectionGizmo = true;
+
+    /// <summary>
+    /// Installation companion that owns save/load state for this installed module.
+    /// </summary>
+    private ElevatorDrillInstallationSpot OwnerSpot;
+
+    /// <summary>
+    /// Whether this module is currently enabled and allowed to mine.
+    /// </summary>
+    private bool IsEnabledRuntime;
+
+    /// <summary>
+    /// Current mineable target selected by the targeting scanner.
+    /// </summary>
+    private IMineable CurrentTarget;
+
+    /// <summary>
+    /// Component backing the current mineable target, used for Unity null checks and transforms.
+    /// </summary>
+    private Component CurrentTargetComponent;
+
+    /// <summary>
+    /// Collider used as the preferred impact surface for the current target.
+    /// </summary>
+    private Collider CurrentTargetCollider;
+
+    /// <summary>
+    /// Remaining time before a target refresh scan can run.
+    /// </summary>
+    private float RemainingTargetRefreshTimer;
+
+    /// <summary>
+    /// Remaining time before the next automatic mining hit.
+    /// </summary>
+    private float RemainingMiningTimer;
+
+    /// <summary>
+    /// Non-alloc collider buffer used by targeting scans.
+    /// </summary>
+    private Collider[] TargetBuffer;
+
+    /// <summary>
+    /// Non-alloc raycast hit buffer used by line-of-sight checks.
+    /// </summary>
+    private RaycastHit[] LineOfSightHitBuffer;
+
+    /// <summary>
+    /// Initializes references and runtime buffers.
+    /// </summary>
+    private void Awake()
+    {
+        EnsureReferences();
+        EnsureTargetBuffer();
+        EnsureLineOfSightBuffer();
+        IsEnabledRuntime = StartEnabled;
+        RemainingTargetRefreshTimer = 0f;
+        RemainingMiningTimer = GetResolvedMiningInterval();
+        UpdateAnimatorState();
+    }
+
+    /// <summary>
+    /// Applies default startup state when the module is not controlled by an installation companion.
+    /// </summary>
+    private void Start()
+    {
+        if (OwnerSpot == null)
+        {
+            SetEnabledState(IsEnabledRuntime, false);
+        }
+    }
+
+    /// <summary>
+    /// Clears target state when disabled.
+    /// </summary>
+    private void OnDisable()
+    {
+        ClearCurrentTarget(false);
+        UpdateAnimatorState();
+    }
+
+    /// <summary>
+    /// Updates targeting and optional aim visuals.
+    /// </summary>
+    private void Update()
+    {
+        if (!IsEnabledRuntime)
+        {
+            return;
+        }
+
+        RemainingTargetRefreshTimer -= Time.deltaTime;
+
+        if (RemainingTargetRefreshTimer <= 0f)
+        {
+            RemainingTargetRefreshTimer = Mathf.Max(0.02f, TargetRefreshInterval);
+            RefreshTarget();
+        }
+
+        UpdateAimRoot();
+        UpdateAnimatorState();
+    }
+
+    /// <summary>
+    /// Applies automatic mining hits in physics time.
+    /// </summary>
+    private void FixedUpdate()
+    {
+        if (!IsEnabledRuntime)
+        {
+            return;
+        }
+
+        if (!HasValidCurrentTarget())
+        {
+            return;
+        }
+
+        RemainingMiningTimer -= Time.fixedDeltaTime;
+
+        if (RemainingMiningTimer > 0f)
+        {
+            return;
+        }
+
+        RemainingMiningTimer = GetResolvedMiningInterval();
+        MineCurrentTarget();
+    }
+
+    /// <summary>
+    /// Initializes this module after it has been spawned by an elevator drill installation spot.
+    /// </summary>
+    /// <param name="OwnerSpotValue">Installation companion that owns this module.</param>
+    /// <param name="UpgradeManagerValue">Upgrade manager used by this module.</param>
+    /// <param name="InitialEnabledState">Saved or default enabled state.</param>
+    public void Initialize(
+        ElevatorDrillInstallationSpot OwnerSpotValue,
+        UpgradeManager UpgradeManagerValue,
+        bool InitialEnabledState)
+    {
+        OwnerSpot = OwnerSpotValue;
+
+        if (UpgradeManager == null)
+        {
+            UpgradeManager = UpgradeManagerValue;
+        }
+
+        EnsureReferences();
+        EnsureTargetBuffer();
+        EnsureLineOfSightBuffer();
+        SetEnabledState(InitialEnabledState, false);
+        RemainingMiningTimer = GetResolvedMiningInterval();
+    }
+
+    /// <summary>
+    /// Gets whether this module is currently enabled.
+    /// </summary>
+    public bool GetIsEnabled()
+    {
+        return IsEnabledRuntime;
+    }
+
+    /// <summary>
+    /// Sets the enabled state without requiring a player interaction.
+    /// </summary>
+    /// <param name="IsEnabledValue">New enabled state.</param>
+    public void SetEnabledFromSave(bool IsEnabledValue)
+    {
+        SetEnabledState(IsEnabledValue, false);
+    }
+
+    /// <summary>
+    /// Handles player interaction by toggling the module when allowed.
+    /// </summary>
+    /// <returns>True when the interaction was consumed.</returns>
+    public bool TryInteract()
+    {
+        if (!CanToggleByInteraction)
+        {
+            PlayFeedback(BlockedEventId, GetAimOriginPosition(), transform.forward, 1f);
+            return true;
+        }
+
+        SetEnabledState(!IsEnabledRuntime, true);
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves missing optional references.
+    /// </summary>
+    private void EnsureReferences()
+    {
+        if (AimOrigin == null)
+        {
+            AimOrigin = transform;
+        }
+
+        if (AimRoot == null)
+        {
+            AimRoot = AimOrigin;
+        }
+
+        if (UpgradeManager == null)
+        {
+            UpgradeManager = FindFirstObjectByType<UpgradeManager>();
+        }
+
+        if (FeedbackEmitter == null)
+        {
+            FeedbackEmitter = GetComponent<GameFeedbackEmitter>();
+        }
+
+        if (DrillAnimator == null)
+        {
+            DrillAnimator = GetComponentInChildren<Animator>(true);
+        }
+    }
+
+    /// <summary>
+    /// Ensures the non-alloc target buffer matches the configured size.
+    /// </summary>
+    private void EnsureTargetBuffer()
+    {
+        int TargetSize = Mathf.Max(1, TargetBufferSize);
+
+        if (TargetBuffer == null || TargetBuffer.Length != TargetSize)
+        {
+            TargetBuffer = new Collider[TargetSize];
+        }
+    }
+
+    /// <summary>
+    /// Ensures the non-alloc line-of-sight buffer matches the configured size.
+    /// </summary>
+    private void EnsureLineOfSightBuffer()
+    {
+        int TargetSize = Mathf.Max(1, LineOfSightHitBufferSize);
+
+        if (LineOfSightHitBuffer == null || LineOfSightHitBuffer.Length != TargetSize)
+        {
+            LineOfSightHitBuffer = new RaycastHit[TargetSize];
+        }
+    }
+
+    /// <summary>
+    /// Sets the module enabled state and optionally plays feedback.
+    /// </summary>
+    /// <param name="IsEnabledValue">New enabled state.</param>
+    /// <param name="PlayStateFeedback">True to play toggle feedback.</param>
+    private void SetEnabledState(bool IsEnabledValue, bool PlayStateFeedback)
+    {
+        bool WasEnabled = IsEnabledRuntime;
+        IsEnabledRuntime = IsEnabledValue;
+
+        if (!IsEnabledRuntime)
+        {
+            ClearCurrentTarget(WasEnabled && PlayStateFeedback);
+        }
+        else
+        {
+            RemainingTargetRefreshTimer = 0f;
+            RemainingMiningTimer = Mathf.Min(RemainingMiningTimer, GetResolvedMiningInterval());
+        }
+
+        if (PlayStateFeedback && WasEnabled != IsEnabledRuntime)
+        {
+            PlayFeedback(IsEnabledRuntime ? EnabledEventId : DisabledEventId, GetAimOriginPosition(), transform.forward, 1f);
+        }
+
+        UpdateAnimatorState();
+        Log(IsEnabledRuntime ? "Elevator drill enabled." : "Elevator drill disabled.");
+    }
+
+    /// <summary>
+    /// Refreshes the current target using a non-alloc overlap scan and closest-target priority.
+    /// </summary>
+    private void RefreshTarget()
+    {
+        EnsureTargetBuffer();
+
+        if (HasValidCurrentTarget())
+        {
+            return;
+        }
+
+        ClearCurrentTarget(false);
+
+        Vector3 Origin = GetAimOriginPosition();
+        int HitCount = CollectDetectionCandidates();
+
+        IMineable BestTarget = null;
+        Component BestTargetComponent = null;
+        Collider BestCollider = null;
+        float BestDistanceSqr = float.MaxValue;
+
+        for (int Index = 0; Index < HitCount; Index++)
+        {
+            Collider CandidateCollider = TargetBuffer[Index];
+
+            if (CandidateCollider == null || CandidateCollider.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (!TryResolveMineable(CandidateCollider, out IMineable CandidateTarget, out Component CandidateComponent))
+            {
+                continue;
+            }
+
+            if (!IsMineableCandidateReady(CandidateComponent))
+            {
+                continue;
+            }
+
+            Vector3 CandidatePoint = GetColliderAimPoint(CandidateCollider, Origin);
+            float DistanceSqr = (CandidatePoint - Origin).sqrMagnitude;
+
+            if (!IsPointInsideDetectionVolume(CandidatePoint))
+            {
+                continue;
+            }
+
+            if (RequireLineOfSight && !HasLineOfSightToCandidate(CandidateCollider, CandidateTarget, Origin, CandidatePoint))
+            {
+                continue;
+            }
+
+            if (DistanceSqr < BestDistanceSqr)
+            {
+                BestDistanceSqr = DistanceSqr;
+                BestTarget = CandidateTarget;
+                BestTargetComponent = CandidateComponent;
+                BestCollider = CandidateCollider;
+            }
+        }
+
+        if (BestTarget == null || BestTargetComponent == null || BestCollider == null)
+        {
+            return;
+        }
+
+        CurrentTarget = BestTarget;
+        CurrentTargetComponent = BestTargetComponent;
+        CurrentTargetCollider = BestCollider;
+        RemainingMiningTimer = Mathf.Min(RemainingMiningTimer, GetResolvedMiningInterval());
+        PlayFeedback(TargetAcquiredEventId, GetColliderAimPoint(CurrentTargetCollider, Origin), GetImpactNormal(Origin), 1f);
+        Log("Elevator drill acquired target: " + CurrentTargetComponent.name);
+    }
+
+    /// <summary>
+    /// Applies one mining hit to the current target.
+    /// </summary>
+    private void MineCurrentTarget()
+    {
+        if (!HasValidCurrentTarget())
+        {
+            return;
+        }
+
+        Vector3 Origin = GetAimOriginPosition();
+        Vector3 ImpactPoint = GetColliderAimPoint(CurrentTargetCollider, Origin);
+        Vector3 ImpactNormal = GetImpactNormal(Origin);
+
+        if (TryGetPreciseLineHit(CurrentTargetCollider, Origin, ImpactPoint, out RaycastHit HitInfo))
+        {
+            ImpactPoint = HitInfo.point;
+            ImpactNormal = HitInfo.normal.sqrMagnitude > 0.0001f ? HitInfo.normal.normalized : ImpactNormal;
+        }
+
+        MiningHitContext HitContext = new MiningHitContext(
+            MiningHitContext.HitSourceType.Machine,
+            gameObject,
+            ImpactPoint,
+            ImpactNormal,
+            AllowElevatorOreSpawnAssist);
+
+        MiningHitRequest HitRequest = new MiningHitRequest(
+            GetResolvedMiningDamage(),
+            ResolveMiningTier(),
+            Mathf.Max(0.01f, ExtractionQualityMultiplier),
+            0f,
+            HitContext);
+
+        MiningHitResult Result = CurrentTarget.TryMine(HitRequest);
+
+        if (DrillAnimator != null && !string.IsNullOrWhiteSpace(FireTriggerName))
+        {
+            DrillAnimator.SetTrigger(FireTriggerName);
+        }
+
+        if (Result.WasAccepted)
+        {
+            PlayFeedback(MiningTickEventId, ImpactPoint, ImpactNormal, 1f);
+        }
+        else if (Result.ResultType == MiningHitResultType.TargetUnavailable)
+        {
+            ClearCurrentTarget(true);
+            return;
+        }
+        else
+        {
+            PlayFeedback(BlockedEventId, ImpactPoint, ImpactNormal, 1f);
+        }
+
+        if (Result.DidBreak)
+        {
+            PlayFeedback(TargetBrokenEventId, ImpactPoint, ImpactNormal, 1f);
+            ClearCurrentTarget(false);
+            RemainingTargetRefreshTimer = 0f;
+        }
+    }
+
+    /// <summary>
+    /// Attempts to resolve a mineable target from a collider hierarchy.
+    /// </summary>
+    private bool TryResolveMineable(Collider CandidateCollider, out IMineable Mineable, out Component MineableComponent)
+    {
+        Mineable = null;
+        MineableComponent = null;
+
+        if (CandidateCollider == null)
+        {
+            return false;
+        }
+
+        Mineable = CandidateCollider.GetComponent<IMineable>() ?? CandidateCollider.GetComponentInParent<IMineable>();
+        MineableComponent = Mineable as Component;
+
+        if (Mineable != null && MineableComponent != null)
+        {
+            return true;
+        }
+
+        if (CandidateCollider.attachedRigidbody != null)
+        {
+            Mineable = CandidateCollider.attachedRigidbody.GetComponent<IMineable>() ??
+                       CandidateCollider.attachedRigidbody.GetComponentInParent<IMineable>();
+            MineableComponent = Mineable as Component;
+        }
+
+        return Mineable != null && MineableComponent != null;
+    }
+
+    /// <summary>
+    /// Returns whether a candidate mineable should currently be considered targetable.
+    /// </summary>
+    private bool IsMineableCandidateReady(Component CandidateComponent)
+    {
+        if (CandidateComponent == null)
+        {
+            return false;
+        }
+
+        OreVein OreVein = CandidateComponent as OreVein;
+
+        if (OreVein != null)
+        {
+            return OreVein.GetIsReady();
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns whether the current target is still valid and inside detection range.
+    /// </summary>
+    private bool HasValidCurrentTarget()
+    {
+        if (CurrentTarget == null || CurrentTargetComponent == null || CurrentTargetCollider == null)
+        {
+            return false;
+        }
+
+        if (!IsMineableCandidateReady(CurrentTargetComponent))
+        {
+            return false;
+        }
+
+        Vector3 Origin = GetAimOriginPosition();
+        Vector3 TargetPoint = GetColliderAimPoint(CurrentTargetCollider, Origin);
+        return IsPointInsideDetectionVolume(TargetPoint) && (!RequireLineOfSight || HasLineOfSightToCandidate(CurrentTargetCollider, CurrentTarget, Origin, TargetPoint));
+    }
+
+    /// <summary>
+    /// Clears the current target and optionally plays target-lost feedback.
+    /// </summary>
+    private void ClearCurrentTarget(bool PlayLostFeedback)
+    {
+        if (PlayLostFeedback && CurrentTargetComponent != null)
+        {
+            PlayFeedback(TargetLostEventId, GetAimOriginPosition(), transform.forward, 1f);
+        }
+
+        CurrentTarget = null;
+        CurrentTargetComponent = null;
+        CurrentTargetCollider = null;
+        UpdateAnimatorState();
+    }
+
+    /// <summary>
+    /// Collects mineable candidates using the configured detection volume.
+    /// </summary>
+    /// <returns>Number of colliders written into the reusable target buffer.</returns>
+    private int CollectDetectionCandidates()
+    {
+        EnsureTargetBuffer();
+
+        if (UseBoxDetectionVolume)
+        {
+            Transform VolumeTransform = GetDetectionVolumeTransform();
+            Vector3 Center = GetDetectionBoxCenter(VolumeTransform);
+            Vector3 HalfExtents = GetResolvedDetectionBoxSize() * 0.5f;
+            Quaternion Rotation = VolumeTransform != null ? VolumeTransform.rotation : Quaternion.identity;
+
+            return Physics.OverlapBoxNonAlloc(
+                Center,
+                HalfExtents,
+                TargetBuffer,
+                Rotation,
+                MineableLayers,
+                TargetQueryTriggerInteraction);
+        }
+
+        return Physics.OverlapSphereNonAlloc(
+            GetAimOriginPosition(),
+            GetResolvedDetectionRadius(),
+            TargetBuffer,
+            MineableLayers,
+            TargetQueryTriggerInteraction);
+    }
+
+    /// <summary>
+    /// Returns whether the supplied world point is inside the active detection volume.
+    /// </summary>
+    /// <param name="WorldPoint">World position to test.</param>
+    private bool IsPointInsideDetectionVolume(Vector3 WorldPoint)
+    {
+        if (!UseBoxDetectionVolume)
+        {
+            Vector3 Origin = GetAimOriginPosition();
+            float Radius = GetResolvedDetectionRadius();
+            return (WorldPoint - Origin).sqrMagnitude <= Radius * Radius;
+        }
+
+        Transform VolumeTransform = GetDetectionVolumeTransform();
+        Vector3 Center = GetDetectionBoxCenter(VolumeTransform);
+        Quaternion Rotation = VolumeTransform != null ? VolumeTransform.rotation : Quaternion.identity;
+        Vector3 HalfExtents = GetResolvedDetectionBoxSize() * 0.5f;
+        Vector3 LocalPoint = Quaternion.Inverse(Rotation) * (WorldPoint - Center);
+
+        return Mathf.Abs(LocalPoint.x) <= HalfExtents.x + 0.001f &&
+               Mathf.Abs(LocalPoint.y) <= HalfExtents.y + 0.001f &&
+               Mathf.Abs(LocalPoint.z) <= HalfExtents.z + 0.001f;
+    }
+
+    /// <summary>
+    /// Gets the transform that defines the detection volume position and rotation.
+    /// </summary>
+    private Transform GetDetectionVolumeTransform()
+    {
+        if (DetectionVolumeTransform != null)
+        {
+            return DetectionVolumeTransform;
+        }
+
+        if (AimOrigin != null)
+        {
+            return AimOrigin;
+        }
+
+        return transform;
+    }
+
+    /// <summary>
+    /// Gets the world center of the detection box.
+    /// </summary>
+    /// <param name="VolumeTransform">Transform used by the detection volume.</param>
+    private Vector3 GetDetectionBoxCenter(Transform VolumeTransform)
+    {
+        if (VolumeTransform == null)
+        {
+            return transform.position + DetectionBoxCenterOffset;
+        }
+
+        return VolumeTransform.TransformPoint(DetectionBoxCenterOffset);
+    }
+
+    /// <summary>
+    /// Gets the resolved box size after upgrade modifiers are applied.
+    /// </summary>
+    private Vector3 GetResolvedDetectionBoxSize()
+    {
+        Vector3 Size = new Vector3(
+            Mathf.Max(0.1f, BaseDetectionBoxSize.x),
+            Mathf.Max(0.1f, BaseDetectionBoxSize.y),
+            Mathf.Max(0.1f, BaseDetectionBoxSize.z));
+
+        if (UseUpgradeModifiedValues && UpgradeManager != null && DetectionRadiusStat != UpgradeStatType.None)
+        {
+            float ReferenceSize = Mathf.Max(Size.x, Mathf.Max(Size.y, Size.z));
+            float ModifiedReferenceSize = UpgradeManager.GetModifiedFloatStat(DetectionRadiusStat, ReferenceSize);
+            float Scale = ReferenceSize > 0.0001f ? Mathf.Max(0.01f, ModifiedReferenceSize / ReferenceSize) : 1f;
+            Size *= Scale;
+        }
+
+        return Size;
+    }
+
+    /// <summary>
+    /// Returns a stable aim point for a collider.
+    /// </summary>
+    private Vector3 GetColliderAimPoint(Collider TargetCollider, Vector3 Origin)
+    {
+        if (TargetCollider == null)
+        {
+            return Origin;
+        }
+
+        Vector3 ClosestPoint = TargetCollider.ClosestPoint(Origin);
+
+        if ((ClosestPoint - Origin).sqrMagnitude <= 0.0001f)
+        {
+            return TargetCollider.bounds.center;
+        }
+
+        return ClosestPoint;
+    }
+
+    /// <summary>
+    /// Returns an approximate impact normal facing back towards the aim origin.
+    /// </summary>
+    private Vector3 GetImpactNormal(Vector3 Origin)
+    {
+        if (CurrentTargetCollider == null)
+        {
+            return -transform.forward;
+        }
+
+        Vector3 Point = GetColliderAimPoint(CurrentTargetCollider, Origin);
+        Vector3 Normal = Origin - Point;
+        return Normal.sqrMagnitude > 0.0001f ? Normal.normalized : -transform.forward;
+    }
+
+    /// <summary>
+    /// Returns whether there is a clean line of sight to the candidate target.
+    /// </summary>
+    private bool HasLineOfSightToCandidate(Collider CandidateCollider, IMineable CandidateTarget, Vector3 Origin, Vector3 TargetPoint)
+    {
+        Vector3 Direction = TargetPoint - Origin;
+        float Distance = Direction.magnitude;
+
+        if (Distance <= 0.0001f)
+        {
+            return true;
+        }
+
+        EnsureLineOfSightBuffer();
+        Direction /= Distance;
+        float SafeDistance = Mathf.Max(0f, Distance - 0.03f);
+        int HitCount = Physics.RaycastNonAlloc(
+            Origin,
+            Direction,
+            LineOfSightHitBuffer,
+            SafeDistance,
+            LineOfSightBlockerLayers,
+            LineOfSightQueryTriggerInteraction);
+
+        for (int Index = 0; Index < HitCount; Index++)
+        {
+            Collider HitCollider = LineOfSightHitBuffer[Index].collider;
+
+            if (HitCollider == null)
+            {
+                continue;
+            }
+
+            if (HitCollider == CandidateCollider || HitCollider.transform.IsChildOf(CandidateCollider.transform) || CandidateCollider.transform.IsChildOf(HitCollider.transform))
+            {
+                continue;
+            }
+
+            if (HitCollider.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (TryResolveMineable(HitCollider, out IMineable HitMineable, out _) && ReferenceEquals(HitMineable, CandidateTarget))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to get the precise ray hit against the current target for feedback placement.
+    /// </summary>
+    private bool TryGetPreciseLineHit(Collider TargetCollider, Vector3 Origin, Vector3 FallbackPoint, out RaycastHit HitInfo)
+    {
+        HitInfo = default;
+        Vector3 Direction = FallbackPoint - Origin;
+        float Distance = Direction.magnitude;
+
+        if (Distance <= 0.0001f)
+        {
+            return false;
+        }
+
+        Direction /= Distance;
+
+        if (!Physics.Raycast(Origin, Direction, out HitInfo, Distance + 0.05f, MineableLayers, TargetQueryTriggerInteraction))
+        {
+            return false;
+        }
+
+        return HitInfo.collider == TargetCollider || HitInfo.collider.transform.IsChildOf(TargetCollider.transform) || TargetCollider.transform.IsChildOf(HitInfo.collider.transform);
+    }
+
+    /// <summary>
+    /// Updates optional visual aiming.
+    /// </summary>
+    private void UpdateAimRoot()
+    {
+        if (!RotateAimRootToTarget || AimRoot == null || !HasValidCurrentTarget())
+        {
+            return;
+        }
+
+        Vector3 Origin = AimRoot.position;
+        Vector3 TargetPoint = GetColliderAimPoint(CurrentTargetCollider, Origin);
+        Vector3 Direction = TargetPoint - Origin;
+
+        if (Direction.sqrMagnitude <= 0.0001f)
+        {
+            return;
+        }
+
+        if (!UseFullAimRotation)
+        {
+            Direction = Vector3.ProjectOnPlane(Direction, Vector3.up);
+
+            if (Direction.sqrMagnitude <= 0.0001f)
+            {
+                return;
+            }
+        }
+
+        Quaternion TargetRotation = Quaternion.LookRotation(Direction.normalized, Vector3.up);
+        AimRoot.rotation = Quaternion.RotateTowards(AimRoot.rotation, TargetRotation, Mathf.Max(0f, AimRotationSpeed) * Time.deltaTime);
+    }
+
+    /// <summary>
+    /// Updates optional animator bools.
+    /// </summary>
+    private void UpdateAnimatorState()
+    {
+        if (DrillAnimator == null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(IsEnabledBoolName))
+        {
+            DrillAnimator.SetBool(IsEnabledBoolName, IsEnabledRuntime);
+        }
+
+        if (!string.IsNullOrWhiteSpace(HasTargetBoolName))
+        {
+            DrillAnimator.SetBool(HasTargetBoolName, HasValidCurrentTarget());
+        }
+    }
+
+    /// <summary>
+    /// Resolves the current aim origin world position.
+    /// </summary>
+    private Vector3 GetAimOriginPosition()
+    {
+        return AimOrigin != null ? AimOrigin.position : transform.position;
+    }
+
+    /// <summary>
+    /// Gets the resolved detection radius after upgrades.
+    /// </summary>
+    private float GetResolvedDetectionRadius()
+    {
+        float Radius = Mathf.Max(0.1f, BaseDetectionRadius);
+
+        if (UseUpgradeModifiedValues && UpgradeManager != null && DetectionRadiusStat != UpgradeStatType.None)
+        {
+            Radius = UpgradeManager.GetModifiedFloatStat(DetectionRadiusStat, Radius);
+        }
+
+        return Mathf.Max(0.1f, Radius);
+    }
+
+    /// <summary>
+    /// Gets the resolved mining damage after upgrades.
+    /// </summary>
+    private float GetResolvedMiningDamage()
+    {
+        float Damage = Mathf.Max(0.01f, BaseMiningDamage);
+
+        if (UseUpgradeModifiedValues && UpgradeManager != null && MiningDamageStat != UpgradeStatType.None)
+        {
+            Damage = UpgradeManager.GetModifiedFloatStat(MiningDamageStat, Damage);
+        }
+
+        return Mathf.Max(0.01f, Damage);
+    }
+
+    /// <summary>
+    /// Gets the resolved mining interval after upgrades.
+    /// </summary>
+    private float GetResolvedMiningInterval()
+    {
+        float Interval = Mathf.Max(0.02f, BaseMiningInterval);
+
+        if (UseUpgradeModifiedValues && UpgradeManager != null && MiningIntervalStat != UpgradeStatType.None)
+        {
+            Interval = UpgradeManager.GetModifiedFloatStat(MiningIntervalStat, Interval);
+        }
+
+        return Mathf.Max(0.02f, Interval);
+    }
+
+    /// <summary>
+    /// Resolves the mining tier used by this module.
+    /// </summary>
+    private MiningTier ResolveMiningTier()
+    {
+        if (!UseHighestDefinedMiningTier)
+        {
+            return FallbackMiningTier;
+        }
+
+        MiningTier HighestTier = MiningTier.None;
+        Array Values = Enum.GetValues(typeof(MiningTier));
+
+        for (int Index = 0; Index < Values.Length; Index++)
+        {
+            MiningTier Candidate = (MiningTier)Values.GetValue(Index);
+
+            if ((int)Candidate > (int)HighestTier)
+            {
+                HighestTier = Candidate;
+            }
+        }
+
+        return HighestTier;
+    }
+
+    /// <summary>
+    /// Plays one feedback event if an emitter and event id are configured.
+    /// </summary>
+    private void PlayFeedback(string EventId, Vector3 Position, Vector3 Normal, float Intensity)
+    {
+        if (FeedbackEmitter == null || string.IsNullOrWhiteSpace(EventId))
+        {
+            return;
+        }
+
+        Vector3 SafeNormal = Normal.sqrMagnitude > 0.0001f ? Normal.normalized : transform.forward;
+        GameFeedbackContext Context = new GameFeedbackContext(
+            true,
+            Position,
+            true,
+            SafeNormal,
+            transform,
+            transform,
+            transform,
+            Mathf.Max(0f, Intensity));
+
+        FeedbackEmitter.Play(EventId, Context);
+    }
+
+    /// <summary>
+    /// Logs a debug message when enabled.
+    /// </summary>
+    private void Log(string Message)
+    {
+        if (!DebugLogs)
+        {
+            return;
+        }
+
+        Debug.Log("[ElevatorDrillModule] " + Message, this);
+    }
+
+    /// <summary>
+    /// Draws the detection volume while selected.
+    /// </summary>
+    private void OnDrawGizmosSelected()
+    {
+        if (!DrawDetectionGizmo)
+        {
+            return;
+        }
+
+        Gizmos.color = Color.red;
+
+        if (UseBoxDetectionVolume)
+        {
+            Transform VolumeTransform = DetectionVolumeTransform != null ? DetectionVolumeTransform : (AimOrigin != null ? AimOrigin : transform);
+            Vector3 Center = VolumeTransform.TransformPoint(DetectionBoxCenterOffset);
+            Matrix4x4 PreviousMatrix = Gizmos.matrix;
+            Gizmos.matrix = Matrix4x4.TRS(Center, VolumeTransform.rotation, Vector3.one);
+            Gizmos.DrawWireCube(Vector3.zero, new Vector3(
+                Mathf.Max(0.1f, BaseDetectionBoxSize.x),
+                Mathf.Max(0.1f, BaseDetectionBoxSize.y),
+                Mathf.Max(0.1f, BaseDetectionBoxSize.z)));
+            Gizmos.matrix = PreviousMatrix;
+            return;
+        }
+
+        Transform OriginTransform = AimOrigin != null ? AimOrigin : transform;
+        Gizmos.DrawWireSphere(OriginTransform.position, Mathf.Max(0.1f, BaseDetectionRadius));
+    }
+}

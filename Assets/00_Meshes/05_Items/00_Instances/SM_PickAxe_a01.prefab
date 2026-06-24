@@ -111,15 +111,38 @@ MonoBehaviour:
   ActionAnimatorLayer: 0
   ActionStateTag: Action
   WaitUntilAnimatorLeavesActionState: 1
+  AutoInstallAnimatorEventRelay: 1
+  PrimaryAnimationVariantParameterName: PrimaryVariant
+  PrimaryAnimationVariantCount: 2
+  RandomizePrimaryAnimationVariant: 0
+  PreventImmediatePrimaryVariantRepeat: 1
+  SecondaryAnimationVariantParameterName: SecondaryVariant
+  SecondaryAnimationVariantCount: 1
+  RandomizeSecondaryAnimationVariant: 0
+  PreventImmediateSecondaryVariantRepeat: 1
   AllowPrimaryHoldRepeat: 1
   AllowSecondaryHoldRepeat: 0
   DebugLogs: 0
   PlayerCamera: {fileID: 0}
-  MiningPower: 1
+  FallbackMiningDamage: 1
+  FallbackMiningTier: 1
+  FallbackExtractionQualityMultiplier: 1
+  FallbackDurabilityCostPerAcceptedHit: 1
+  FallbackUsesDurability: 1
+  FallbackBreaksAtZeroDurability: 1
   MiningDistance: 4
   MiningLayers:
     serializedVersion: 2
     m_Bits: 2048
+  FallbackMinimumUseInterval: 0
+  FeedbackEmitter: {fileID: 0}
+  FallbackFeedbackProfile: {fileID: 0}
+  UseItemDefinitionFeedbackProfile: 1
+  PlayPrimaryStartedFeedback: 1
+  PrimaryStartedFeedbackEventId: Tool.PrimaryStarted
+  PlayMissFeedbackWhenRayHitsNothing: 0
+  PlayNonMineableHitFeedback: 1
+  PlayAcceptedFeedbackOnBreakingHit: 1
   DrawDebugRay: 1
 --- !u!95 &1868414549583801516
 Animator:

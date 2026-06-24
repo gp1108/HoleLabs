@@ -62,6 +62,8 @@ public sealed class MoneyPickup : MonoBehaviour
         Amount = CurrencyMath.RoundCurrency(Mathf.Max(0.01f, AmountValue));
         CurrencyType = CurrencyWallet.NormalizeCurrencyType(CurrencyTypeValue);
         GetRuntimeRoot().name = "MoneyPickup_" + CurrencyType + "_" + Amount.ToString("0.00");
+
+        RuntimeWorldObjectRegistry.RegisterMoneyPickup(this);
     }
 
     /// <summary>
@@ -103,6 +105,7 @@ public sealed class MoneyPickup : MonoBehaviour
         EnsureCachedReferences();
         ResetPhysicsState();
         SetCollidersEnabled(false);
+        RuntimeWorldObjectRegistry.UnregisterMoneyPickup(this);
         Amount = 0f;
         SaveMoneyId = string.Empty;
         RuntimeRootTransform.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "MoneyPickup_Pooled";
@@ -160,6 +163,15 @@ public sealed class MoneyPickup : MonoBehaviour
         }
 
         return RuntimeRoot;
+    }
+
+
+    /// <summary>
+    /// Ensures the runtime world registry no longer counts this pickup when it is destroyed outside its pool flow.
+    /// </summary>
+    private void OnDestroy()
+    {
+        RuntimeWorldObjectRegistry.UnregisterMoneyPickup(this);
     }
 
     /// <summary>
