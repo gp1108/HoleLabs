@@ -391,6 +391,32 @@ public static class GameFeedbackEventIds
     /// </summary>
     public const string ElevatorDrillBlocked = "ElevatorDrill.Blocked";
 
+
+    /// <summary>
+    /// Event fired when the abyss field becomes active for the first time.
+    /// </summary>
+    public const string AbyssActivated = "Abyss.Activated";
+
+    /// <summary>
+    /// Event fired while the player receives shallow abyss damage.
+    /// </summary>
+    public const string AbyssPlayerDamage = "Abyss.PlayerDamage";
+
+    /// <summary>
+    /// Event fired when the player dies from deep abyss immersion.
+    /// </summary>
+    public const string AbyssPlayerDeath = "Abyss.PlayerDeath";
+
+    /// <summary>
+    /// Event fired when the abyss removes a loose world object.
+    /// </summary>
+    public const string AbyssObjectDestroyed = "Abyss.ObjectDestroyed";
+
+    /// <summary>
+    /// Event fired when recovery moves the player back to safety after abyss death.
+    /// </summary>
+    public const string AbyssPlayerRecovered = "Abyss.PlayerRecovered";
+
     /// <summary>
     /// Event fired when the player produces a valid footstep.
     /// </summary>

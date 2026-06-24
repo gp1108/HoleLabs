@@ -683,6 +683,22 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
+    private sealed class AbyssFieldState
+    {
+        [SerializeField] private string SceneId;
+        [SerializeField] private AbyssFieldSaveData AbyssSaveData;
+
+        public AbyssFieldState(string SceneIdValue, AbyssFieldSaveData AbyssSaveDataValue)
+        {
+            SceneId = SceneIdValue;
+            AbyssSaveData = AbyssSaveDataValue;
+        }
+
+        public string GetSceneId() => SceneId;
+        public AbyssFieldSaveData GetAbyssSaveData() => AbyssSaveData;
+    }
+
+    [Serializable]
     private sealed class SaveData
     {
         [SerializeField] private PlayerSaveData Player;
@@ -699,6 +715,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<MineralElevatorHubState> MineralElevatorHubs = new();
         [SerializeField] private List<MineralElevatorAccessPointState> MineralElevatorAccessPoints = new();
         [SerializeField] private List<ElevatorDrillInstallationSpotState> ElevatorDrillInstallationSpots = new();
+        [SerializeField] private List<AbyssFieldState> AbyssFields = new();
         [SerializeField] private List<PlaceableInstallationSpotState> PlaceableInstallationSpots = new();
 
         [Tooltip("Global research runtime state. This replaces per-station research saves because the researcher can now be a placeable object.")]
@@ -724,6 +741,9 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
         public List<ElevatorDrillInstallationSpotState> GetElevatorDrillInstallationSpots() => ElevatorDrillInstallationSpots;
         public void SetElevatorDrillInstallationSpots(List<ElevatorDrillInstallationSpotState> Value) => ElevatorDrillInstallationSpots = Value ?? new List<ElevatorDrillInstallationSpotState>();
+
+        public List<AbyssFieldState> GetAbyssFields() => AbyssFields;
+        public void SetAbyssFields(List<AbyssFieldState> Value) => AbyssFields = Value ?? new List<AbyssFieldState>();
 
         public List<PlaceableInstallationSpotState> GetPlaceableInstallationSpots() => PlaceableInstallationSpots;
         public void SetPlaceableInstallationSpots(List<PlaceableInstallationSpotState> Value) => PlaceableInstallationSpots = Value ?? new List<PlaceableInstallationSpotState>();
@@ -1307,6 +1327,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetMineralElevatorHubs(CaptureMineralElevatorHubs());
         Data.SetMineralElevatorAccessPoints(CaptureMineralElevatorAccessPoints());
         Data.SetElevatorDrillInstallationSpots(CaptureElevatorDrillInstallationSpots());
+        Data.SetAbyssFields(CaptureAbyssFields());
         Data.SetPlaceableInstallationSpots(CapturePlaceableInstallationSpots());
         Data.SetResearchRuntime(CaptureResearchRuntime());
         Data.SetScannerRuntime(CaptureScannerRuntime());
@@ -1375,6 +1396,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         RestoreResearchRuntime(Data.GetResearchRuntime());
         RestorePlaceableInstallationSpots(Data.GetPlaceableInstallationSpots());
         RestoreElevatorDrillInstallationSpots(Data.GetElevatorDrillInstallationSpots());
+        RestoreAbyssFields(Data.GetAbyssFields());
         RestoreWallDrillInstallationSpots(Data.GetWallDrillInstallationSpots());
         RestoreMineralElevatorHubs(Data.GetMineralElevatorHubs());
         RestoreMineralElevatorAccessPoints(Data.GetMineralElevatorAccessPoints());
@@ -2370,6 +2392,86 @@ public sealed class GameSaveDebugController : MonoBehaviour
         }
 
         Debug.Log("[GameSaveDebugController] " + Message, this);
+    }
+
+    /// <summary>
+    /// Captures every abyss field state keyed by its SceneSaveId.
+    /// </summary>
+    private List<AbyssFieldState> CaptureAbyssFields()
+    {
+        List<AbyssFieldState> Result = new List<AbyssFieldState>();
+        AbyssFieldController[] Fields = FindObjectsByType<AbyssFieldController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < Fields.Length; Index++)
+        {
+            AbyssFieldController Field = Fields[Index];
+
+            if (Field == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Field.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            Result.Add(new AbyssFieldState(SaveId.GetId(), Field.CreateSaveSnapshot()));
+        }
+
+        return Result;
+    }
+
+    /// <summary>
+    /// Restores abyss field progress from save data.
+    /// </summary>
+    private void RestoreAbyssFields(List<AbyssFieldState> SavedStates)
+    {
+        if (SavedStates == null || SavedStates.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<string, AbyssFieldController> FieldsBySceneId = new Dictionary<string, AbyssFieldController>();
+        AbyssFieldController[] Fields = FindObjectsByType<AbyssFieldController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+        for (int Index = 0; Index < Fields.Length; Index++)
+        {
+            AbyssFieldController Field = Fields[Index];
+
+            if (Field == null)
+            {
+                continue;
+            }
+
+            SceneSaveId SaveId = Field.GetComponent<SceneSaveId>();
+
+            if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
+            {
+                continue;
+            }
+
+            FieldsBySceneId[SaveId.GetId()] = Field;
+        }
+
+        for (int Index = 0; Index < SavedStates.Count; Index++)
+        {
+            AbyssFieldState SavedState = SavedStates[Index];
+
+            if (SavedState == null || string.IsNullOrWhiteSpace(SavedState.GetSceneId()))
+            {
+                continue;
+            }
+
+            if (!FieldsBySceneId.TryGetValue(SavedState.GetSceneId(), out AbyssFieldController Field) || Field == null)
+            {
+                continue;
+            }
+
+            Field.ApplySaveState(SavedState.GetAbyssSaveData());
+        }
     }
 
     /// <summary>
