@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6979692974f2b1740b6862861ad5e422, type: 3}
   m_Name: OD_Gold
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
-  OreId: Gold
+  OreId: Ore.Gold
   DisplayName: Gold
   Icon: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
   VeinPrefab: {fileID: 8622291342529352686, guid: 2087dcaab6f128149bedefa7b415c935, type: 3}
@@ -26,8 +26,6 @@ MonoBehaviour:
   BaseWeightValue: 15
   BaseCreditValueMin: 15
   BaseCreditValueMax: 30
-  BaseResearchValueMin: 5
-  BaseResearchValueMax: 10
   PropertyRanges:
   - PropertyType: 1
     MinValue: 0.95

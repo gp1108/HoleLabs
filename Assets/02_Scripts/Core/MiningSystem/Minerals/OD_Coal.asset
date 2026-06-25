@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6979692974f2b1740b6862861ad5e422, type: 3}
   m_Name: OD_Coal
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
-  OreId: Coal
+  OreId: Ore.Coal
   DisplayName: Coal
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
   VeinPrefab: {fileID: 3375198301939659550, guid: c06e1715c66ad7042a0da421b692dea7, type: 3}
@@ -26,8 +26,6 @@ MonoBehaviour:
   BaseWeightValue: 8
   BaseCreditValueMin: 3
   BaseCreditValueMax: 6
-  BaseResearchValueMin: 0
-  BaseResearchValueMax: 1
   PropertyRanges:
   - PropertyType: 1
     MinValue: 3

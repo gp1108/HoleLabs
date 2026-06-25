@@ -10,13 +10,13 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 6979692974f2b1740b6862861ad5e422, type: 3}
-  m_Name: OD_Iron
+  m_Name: OD_Quartz
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
-  OreId: Ore.Iron
-  DisplayName: Iron
+  OreId: Ore.Quartz
+  DisplayName: Quartz
   Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
-  VeinPrefab: {fileID: 8730402574253964879, guid: 6d71366a23de6dc419f6765cf1be88e9, type: 3}
-  DroppedOrePrefab: {fileID: 8732322352325557543, guid: b232062c340ba0743b97382b96ef9142, type: 3}
+  VeinPrefab: {fileID: 8730402574253964879, guid: 9f38f1dcc70da804281617434d333adb, type: 3}
+  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 33979f33a7e0bce45a6e15a4f092af5a, type: 3}
   DroppedOreVisualPrefabs: []
   RequiredMiningTier: 1
   BaseMiningDurability: 4

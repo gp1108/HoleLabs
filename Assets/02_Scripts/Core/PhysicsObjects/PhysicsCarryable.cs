@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 /// <summary>
@@ -111,6 +112,18 @@ public sealed class PhysicsCarryable : MonoBehaviour
     [Header("Debug")]
     [Tooltip("Logs state transitions to the console.")]
     [SerializeField] private bool DebugLogs = false;
+
+    /// <summary>
+    /// Raised whenever the dynamic control mode changes.
+    /// This allows player interaction code to clear stale held references when a hold breaks because of physics.
+    /// </summary>
+    public event Action<PhysicsCarryable, CarryableControlMode, CarryableControlMode> OnControlModeChanged;
+
+    /// <summary>
+    /// Raised when this carryable becomes unavailable because the component is being disabled.
+    /// This prevents external controllers from keeping stale references after pooling, collection or destruction.
+    /// </summary>
+    public event Action<PhysicsCarryable> OnCarryableBecameUnavailable;
 
     /// <summary>
     /// Cached rigidbody exposed to external systems.
@@ -277,6 +290,8 @@ public sealed class PhysicsCarryable : MonoBehaviour
     /// </summary>
     private void OnDisable()
     {
+        OnCarryableBecameUnavailable?.Invoke(this);
+
         if (IsDisableResetSuppressed)
         {
             return;
@@ -513,7 +528,7 @@ public sealed class PhysicsCarryable : MonoBehaviour
         }
 
         ActivePlayerColliders = PlayerColliders;
-        ControlMode = NewMode;
+        SetControlMode(NewMode);
 
         AttachmentDriver.Begin(RigidbodyComponent, TargetTransform, Settings, AnchorName);
 
@@ -558,11 +573,27 @@ public sealed class PhysicsCarryable : MonoBehaviour
         }
 
         ActivePlayerColliders = null;
-        ControlMode = CarryableControlMode.None;
+        SetControlMode(CarryableControlMode.None);
         SleepController.PopSleepBlock();
         SleepController.WakeUp();
 
         Log("Returned to dynamic free mode.");
+    }
+
+    /// <summary>
+    /// Updates the current control mode and notifies listeners when it changes.
+    /// </summary>
+    /// <param name="NewMode">New control mode assigned to this carryable.</param>
+    private void SetControlMode(CarryableControlMode NewMode)
+    {
+        if (ControlMode == NewMode)
+        {
+            return;
+        }
+
+        CarryableControlMode PreviousMode = ControlMode;
+        ControlMode = NewMode;
+        OnControlModeChanged?.Invoke(this, PreviousMode, NewMode);
     }
 
     /// <summary>
@@ -612,7 +643,7 @@ public sealed class PhysicsCarryable : MonoBehaviour
             PhysicsMode = CarryablePhysicsMode.Dynamic;
         }
 
-        ControlMode = CarryableControlMode.None;
+        SetControlMode(CarryableControlMode.None);
         RestoreDefaultDynamicPhysics();
     }
 

@@ -173,8 +173,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         if (CurrentHeldCarryable != null)
         {
-            CurrentHeldCarryable.EndHold();
-            CurrentHeldCarryable = null;
+            DropCurrentCarryable();
         }
     }
 
@@ -183,6 +182,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// </summary>
     private void Update()
     {
+        ValidateCurrentHeldCarryable();
+
         if (IsExternalInteractionBlocked)
         {
             return;
@@ -300,6 +301,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
+        ValidateCurrentHeldCarryable();
+
         if (TryTogglePhysicalGrab())
         {
             return;
@@ -314,6 +317,8 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// <returns>True when a carryable was picked up or released.</returns>
     private bool TryTogglePhysicalGrab()
     {
+        ValidateCurrentHeldCarryable();
+
         if (CurrentHeldCarryable != null)
         {
             DropCurrentCarryable();
@@ -644,7 +649,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
             return;
         }
 
-        CurrentHeldCarryable = TargetObject;
+        SetCurrentHeldCarryable(TargetObject);
         Log("Picked up carryable object: " + CurrentHeldCarryable.name);
     }
 
@@ -653,14 +658,125 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// </summary>
     private void DropCurrentCarryable()
     {
+        ValidateCurrentHeldCarryable();
+
         if (CurrentHeldCarryable == null)
         {
             return;
         }
 
-        Log("Dropped carryable object: " + CurrentHeldCarryable.name);
-        CurrentHeldCarryable.EndHold();
+        PhysicsCarryable CarryableToDrop = CurrentHeldCarryable;
+        Log("Dropped carryable object: " + CarryableToDrop.name);
+
+        if (CarryableToDrop.GetIsHeld())
+        {
+            CarryableToDrop.EndHold();
+        }
+
+        if (CurrentHeldCarryable == CarryableToDrop)
+        {
+            ClearCurrentHeldCarryableReference("Dropped by player input.");
+        }
+    }
+
+    /// <summary>
+    /// Assigns the currently held carryable and subscribes to its state changes.
+    /// </summary>
+    /// <param name="Carryable">Carryable that entered player hold mode.</param>
+    private void SetCurrentHeldCarryable(PhysicsCarryable Carryable)
+    {
+        if (CurrentHeldCarryable == Carryable)
+        {
+            return;
+        }
+
+        ClearCurrentHeldCarryableReference("Replacing held carryable reference.");
+        CurrentHeldCarryable = Carryable;
+
+        if (CurrentHeldCarryable == null)
+        {
+            return;
+        }
+
+        CurrentHeldCarryable.OnControlModeChanged += HandleHeldCarryableControlModeChanged;
+        CurrentHeldCarryable.OnCarryableBecameUnavailable += HandleHeldCarryableBecameUnavailable;
+    }
+
+    /// <summary>
+    /// Clears the current held carryable reference and unsubscribes from its state events.
+    /// </summary>
+    /// <param name="Reason">Debug reason used when logs are enabled.</param>
+    private void ClearCurrentHeldCarryableReference(string Reason)
+    {
+        if (CurrentHeldCarryable == null)
+        {
+            return;
+        }
+
+        PhysicsCarryable ClearedCarryable = CurrentHeldCarryable;
+        ClearedCarryable.OnControlModeChanged -= HandleHeldCarryableControlModeChanged;
+        ClearedCarryable.OnCarryableBecameUnavailable -= HandleHeldCarryableBecameUnavailable;
         CurrentHeldCarryable = null;
+
+        Log("Cleared held carryable reference: " + ClearedCarryable.name + " | " + Reason);
+    }
+
+    /// <summary>
+    /// Clears stale held references when the physical carryable has already left hold mode outside direct player input.
+    /// </summary>
+    private void ValidateCurrentHeldCarryable()
+    {
+        if (CurrentHeldCarryable == null)
+        {
+            return;
+        }
+
+        if (!CurrentHeldCarryable.gameObject.activeInHierarchy)
+        {
+            ClearCurrentHeldCarryableReference("Carryable is no longer active in hierarchy.");
+            return;
+        }
+
+        if (!CurrentHeldCarryable.GetIsHeld())
+        {
+            ClearCurrentHeldCarryableReference("Carryable is no longer in hold mode.");
+        }
+    }
+
+    /// <summary>
+    /// Handles carryable mode changes and clears the held reference when physics breaks or releases the hold.
+    /// </summary>
+    /// <param name="Carryable">Carryable that changed mode.</param>
+    /// <param name="PreviousMode">Previous control mode.</param>
+    /// <param name="NewMode">New control mode.</param>
+    private void HandleHeldCarryableControlModeChanged(
+        PhysicsCarryable Carryable,
+        PhysicsCarryable.CarryableControlMode PreviousMode,
+        PhysicsCarryable.CarryableControlMode NewMode)
+    {
+        if (Carryable != CurrentHeldCarryable)
+        {
+            return;
+        }
+
+        if (NewMode != PhysicsCarryable.CarryableControlMode.Hold)
+        {
+            ClearCurrentHeldCarryableReference("Carryable left hold mode: " + PreviousMode + " -> " + NewMode + ".");
+        }
+    }
+
+    /// <summary>
+    /// Handles held carryables becoming unavailable because they were disabled, pooled, collected or destroyed.
+    /// </summary>
+    /// <param name="Carryable">Carryable that became unavailable.</param>
+    private void HandleHeldCarryableBecameUnavailable(PhysicsCarryable Carryable)
+    {
+        if (Carryable != CurrentHeldCarryable)
+        {
+            return;
+        }
+
+        ClearCurrentHeldCarryableReference("Carryable became unavailable.");
     }
 
     /// <summary>
@@ -686,13 +802,7 @@ public sealed class PlayerInteractionController : MonoBehaviour
     /// </summary>
     public void ForceReleaseHeldCarryableForSave()
     {
-        if (CurrentHeldCarryable == null)
-        {
-            return;
-        }
-
-        CurrentHeldCarryable.EndHold();
-        CurrentHeldCarryable = null;
+        DropCurrentCarryable();
     }
 
     /// <summary>
