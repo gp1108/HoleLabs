@@ -74,7 +74,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3375198301939659550}
-  m_Mesh: {fileID: -2891804233377491792, guid: eae82c72b5e5e864294a94bdd301a80c, type: 3}
+  m_Mesh: {fileID: -236787631421687061, guid: aae29e643a6967242896f18f74caa8d8, type: 3}
 --- !u!23 &961532202861406600
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -160,6 +160,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OreVein
   VisualRoot: {fileID: 5918580969464410555}
   DropOrigin: {fileID: 0}
+  FeedbackEmitter: {fileID: 0}
+  UseGameFeedback: 1
+  OreHitEventId: Ore.Hit
+  OreBreakEventId: Ore.Break
+  OreInsufficientTierEventId: Ore.InsufficientTier
+  OreTargetUnavailableEventId: Ore.TargetUnavailable
+  OreNoDamageEventId: Ore.NoDamage
+  OreRegrownEventId: Ore.Regrown
+  PlayOreHitFeedbackOnBreakingHit: 0
+  AutoResolveFeedbackEmitter: 1
   HitFeedbacks: {fileID: 9086045273063446117}
   BreakFeedbacks: {fileID: 0}
   RejectedHitFeedbacks: {fileID: 0}

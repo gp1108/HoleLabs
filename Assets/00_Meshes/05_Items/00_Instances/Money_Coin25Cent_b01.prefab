@@ -113,7 +113,7 @@ MonoBehaviour:
   CachedColliders:
   - {fileID: 1935937225501360139}
   SleepController: {fileID: 1740802484801979855}
-  SaveMoneyId: 
+  SaveMoneyId: Money.Cent.25
 --- !u!54 &8846736235773666951
 Rigidbody:
   m_ObjectHideFlags: 0

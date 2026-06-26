@@ -33,6 +33,13 @@ public sealed class OreSellTrigger : MonoBehaviour
         Paying = 3
     }
 
+    private enum MoneyPhysicalEmissionResult
+    {
+        Failed = 0,
+        Blocked = 1,
+        Emitted = 2
+    }
+
     [System.Serializable]
     private sealed class MoneyDenomination
     {
@@ -145,6 +152,34 @@ public sealed class OreSellTrigger : MonoBehaviour
 
     [Tooltip("Amount of pending emitted pieces required to reach the minimum emission interval.")]
     [SerializeField] private int FastEmissionQueueThreshold = 100;
+
+    [Header("Money Spawn Clearance")]
+    [Tooltip("If true, physical money emission waits until a free spawn position is available instead of spawning pieces into each other.")]
+    [SerializeField] private bool UseMoneySpawnClearanceGate = true;
+
+    [Tooltip("Layers considered blocking for physical money spawn clearance. Exclude the selling machine layer if its own colliders are not children of this object.")]
+    [SerializeField] private LayerMask MoneySpawnBlockingLayers = ~0;
+
+    [Tooltip("Approximate clearance radius tested around coin spawn candidates.")]
+    [SerializeField] private float CoinSpawnClearanceRadius = 0.12f;
+
+    [Tooltip("Approximate clearance radius tested around bill spawn candidates.")]
+    [SerializeField] private float BillSpawnClearanceRadius = 0.24f;
+
+    [Tooltip("Maximum amount of candidate positions tested before delaying this money emission.")]
+    [SerializeField] private int MaxMoneySpawnAttemptsPerPiece = 12;
+
+    [Tooltip("Forward distance added on each retry while searching for a free money spawn position.")]
+    [SerializeField] private float MoneySpawnForwardStep = 0.12f;
+
+    [Tooltip("Upward distance added on each retry while searching for a free money spawn position.")]
+    [SerializeField] private float MoneySpawnUpStep = 0.04f;
+
+    [Tooltip("Side distance added on alternating retries while searching for a free money spawn position.")]
+    [SerializeField] private float MoneySpawnSideStep = 0.08f;
+
+    [Tooltip("Seconds waited before retrying a blocked physical money spawn.")]
+    [SerializeField] private float BlockedMoneyEmissionRetryInterval = 0.05f;
 
     [Header("Coin Emission")]
     [Tooltip("Forward impulse applied to emitted coin rigidbodies.")]
@@ -260,6 +295,11 @@ public sealed class OreSellTrigger : MonoBehaviour
     private readonly Queue<PendingMoneyEmission> PendingMoneyEmissions = new();
     private readonly List<MoneyDenomination> SortedDenominations = new();
     private readonly HashSet<OrePickup> QueuedOrePickups = new();
+
+    /// <summary>
+    /// Reusable overlap buffer used to validate money spawn candidates without allocations.
+    /// </summary>
+    private static readonly Collider[] MoneySpawnOverlapBuffer = new Collider[64];
     /// <summary>
     /// Tracks ore pickups currently inside the sale trigger volume.
     /// </summary>
@@ -1023,7 +1063,14 @@ public sealed class OreSellTrigger : MonoBehaviour
         }
 
         MoneyEmissionTimer = GetCurrentEmissionInterval();
-        EmitNextMoneyPiece();
+
+        bool WasEmissionConsumed = TryEmitNextMoneyPiece();
+
+        if (!WasEmissionConsumed)
+        {
+            MoneyEmissionTimer = Mathf.Max(0.01f, BlockedMoneyEmissionRetryInterval);
+            return;
+        }
 
         if (PendingMoneyEmissions.Count == 0)
         {
@@ -1182,18 +1229,24 @@ public sealed class OreSellTrigger : MonoBehaviour
         return true;
     }
 
-    private void EmitNextMoneyPiece()
+    /// <summary>
+    /// Attempts to process the next pending money payout entry.
+    /// Blocked physical spawns are kept in the queue so value is never lost when the eject point is occupied.
+    /// </summary>
+    /// <returns>True when the queue entry was consumed, false when the machine should retry later.</returns>
+    private bool TryEmitNextMoneyPiece()
     {
         if (PendingMoneyEmissions.Count == 0)
         {
-            return;
+            return true;
         }
 
-        PendingMoneyEmission PendingMoneyEmission = PendingMoneyEmissions.Dequeue();
+        PendingMoneyEmission PendingMoneyEmission = PendingMoneyEmissions.Peek();
 
         if (PendingMoneyEmission == null)
         {
-            return;
+            PendingMoneyEmissions.Dequeue();
+            return true;
         }
 
         bool WasPaid = false;
@@ -1203,15 +1256,35 @@ public sealed class OreSellTrigger : MonoBehaviour
             WasPaid = TransferMoneyEmissionDirectly(PendingMoneyEmission);
         }
 
-        if (!WasPaid && PendingMoneyEmission.Denomination != null)
+        if (WasPaid)
         {
-            WasPaid = EmitMoneyDenomination(PendingMoneyEmission.Denomination);
+            PendingMoneyEmissions.Dequeue();
+            RegisterBatchPaidValue(PendingMoneyEmission.CreditMinorUnits, PendingMoneyEmission.BatchId);
+            return true;
         }
 
-        if (WasPaid)
+        if (PendingMoneyEmission.Denomination == null)
+        {
+            PendingMoneyEmissions.Dequeue();
+            Log("Skipped money emission because it had no physical denomination and direct transfer was unavailable.");
+            return true;
+        }
+
+        MoneyPhysicalEmissionResult PhysicalEmissionResult = EmitMoneyDenomination(PendingMoneyEmission.Denomination);
+
+        if (PhysicalEmissionResult == MoneyPhysicalEmissionResult.Blocked)
+        {
+            return false;
+        }
+
+        PendingMoneyEmissions.Dequeue();
+
+        if (PhysicalEmissionResult == MoneyPhysicalEmissionResult.Emitted)
         {
             RegisterBatchPaidValue(PendingMoneyEmission.CreditMinorUnits, PendingMoneyEmission.BatchId);
         }
+
+        return true;
     }
 
     /// <summary>
@@ -1304,31 +1377,39 @@ public sealed class OreSellTrigger : MonoBehaviour
 
     /// <summary>
     /// Emits one physical money pickup for the provided denomination.
+    /// The pickup is only created after a free spawn candidate has been found.
     /// </summary>
     /// <param name="Denomination">Denomination that should be emitted.</param>
-    /// <returns>True when a money pickup was created and initialized.</returns>
-    private bool EmitMoneyDenomination(MoneyDenomination Denomination)
+    /// <returns>Detailed emission result used to decide whether the pending payout entry should stay queued.</returns>
+    private MoneyPhysicalEmissionResult EmitMoneyDenomination(MoneyDenomination Denomination)
     {
         if (Denomination == null || Denomination.GetPrefab() == null)
         {
             Log("Skipped money emission because the denomination or its prefab is invalid.");
-            return false;
+            return MoneyPhysicalEmissionResult.Failed;
         }
 
         Transform EjectPoint = ResolveEjectPoint(Denomination.GetVisualType());
+
+        if (!TryResolveMoneySpawnPose(Denomination, EjectPoint, out Vector3 SpawnPosition, out Quaternion SpawnRotation))
+        {
+            Log("Delayed money emission because no safe spawn space was available for denomination " + Denomination.GetId() + ".");
+            return MoneyPhysicalEmissionResult.Blocked;
+        }
+
         MoneyPickup MoneyPickup = null;
 
         if (MoneyPickupPool != null)
         {
             MoneyPickup = MoneyPickupPool.GetPickup(
                 Denomination.GetPrefab(),
-                EjectPoint.position,
-                EjectPoint.rotation);
+                SpawnPosition,
+                SpawnRotation);
         }
 
         if (MoneyPickup == null)
         {
-            GameObject Instance = Instantiate(Denomination.GetPrefab(), EjectPoint.position, EjectPoint.rotation);
+            GameObject Instance = Instantiate(Denomination.GetPrefab(), SpawnPosition, SpawnRotation);
             MoneyPickup = Instance.GetComponent<MoneyPickup>();
 
             if (MoneyPickup == null)
@@ -1345,12 +1426,13 @@ public sealed class OreSellTrigger : MonoBehaviour
         if (MoneyPickup == null)
         {
             Log("Failed to create money pickup for denomination " + Denomination.GetId() + ".");
-            return false;
+            return MoneyPhysicalEmissionResult.Failed;
         }
 
         MoneyPickup.Initialize(Denomination.GetCreditValue(), global::CurrencyWallet.CurrencyType.Credits);
         MoneyPickup.SetSaveMoneyId(Denomination.GetId());
         ApplyEmissionImpulse(MoneyPickup, Denomination.GetVisualType(), EjectPoint);
+        Physics.SyncTransforms();
 
         Log(
             "Emitted denomination | Id: " + Denomination.GetId() +
@@ -1358,7 +1440,142 @@ public sealed class OreSellTrigger : MonoBehaviour
             " | VisualType: " + Denomination.GetVisualType() +
             " | Remaining pending pieces: " + PendingMoneyEmissions.Count);
 
+        return MoneyPhysicalEmissionResult.Emitted;
+    }
+
+    /// <summary>
+    /// Resolves a safe physical spawn pose for one money denomination.
+    /// </summary>
+    /// <param name="Denomination">Denomination being emitted.</param>
+    /// <param name="EjectPoint">Configured eject point used as the base pose.</param>
+    /// <param name="SpawnPosition">Resolved world position.</param>
+    /// <param name="SpawnRotation">Resolved world rotation.</param>
+    /// <returns>True when the candidate pose has enough free space.</returns>
+    private bool TryResolveMoneySpawnPose(
+        MoneyDenomination Denomination,
+        Transform EjectPoint,
+        out Vector3 SpawnPosition,
+        out Quaternion SpawnRotation)
+    {
+        Transform SafeEjectPoint = EjectPoint != null ? EjectPoint : transform;
+        SpawnPosition = SafeEjectPoint.position;
+        SpawnRotation = SafeEjectPoint.rotation;
+
+        if (!UseMoneySpawnClearanceGate || Denomination == null)
+        {
+            return true;
+        }
+
+        Physics.SyncTransforms();
+
+        float ClearanceRadius = ResolveMoneySpawnClearanceRadius(Denomination.GetVisualType());
+        int AttemptCount = Mathf.Max(1, MaxMoneySpawnAttemptsPerPiece);
+
+        for (int AttemptIndex = 0; AttemptIndex < AttemptCount; AttemptIndex++)
+        {
+            Vector3 CandidatePosition = BuildMoneySpawnCandidatePosition(SafeEjectPoint, AttemptIndex);
+
+            if (!IsMoneySpawnCandidateBlocked(CandidatePosition, ClearanceRadius))
+            {
+                SpawnPosition = CandidatePosition;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Builds a deterministic candidate position around the eject point.
+    /// The first attempt uses the exact eject point and later attempts move forward, upward and sideways.
+    /// </summary>
+    /// <param name="EjectPoint">Base eject point.</param>
+    /// <param name="AttemptIndex">Zero-based retry index.</param>
+    /// <returns>Candidate world position.</returns>
+    private Vector3 BuildMoneySpawnCandidatePosition(Transform EjectPoint, int AttemptIndex)
+    {
+        if (EjectPoint == null || AttemptIndex <= 0)
+        {
+            return EjectPoint != null ? EjectPoint.position : transform.position;
+        }
+
+        int StepIndex = Mathf.Max(1, AttemptIndex);
+        float SideDirection = AttemptIndex % 2 == 0 ? 1f : -1f;
+        float SideScale = Mathf.Ceil(StepIndex * 0.5f);
+
+        Vector3 CandidatePosition = EjectPoint.position;
+        CandidatePosition += EjectPoint.forward * (Mathf.Max(0f, MoneySpawnForwardStep) * StepIndex);
+        CandidatePosition += EjectPoint.up * (Mathf.Max(0f, MoneySpawnUpStep) * StepIndex);
+        CandidatePosition += EjectPoint.right * (Mathf.Max(0f, MoneySpawnSideStep) * SideScale * SideDirection);
+
+        return CandidatePosition;
+    }
+
+    /// <summary>
+    /// Checks whether a candidate money spawn position overlaps any blocking collider.
+    /// </summary>
+    /// <param name="CandidatePosition">World position to test.</param>
+    /// <param name="ClearanceRadius">Radius used for the overlap test.</param>
+    /// <returns>True when the candidate is blocked.</returns>
+    private bool IsMoneySpawnCandidateBlocked(Vector3 CandidatePosition, float ClearanceRadius)
+    {
+        float SafeClearanceRadius = Mathf.Max(0.001f, ClearanceRadius);
+        int HitCount = Physics.OverlapSphereNonAlloc(
+            CandidatePosition,
+            SafeClearanceRadius,
+            MoneySpawnOverlapBuffer,
+            MoneySpawnBlockingLayers,
+            QueryTriggerInteraction.Ignore);
+
+        for (int Index = 0; Index < HitCount; Index++)
+        {
+            Collider BlockingCollider = MoneySpawnOverlapBuffer[Index];
+            MoneySpawnOverlapBuffer[Index] = null;
+
+            if (!IsMoneySpawnBlockingCollider(BlockingCollider))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns whether the overlap candidate collider should block money spawning.
+    /// Own machine colliders are ignored so eject points can be placed inside the machine hierarchy.
+    /// </summary>
+    /// <param name="CandidateCollider">Collider found by the clearance overlap.</param>
+    /// <returns>True when the collider should block the spawn.</returns>
+    private bool IsMoneySpawnBlockingCollider(Collider CandidateCollider)
+    {
+        if (CandidateCollider == null || !CandidateCollider.enabled || CandidateCollider.isTrigger)
+        {
+            return false;
+        }
+
+        Transform CandidateTransform = CandidateCollider.transform;
+
+        if (CandidateTransform != null && CandidateTransform.IsChildOf(transform))
+        {
+            return false;
+        }
+
         return true;
+    }
+
+    /// <summary>
+    /// Resolves the overlap radius used by the money spawn clearance gate.
+    /// </summary>
+    /// <param name="VisualType">Visual family being spawned.</param>
+    /// <returns>Clearance radius in world units.</returns>
+    private float ResolveMoneySpawnClearanceRadius(MoneyVisualType VisualType)
+    {
+        return VisualType == MoneyVisualType.Bill
+            ? Mathf.Max(0.001f, BillSpawnClearanceRadius)
+            : Mathf.Max(0.001f, CoinSpawnClearanceRadius);
     }
 
     private void ApplyEmissionImpulse(MoneyPickup MoneyPickup, MoneyVisualType VisualType, Transform EjectPoint)
