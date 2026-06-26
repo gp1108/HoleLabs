@@ -18,8 +18,11 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     [Tooltip("Fallback mining tier used when the equipped item definition is not a PickaxeItemDefinition.")]
     [SerializeField] private MiningTier FallbackMiningTier = MiningTier.TierI;
 
-    [Tooltip("Fallback extraction quality used when the equipped item definition is not a PickaxeItemDefinition.")]
-    [SerializeField] private float FallbackExtractionQualityMultiplier = 1f;
+    [Tooltip("Fallback minimum flat purity percent added when the equipped item definition is not a PickaxeItemDefinition.")]
+    [SerializeField] private float FallbackPurityBonusPercentMin = 0f;
+
+    [Tooltip("Fallback maximum flat purity percent added when the equipped item definition is not a PickaxeItemDefinition.")]
+    [SerializeField] private float FallbackPurityBonusPercentMax = 0f;
 
     [Tooltip("Fallback durability cost used when the equipped item definition is not a PickaxeItemDefinition.")]
     [SerializeField] private float FallbackDurabilityCostPerAcceptedHit = 1f;
@@ -268,7 +271,8 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
         MiningHitRequest MiningRequest = new MiningHitRequest(
             GetResolvedMiningDamage(),
             GetResolvedMiningTier(),
-            GetResolvedExtractionQualityMultiplier(),
+            GetResolvedPurityBonusPercentMin(),
+            GetResolvedPurityBonusPercentMax(),
             GetResolvedDurabilityCostPerAcceptedHit(),
             HitContext);
 
@@ -412,14 +416,25 @@ public sealed class PickaxeItemBehaviour : AnimationEventEquippedItemBehaviour
     }
 
     /// <summary>
-    /// Gets resolved extraction quality from the item definition or fallback values.
+    /// Gets the resolved minimum flat purity percent bonus from the item definition or fallback values.
     /// </summary>
-    private float GetResolvedExtractionQualityMultiplier()
+    private float GetResolvedPurityBonusPercentMin()
     {
         PickaxeItemDefinition PickaxeDefinition = GetPickaxeDefinition();
         return PickaxeDefinition != null
-            ? PickaxeDefinition.GetExtractionQualityMultiplier()
-            : Mathf.Max(0.01f, FallbackExtractionQualityMultiplier);
+            ? PickaxeDefinition.GetPurityBonusPercentMin()
+            : Mathf.Min(FallbackPurityBonusPercentMin, FallbackPurityBonusPercentMax);
+    }
+
+    /// <summary>
+    /// Gets the resolved maximum flat purity percent bonus from the item definition or fallback values.
+    /// </summary>
+    private float GetResolvedPurityBonusPercentMax()
+    {
+        PickaxeItemDefinition PickaxeDefinition = GetPickaxeDefinition();
+        return PickaxeDefinition != null
+            ? PickaxeDefinition.GetPurityBonusPercentMax()
+            : Mathf.Max(FallbackPurityBonusPercentMin, FallbackPurityBonusPercentMax);
     }
 
     /// <summary>

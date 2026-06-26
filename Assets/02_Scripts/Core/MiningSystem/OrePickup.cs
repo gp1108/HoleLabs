@@ -5,6 +5,7 @@ using UnityEngine;
 /// Stores runtime ore data on a dropped physical ore object.
 /// This component is separate from the player's generic item system so ore-specific
 /// properties can remain flexible without polluting every item type.
+/// It also applies the runtime ore size scale safely every time the pickup is reused.
 /// </summary>
 public sealed class OrePickup : MonoBehaviour, IWeightProvider
 {
@@ -15,6 +16,22 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     [Header("Structure")]
     [Tooltip("Root transform moved, activated and deactivated by the pool. If empty, this transform is used.")]
     [SerializeField] private Transform RuntimeRoot;
+
+    [Header("Runtime Size Scale")]
+    [Tooltip("If true, the pickup applies OreItemData size scale to the configured scale root whenever runtime ore data is assigned.")]
+    [SerializeField] private bool ApplyOreSizeScale = true;
+
+    [Tooltip("Transform scaled by the runtime ore size. If empty, Runtime Root is used. This should usually contain both the visual mesh and physical colliders.")]
+    [SerializeField] private Transform ScaleRoot;
+
+    [Tooltip("Minimum runtime scale multiplier allowed when applying ore size. This prevents invalid or near-zero physics shapes.")]
+    [SerializeField] private float MinimumAppliedSizeScale = 0.05f;
+
+    [Tooltip("Maximum runtime scale multiplier allowed when applying ore size. This prevents accidental extreme physics shapes during balancing.")]
+    [SerializeField] private float MaximumAppliedSizeScale = 10f;
+
+    [Tooltip("If true, scale operations are logged for debugging pool reuse and save/load restoration.")]
+    [SerializeField] private bool DebugScaleLogs = false;
 
     [Header("Cached Components")]
     [Tooltip("Optional rigidbody reset when the pickup is reused by the pool.")]
@@ -27,8 +44,25 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     [Tooltip("Stable runtime id used by ScannerRuntimeService to remember this exact physical ore pickup while it exists.")]
     [SerializeField] private string ScannerInstanceId;
 
+    /// <summary>
+    /// Pool that owns this pickup instance, if it was spawned by a pool.
+    /// </summary>
     private OrePickupPool OwnerPool;
+
+    /// <summary>
+    /// Prefab originally used to create this pickup instance.
+    /// </summary>
     private GameObject SourcePrefab;
+
+    /// <summary>
+    /// Base local scale captured from the configured scale root before any runtime ore size multiplier is applied.
+    /// </summary>
+    private Vector3 BaseScaleRootLocalScale = Vector3.one;
+
+    /// <summary>
+    /// Whether the base scale root local scale has already been captured.
+    /// </summary>
+    private bool HasCachedBaseScale;
 
     /// <summary>
     /// Gets the prefab originally used to create this pickup.
@@ -48,52 +82,63 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     }
 
     /// <summary>
-    /// Initializes this pickup with runtime ore data.
+    /// Initializes this pickup with runtime ore data and applies the runtime size scale.
     /// </summary>
-    public void Initialize(OreItemData oreItemData)
+    /// <param name="OreItemDataValue">Runtime ore data assigned to this pickup.</param>
+    public void Initialize(OreItemData OreItemDataValue)
     {
         NotifyScannerInstanceRemoved();
         ScannerInstanceId = Guid.NewGuid().ToString("N");
-        OreItemData = oreItemData;
+        OreItemData = OreItemDataValue;
 
         if (OreItemData != null && OreItemData.GetOreDefinition() != null)
         {
             GetRuntimeRoot().name = "OrePickup_" + OreItemData.GetOreDefinition().GetDisplayName();
         }
 
+        ApplyCurrentOreSizeScale();
         RuntimeWorldObjectRegistry.RegisterOrePickup(this);
     }
 
     /// <summary>
     /// Binds pool ownership data used when the pickup is returned.
     /// </summary>
-    public void BindPool(OrePickupPool ownerPool, GameObject sourcePrefab)
+    /// <param name="OwnerPoolValue">Pool that owns this pickup instance.</param>
+    /// <param name="SourcePrefabValue">Prefab used to create this pickup instance.</param>
+    public void BindPool(OrePickupPool OwnerPoolValue, GameObject SourcePrefabValue)
     {
-        OwnerPool = ownerPool;
-        SourcePrefab = sourcePrefab;
+        OwnerPool = OwnerPoolValue;
+        SourcePrefab = SourcePrefabValue;
+        CacheBaseScaleIfNeeded();
     }
 
     /// <summary>
     /// Prepares the pickup to be reused at the provided world transform.
+    /// Runtime scale is reset before ore data is assigned so pooled objects cannot inherit the previous ore size.
     /// </summary>
-    public void PrepareForReuse(Vector3 position, Quaternion rotation)
+    /// <param name="Position">World position used for this reuse.</param>
+    /// <param name="Rotation">World rotation used for this reuse.</param>
+    public void PrepareForReuse(Vector3 Position, Quaternion Rotation)
     {
-        Transform runtimeRoot = GetRuntimeRoot();
-        runtimeRoot.SetParent(null, true);
-        runtimeRoot.SetPositionAndRotation(position, rotation);
+        Transform RuntimeRootValue = GetRuntimeRoot();
+        RuntimeRootValue.SetParent(null, true);
+        RuntimeRootValue.SetPositionAndRotation(Position, Rotation);
 
         EnsureCachedReferences();
+        RestoreBaseScale();
         ResetPhysicsState();
         SetCollidersEnabled(true);
-        runtimeRoot.gameObject.SetActive(true);
+        RuntimeRootValue.gameObject.SetActive(true);
     }
 
     /// <summary>
     /// Prepares the pickup to be stored back inside the pool.
+    /// Runtime ore size scale is cleared so the next reuse always starts from prefab scale.
     /// </summary>
-    public void PrepareForPoolStorage(Transform poolRoot)
+    /// <param name="PoolRoot">Root transform used to store inactive pooled instances.</param>
+    public void PrepareForPoolStorage(Transform PoolRoot)
     {
-        Transform runtimeRoot = GetRuntimeRoot();
+        Transform RuntimeRootValue = GetRuntimeRoot();
 
         EnsureCachedReferences();
         ResetPhysicsState();
@@ -102,17 +147,19 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         NotifyScannerInstanceRemoved();
         ScannerInstanceId = string.Empty;
         OreItemData = null;
-        runtimeRoot.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "OrePickup_Pooled";
+        RuntimeRootValue.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "OrePickup_Pooled";
+        RestoreBaseScale();
 
         SetContainedCarryablesDisableResetSuppressed(true);
-        runtimeRoot.SetParent(poolRoot, false);
-        runtimeRoot.gameObject.SetActive(false);
+        RuntimeRootValue.SetParent(PoolRoot, false);
+        RuntimeRootValue.gameObject.SetActive(false);
         SetContainedCarryablesDisableResetSuppressed(false);
     }
 
     /// <summary>
     /// Attempts to return this pickup back to its owner pool.
     /// </summary>
+    /// <returns>True when the pickup was returned to its pool.</returns>
     public bool ReturnToPool()
     {
         if (OwnerPool == null || SourcePrefab == null)
@@ -189,6 +236,92 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     }
 
     /// <summary>
+    /// Gets the transform that receives the runtime ore size scale.
+    /// </summary>
+    /// <returns>Configured scale root or runtime root fallback.</returns>
+    private Transform GetScaleRoot()
+    {
+        if (ScaleRoot == null)
+        {
+            ScaleRoot = GetRuntimeRoot();
+        }
+
+        return ScaleRoot;
+    }
+
+    /// <summary>
+    /// Captures the prefab-authored local scale before runtime size multipliers modify it.
+    /// </summary>
+    private void CacheBaseScaleIfNeeded()
+    {
+        if (HasCachedBaseScale)
+        {
+            return;
+        }
+
+        Transform ScaleRootValue = GetScaleRoot();
+        BaseScaleRootLocalScale = ScaleRootValue != null ? ScaleRootValue.localScale : Vector3.one;
+        HasCachedBaseScale = true;
+    }
+
+    /// <summary>
+    /// Restores the configured scale root to its prefab-authored local scale.
+    /// </summary>
+    private void RestoreBaseScale()
+    {
+        CacheBaseScaleIfNeeded();
+
+        Transform ScaleRootValue = GetScaleRoot();
+
+        if (ScaleRootValue == null)
+        {
+            return;
+        }
+
+        ScaleRootValue.localScale = BaseScaleRootLocalScale;
+
+        if (DebugScaleLogs)
+        {
+            Debug.Log("[OrePickup] Restored base scale " + BaseScaleRootLocalScale + " on " + ScaleRootValue.name + ".", this);
+        }
+    }
+
+    /// <summary>
+    /// Applies the current ore runtime size scale to the configured scale root.
+    /// </summary>
+    private void ApplyCurrentOreSizeScale()
+    {
+        RestoreBaseScale();
+
+        if (!ApplyOreSizeScale || OreItemData == null)
+        {
+            return;
+        }
+
+        Transform ScaleRootValue = GetScaleRoot();
+
+        if (ScaleRootValue == null)
+        {
+            return;
+        }
+
+        float RuntimeSizeScale = Mathf.Clamp(
+            OreItemData.GetSizeScale(),
+            Mathf.Max(0.01f, MinimumAppliedSizeScale),
+            Mathf.Max(Mathf.Max(0.01f, MinimumAppliedSizeScale), MaximumAppliedSizeScale));
+
+        ScaleRootValue.localScale = new Vector3(
+            BaseScaleRootLocalScale.x * RuntimeSizeScale,
+            BaseScaleRootLocalScale.y * RuntimeSizeScale,
+            BaseScaleRootLocalScale.z * RuntimeSizeScale);
+
+        if (DebugScaleLogs)
+        {
+            Debug.Log("[OrePickup] Applied runtime ore size scale x" + RuntimeSizeScale.ToString("0.###") + " to " + ScaleRootValue.name + ".", this);
+        }
+    }
+
+    /// <summary>
     /// Resets rigidbody motion before reusing or storing the pickup.
     /// Kinematic rigidbodies cannot accept velocity writes, so only dynamic bodies are zeroed explicitly.
     /// </summary>
@@ -262,26 +395,27 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     /// <summary>
     /// Enables or disables every cached collider during pool transitions.
     /// </summary>
-    private void SetCollidersEnabled(bool isEnabled)
+    /// <param name="IsEnabled">True to enable colliders, false to disable them.</param>
+    private void SetCollidersEnabled(bool IsEnabled)
     {
         if (CachedColliders == null)
         {
             return;
         }
 
-        for (int index = 0; index < CachedColliders.Length; index++)
+        for (int Index = 0; Index < CachedColliders.Length; Index++)
         {
-            if (CachedColliders[index] == null)
+            if (CachedColliders[Index] == null)
             {
                 continue;
             }
 
-            CachedColliders[index].enabled = isEnabled;
+            CachedColliders[Index].enabled = IsEnabled;
         }
     }
 
     /// <summary>
-    /// Caches missing rigidbody and collider references the first time they are needed.
+    /// Caches missing rigidbody, collider and scale references the first time they are needed.
     /// </summary>
     private void EnsureCachedReferences()
     {
@@ -299,5 +433,34 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         {
             CachedColliders = GetComponentsInChildren<Collider>(true);
         }
+
+        CacheBaseScaleIfNeeded();
+    }
+
+    /// <summary>
+    /// Keeps scale clamp values valid in the inspector.
+    /// </summary>
+    private void OnValidate()
+    {
+        MinimumAppliedSizeScale = Mathf.Max(0.01f, MinimumAppliedSizeScale);
+        MaximumAppliedSizeScale = Mathf.Max(MinimumAppliedSizeScale, MaximumAppliedSizeScale);
+    }
+
+    /// <summary>
+    /// Debug helper that reapplies the current runtime size scale while in play mode.
+    /// </summary>
+    [ContextMenu("Apply Current Ore Size Scale")]
+    private void DebugApplyCurrentOreSizeScale()
+    {
+        ApplyCurrentOreSizeScale();
+    }
+
+    /// <summary>
+    /// Debug helper that restores the pickup scale root to its cached prefab-authored base scale.
+    /// </summary>
+    [ContextMenu("Restore Base Ore Pickup Scale")]
+    private void DebugRestoreBaseScale()
+    {
+        RestoreBaseScale();
     }
 }

@@ -146,8 +146,8 @@ public sealed class ScannerDisplayUI : MonoBehaviour
         SetText(OreMiningTierText, "Required Tier: " + RequiredMiningTier);
         SetText(OreCreditValueText, ShowCreditValue ? "Credit Value: " + CreditValue.ToString("0.00") + " C" : "Credit Value: Locked");
         SetText(OrePriceResearchText, string.Empty);
-        SetText(OrePurityText, ShowPurity ? "Purity: " + Purity.ToString("0.00") : "Purity: Locked");
-        SetText(OreSizeText, ShowSize ? "Size: " + Size.ToString("0.00") : "Size: Locked");
+        SetText(OrePurityText, ShowPurity ? "Purity: " + Purity.ToString("0.#") + "%" : "Purity: Locked");
+        SetText(OreSizeText, ShowSize ? "Size Scale: x" + Size.ToString("0.##") : "Size Scale: Locked");
         SetText(OreWeightText, ShowWeight ? "Weight: " + Weight.ToString("0.00") : "Weight: Locked");
 
         SetStatus("Scan Complete");
@@ -163,7 +163,7 @@ public sealed class ScannerDisplayUI : MonoBehaviour
         SetText(OreMineralTypeText, "Mineral Type: -");
         SetText(OreMiningTierText, "Required Tier: -");
         SetText(OrePurityText, "Purity: -");
-        SetText(OreSizeText, "Size: -");
+        SetText(OreSizeText, "Size Scale: -");
         SetText(OreWeightText, "Weight: -");
         SetText(OreCreditValueText, "Credit Value: -");
         SetText(OrePriceResearchText, string.Empty);

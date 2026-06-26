@@ -1,5 +1,36 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3325381204200710053
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7888833428180447419}
+  m_Layer: 11
+  m_Name: DropOrigin
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7888833428180447419
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3325381204200710053}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.419, z: -0.023}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2432426371778492963}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &4235150293461965883
 GameObject:
   m_ObjectHideFlags: 0
@@ -124,6 +155,7 @@ GameObject:
   - component: {fileID: 2432426371778492963}
   - component: {fileID: 8983510467771780466}
   - component: {fileID: -1693902601774238312}
+  - component: {fileID: 1088705890769249271}
   m_Layer: 11
   m_Name: Quartz_Vein_a01
   m_TagString: Untagged
@@ -145,6 +177,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 8282133489352527078}
+  - {fileID: 7888833428180447419}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &8983510467771780466
@@ -159,8 +192,43 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b41b654641fe84040afe8de56de6eb9d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OreVein
+  AssignedOreDefinition: {fileID: 11400000, guid: 4682a0330487613418910721629c656e, type: 2}
+  AssignedOreRuntimeService: {fileID: 0}
+  AutoInitializeOnStart: 1
+  VeinSizeCategory: 1
+  UseVeinSizeDropProfile: 0
+  SizeProfileScaleRoot: {fileID: 8282133489352527078}
+  ApplySizeProfileScaleOnValidate: 0
+  SmallVeinProfile:
+    ProfileLabel: Small
+    VeinVisualScaleMultiplier: 0.5
+    DropMode: 1
+    AdditiveDropCount: 0
+    CustomDropCountMin: 1
+    CustomDropCountMax: 1
+  NormalVeinProfile:
+    ProfileLabel: Normal
+    VeinVisualScaleMultiplier: 1
+    DropMode: 0
+    AdditiveDropCount: 0
+    CustomDropCountMin: 1
+    CustomDropCountMax: 1
+  LargeVeinProfile:
+    ProfileLabel: Large
+    VeinVisualScaleMultiplier: 2
+    DropMode: 3
+    AdditiveDropCount: 1
+    CustomDropCountMin: 1
+    CustomDropCountMax: 1
+  CustomVeinProfile:
+    ProfileLabel: Custom
+    VeinVisualScaleMultiplier: 1
+    DropMode: 4
+    AdditiveDropCount: 0
+    CustomDropCountMin: 1
+    CustomDropCountMax: 1
   VisualRoot: {fileID: 2432426371778492963}
-  DropOrigin: {fileID: 0}
+  DropOrigin: {fileID: 7888833428180447419}
   FeedbackEmitter: {fileID: -1693902601774238312}
   UseGameFeedback: 1
   OreHitEventId: Ore.Hit
@@ -178,19 +246,30 @@ MonoBehaviour:
   BreakFeedbackIntensity: 1
   RejectedHitFeedbackIntensity: 1
   PlayHitFeedbackOnBreakingHit: 1
+  VisualRegrowthMode: 0
   MinimumGrowthScale: 0.05
-  AnimateGrowth: 1
+  UseDropOriginAxes: 1
+  DropForwardOffset: 0.25
+  DropForwardJitter: 0.08
   DropScatterRadius: 0.45
   DropVerticalOffset: 0.2
+  DropVerticalScatterRadius: 0.25
+  DropVerticalJitter: 0.08
+  DropSpawnBlockingLayers:
+    serializedVersion: 2
+    m_Bits: 13271
   SpawnClearanceRadius: 0.2
   MaxSpawnAttemptsPerDrop: 12
   SpawnRadiusStep: 0.18
+  SpawnForwardStep: 0.12
   SpawnHeightStep: 0.12
-  DropVerticalJitter: 0.08
   RandomizeYawRotation: 1
   RandomizeTiltRotation: 1
   MaxRandomPitch: 12
   MaxRandomRoll: 12
+  DrawDropSpawnGizmos: 1
+  DropSpawnPreviewCount: 8
+  DrawDropSpawnClearanceGizmos: 1
   DebugLogs: 0
 --- !u!114 &-1693902601774238312
 MonoBehaviour:
@@ -208,3 +287,16 @@ MonoBehaviour:
   FallbackFeedbackRoot: {fileID: 2432426371778492963}
   LocalBindings: []
   DebugLogs: 1
+--- !u!114 &1088705890769249271
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8730402574253964879}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b26a3ae03d2d0b4b825865d3e45a2a6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SceneSaveId
+  Id: c667b60f211c439cb0582ea3aa7571d5

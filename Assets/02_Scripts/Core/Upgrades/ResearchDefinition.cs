@@ -35,14 +35,14 @@ public sealed class ResearchDefinition : ScriptableObject
         [Tooltip("If true, only ores with purity equal or above Minimum Purity are accepted.")]
         [SerializeField] private bool RequireMinimumPurity = false;
 
-        [Tooltip("Minimum accepted ore purity. A value of 0.20 means 20% if your purity values are normalized.")]
-        [SerializeField] private float MinimumPurity = 0.2f;
+        [Tooltip("Minimum accepted ore purity percent. Use 20 for 20% and 100 for perfect purity.")]
+        [SerializeField, Range(0f, 100f)] private float MinimumPurity = 20f;
 
         [Tooltip("If true, only ores with purity equal or below Maximum Purity are accepted.")]
         [SerializeField] private bool RequireMaximumPurity = false;
 
-        [Tooltip("Maximum accepted ore purity.")]
-        [SerializeField] private float MaximumPurity = 1f;
+        [Tooltip("Maximum accepted ore purity percent. Use 80 for 80% and 100 for perfect purity.")]
+        [SerializeField, Range(0f, 100f)] private float MaximumPurity = 100f;
 
         [Header("Weight Filter")]
         [Tooltip("If true, only ores with weight equal or above Minimum Weight are accepted.")]
@@ -116,7 +116,7 @@ public sealed class ResearchDefinition : ScriptableObject
                 return false;
             }
 
-            float Purity = ItemData.GetPropertyValue(OrePropertyType.Purity, 0f);
+            float Purity = ItemData.GetPurityPercent();
             float Weight = ItemData.GetWeightValue();
 
             if (RequireMinimumPurity && Purity < MinimumPurity)
@@ -151,12 +151,12 @@ public sealed class ResearchDefinition : ScriptableObject
 
             if (RequireMinimumPurity)
             {
-                Label += " | Purity >= " + MinimumPurity.ToString("0.##");
+                Label += " | Purity >= " + MinimumPurity.ToString("0.#") + "%";
             }
 
             if (RequireMaximumPurity)
             {
-                Label += " | Purity <= " + MaximumPurity.ToString("0.##");
+                Label += " | Purity <= " + MaximumPurity.ToString("0.#") + "%";
             }
 
             if (RequireMinimumWeight)

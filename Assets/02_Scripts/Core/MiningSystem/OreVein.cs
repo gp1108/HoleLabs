@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using MoreMountains.Feedbacks;
 using UnityEngine;
@@ -13,6 +14,171 @@ public sealed class OreVein : MonoBehaviour, IMineable
         Growing = 0,
         Ready = 1
     }
+
+    private enum OreVeinSizeCategory
+    {
+        Small = 0,
+        Normal = 1,
+        Large = 2,
+        Custom = 3
+    }
+
+    private enum DropCountMode
+    {
+        DefinitionRandom = 0,
+        DefinitionMinimum = 1,
+        DefinitionMaximum = 2,
+        DefinitionRandomPlusAdditive = 3,
+        CustomRange = 4
+    }
+
+    private enum RegrowthVisualMode
+    {
+        ScaleAnimation = 0,
+        VisibilityToggle = 1
+    }
+
+    private readonly struct DropSpawnBasis
+    {
+        public readonly Vector3 Origin;
+        public readonly Vector3 Forward;
+        public readonly Vector3 Right;
+        public readonly Vector3 Up;
+
+        public DropSpawnBasis(Vector3 OriginValue, Vector3 ForwardValue, Vector3 RightValue, Vector3 UpValue)
+        {
+            Origin = OriginValue;
+            Forward = ForwardValue.sqrMagnitude > 0.0001f ? ForwardValue.normalized : Vector3.forward;
+            Right = RightValue.sqrMagnitude > 0.0001f ? RightValue.normalized : Vector3.right;
+            Up = UpValue.sqrMagnitude > 0.0001f ? UpValue.normalized : Vector3.up;
+        }
+    }
+
+    [Serializable]
+    private sealed class VeinSizeDropProfile
+    {
+        [Tooltip("Readable label used only to identify this profile in the inspector.")]
+        [SerializeField] private string ProfileLabel = "Normal";
+
+        [Tooltip("Optional helper scale used by the context menu or validation scale tool. This does not affect dropped ore size.")]
+        [SerializeField] private float VeinVisualScaleMultiplier = 1f;
+
+        [Tooltip("How this vein size profile resolves the amount of ore drops produced when the vein breaks.")]
+        [SerializeField] private DropCountMode DropMode = DropCountMode.DefinitionRandom;
+
+        [Tooltip("Extra drops added when Drop Mode is Definition Random Plus Additive.")]
+        [SerializeField] private int AdditiveDropCount = 0;
+
+        [Tooltip("Minimum drop count used when Drop Mode is Custom Range.")]
+        [SerializeField] private int CustomDropCountMin = 1;
+
+        [Tooltip("Maximum drop count used when Drop Mode is Custom Range.")]
+        [SerializeField] private int CustomDropCountMax = 1;
+
+        /// <summary>
+        /// Creates one vein size drop profile with safe default values.
+        /// </summary>
+        /// <param name="ProfileLabelValue">Readable profile label.</param>
+        /// <param name="VeinVisualScaleMultiplierValue">Optional helper visual scale multiplier.</param>
+        /// <param name="DropModeValue">Drop count resolution mode.</param>
+        /// <param name="AdditiveDropCountValue">Extra drops added by additive mode.</param>
+        /// <param name="CustomDropCountMinValue">Minimum custom drop count.</param>
+        /// <param name="CustomDropCountMaxValue">Maximum custom drop count.</param>
+        public VeinSizeDropProfile(
+            string ProfileLabelValue,
+            float VeinVisualScaleMultiplierValue,
+            DropCountMode DropModeValue,
+            int AdditiveDropCountValue,
+            int CustomDropCountMinValue,
+            int CustomDropCountMaxValue)
+        {
+            ProfileLabel = ProfileLabelValue;
+            VeinVisualScaleMultiplier = Mathf.Max(0.01f, VeinVisualScaleMultiplierValue);
+            DropMode = DropModeValue;
+            AdditiveDropCount = Mathf.Max(0, AdditiveDropCountValue);
+            CustomDropCountMin = Mathf.Max(0, CustomDropCountMinValue);
+            CustomDropCountMax = Mathf.Max(CustomDropCountMin, CustomDropCountMaxValue);
+        }
+
+        /// <summary>
+        /// Gets the optional helper scale multiplier configured for this profile.
+        /// </summary>
+        public float GetVeinVisualScaleMultiplier()
+        {
+            return Mathf.Max(0.01f, VeinVisualScaleMultiplier);
+        }
+
+        /// <summary>
+        /// Resolves the final drop count for this profile.
+        /// </summary>
+        /// <param name="OreDefinition">Ore definition used by the vein.</param>
+        /// <param name="OreRuntimeService">Runtime service used to resolve upgraded definition ranges.</param>
+        /// <returns>Final drop count produced by the vein.</returns>
+        public int ResolveDropCount(OreDefinition OreDefinition, OreRuntimeService OreRuntimeService)
+        {
+            if (OreDefinition == null || OreRuntimeService == null)
+            {
+                return 0;
+            }
+
+            OreRuntimeService.ResolveDropCountRange(OreDefinition, out int DefinitionMin, out int DefinitionMax);
+
+            switch (DropMode)
+            {
+                case DropCountMode.DefinitionMinimum:
+                    return Mathf.Max(0, DefinitionMin);
+
+                case DropCountMode.DefinitionMaximum:
+                    return Mathf.Max(0, DefinitionMax);
+
+                case DropCountMode.DefinitionRandomPlusAdditive:
+                    return Mathf.Max(0, UnityEngine.Random.Range(DefinitionMin, DefinitionMax + 1) + Mathf.Max(0, AdditiveDropCount));
+
+                case DropCountMode.CustomRange:
+                    int SafeCustomMin = Mathf.Max(0, CustomDropCountMin);
+                    int SafeCustomMax = Mathf.Max(SafeCustomMin, CustomDropCountMax);
+                    return UnityEngine.Random.Range(SafeCustomMin, SafeCustomMax + 1);
+
+                default:
+                    return UnityEngine.Random.Range(DefinitionMin, DefinitionMax + 1);
+            }
+        }
+    }
+
+    [Header("Scene Authored Vein")]
+    [Tooltip("Ore definition mined by this scene-authored vein. Assign this directly on the visible vein placed in the level.")]
+    [SerializeField] private OreDefinition AssignedOreDefinition;
+
+    [Tooltip("Runtime service used by scene-authored veins. If empty, the vein resolves the first OreRuntimeService in the scene.")]
+    [SerializeField] private OreRuntimeService AssignedOreRuntimeService;
+
+    [Tooltip("If true, this visible scene vein initializes itself on Start.")]
+    [SerializeField] private bool AutoInitializeOnStart = true;
+
+    [Header("Vein Size Profile")]
+    [Tooltip("Authoring size category for this vein. It affects vein drop count only, not dropped ore runtime size.")]
+    [SerializeField] private OreVeinSizeCategory VeinSizeCategory = OreVeinSizeCategory.Normal;
+
+    [Tooltip("If true, the selected vein size profile modifies the amount of ore drops produced by this vein.")]
+    [SerializeField] private bool UseVeinSizeDropProfile = true;
+
+    [Tooltip("Optional root scaled when using the Apply Selected Vein Size Profile Scale context menu. If empty, Visual Root is used.")]
+    [SerializeField] private Transform SizeProfileScaleRoot;
+
+    [Tooltip("If true, OnValidate applies the selected profile visual scale automatically. Keep this disabled when scaling veins manually.")]
+    [SerializeField] private bool ApplySizeProfileScaleOnValidate = false;
+
+    [Tooltip("Drop and helper-scale settings used when this vein is marked as Small.")]
+    [SerializeField] private VeinSizeDropProfile SmallVeinProfile = new VeinSizeDropProfile("Small", 0.5f, DropCountMode.DefinitionMinimum, 0, 1, 1);
+
+    [Tooltip("Drop and helper-scale settings used when this vein is marked as Normal.")]
+    [SerializeField] private VeinSizeDropProfile NormalVeinProfile = new VeinSizeDropProfile("Normal", 1f, DropCountMode.DefinitionRandom, 0, 1, 1);
+
+    [Tooltip("Drop and helper-scale settings used when this vein is marked as Large.")]
+    [SerializeField] private VeinSizeDropProfile LargeVeinProfile = new VeinSizeDropProfile("Large", 2f, DropCountMode.DefinitionRandomPlusAdditive, 1, 1, 1);
+
+    [Tooltip("Drop and helper-scale settings used when this vein is marked as Custom.")]
+    [SerializeField] private VeinSizeDropProfile CustomVeinProfile = new VeinSizeDropProfile("Custom", 1f, DropCountMode.CustomRange, 0, 1, 1);
 
     [Header("References")]
     [Tooltip("Optional visual root scaled during regrowth. If empty, this transform is used.")]
@@ -75,34 +241,52 @@ public sealed class OreVein : MonoBehaviour, IMineable
     [SerializeField] private bool PlayHitFeedbackOnBreakingHit = true;
 
     [Header("Regrowth")]
-    [Tooltip("Minimum scale used while the ore is regrowing.")]
+    [Tooltip("Controls whether regrowth is shown as a scale animation or as a destroyed visual that pops back when ready.")]
+    [SerializeField] private RegrowthVisualMode VisualRegrowthMode = RegrowthVisualMode.ScaleAnimation;
+
+    [Tooltip("Minimum scale used while the ore is regrowing when Scale Animation mode is active.")]
     [SerializeField] private float MinimumGrowthScale = 0.05f;
 
-    [Tooltip("If true, the ore regrowth is animated by scaling the visual root.")]
-    [SerializeField] private bool AnimateGrowth = true;
+    [Header("Drop Spawn Area")]
+    [Tooltip("If true, drop spawn offsets use the Drop Origin transform axes. If false, the vein transform axes are used.")]
+    [SerializeField] private bool UseDropOriginAxes = true;
 
-    [Header("Drops")]
-    [Tooltip("Base horizontal radius used to spread multiple drops around the origin.")]
+    [Tooltip("Forward offset from the drop origin. Rotate the Drop Origin so its forward axis points away from the wall.")]
+    [SerializeField] private float DropForwardOffset = 0.25f;
+
+    [Tooltip("Random extra forward offset applied to each drop so they do not spawn in a flat row.")]
+    [SerializeField] private float DropForwardJitter = 0.08f;
+
+    [Tooltip("Side radius used to spread multiple drops across the spawn plane.")]
     [SerializeField] private float DropScatterRadius = 0.45f;
 
-    [Tooltip("Base vertical offset applied to dropped ore spawn points.")]
-    [SerializeField] private float DropVerticalOffset = 0.2f;
+    [Tooltip("Base vertical offset applied from the drop origin before random variation.")]
+    [SerializeField] private float DropVerticalOffset = 0.15f;
+
+    [Tooltip("Vertical radius used to vary drop height across the spawn plane.")]
+    [SerializeField] private float DropVerticalScatterRadius = 0.25f;
+
+    [Tooltip("Additional random vertical variation applied to each drop spawn after the base vertical offset.")]
+    [SerializeField] private float DropVerticalJitter = 0.08f;
 
     [Header("Safe Spawn")]
+    [Tooltip("Layers considered solid when validating ore drop spawn clearance. Exclude the vein layer if needed.")]
+    [SerializeField] private LayerMask DropSpawnBlockingLayers = ~0;
+
     [Tooltip("Approximate clearance radius used to keep ore spawns away from walls and from each other.")]
     [SerializeField] private float SpawnClearanceRadius = 0.2f;
 
     [Tooltip("Maximum amount of candidate positions tested per ore drop before using the last safe fallback.")]
-    [SerializeField] private int MaxSpawnAttemptsPerDrop = 12;
+    [SerializeField] private int MaxSpawnAttemptsPerDrop = 16;
 
-    [Tooltip("Horizontal distance added on each retry while searching for a valid spawn point.")]
-    [SerializeField] private float SpawnRadiusStep = 0.18f;
+    [Tooltip("Side radius added on each retry while searching for a valid spawn point.")]
+    [SerializeField] private float SpawnRadiusStep = 0.12f;
+
+    [Tooltip("Forward distance added on each retry while searching for a valid spawn point away from the wall.")]
+    [SerializeField] private float SpawnForwardStep = 0.12f;
 
     [Tooltip("Vertical distance added on each retry while searching for a valid spawn point.")]
-    [SerializeField] private float SpawnHeightStep = 0.12f;
-
-    [Tooltip("Additional random vertical variation applied to each drop spawn after the base vertical offset.")]
-    [SerializeField] private float DropVerticalJitter = 0.08f;
+    [SerializeField] private float SpawnHeightStep = 0.08f;
 
     [Tooltip("Random yaw rotation applied to each spawned ore pickup.")]
     [SerializeField] private bool RandomizeYawRotation = true;
@@ -115,6 +299,16 @@ public sealed class OreVein : MonoBehaviour, IMineable
 
     [Tooltip("Maximum absolute random roll applied when tilt randomization is enabled.")]
     [SerializeField] private float MaxRandomRoll = 12f;
+
+    [Header("Editor Preview")]
+    [Tooltip("Draws the drop origin, forward direction, spawn area and preview clearance spheres when the vein is selected.")]
+    [SerializeField] private bool DrawDropSpawnGizmos = true;
+
+    [Tooltip("Amount of preview drop points drawn in the editor when the final runtime drop count is not known yet.")]
+    [SerializeField] private int DropSpawnPreviewCount = 4;
+
+    [Tooltip("If true, preview points draw clearance spheres using the configured spawn clearance radius.")]
+    [SerializeField] private bool DrawDropSpawnClearanceGizmos = true;
 
     [Header("Debug")]
     [Tooltip("Logs mining, spawning and regeneration operations.")]
@@ -134,11 +328,6 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// Runtime service used to resolve drops and values.
     /// </summary>
     private OreRuntimeService OreRuntimeService;
-
-    /// <summary>
-    /// Spawn point that owns this vein instance.
-    /// </summary>
-    private OreSpawnPoint OwnerSpawnPoint;
 
     /// <summary>
     /// Current vein runtime state.
@@ -162,10 +351,16 @@ public sealed class OreVein : MonoBehaviour, IMineable
     private MiningHitContext LastMiningHitContext = default;
 
     /// <summary>
-    /// Extraction quality multiplier captured from the hit that breaks this vein.
-    /// This multiplier is applied to generated ore purity when drops are created.
+    /// Minimum flat purity percent bonus captured from the hit that breaks this vein.
+    /// This value is added to each generated ore purity roll.
     /// </summary>
-    private float LastExtractionQualityMultiplier = 1f;
+    private float LastPurityBonusPercentMin;
+
+    /// <summary>
+    /// Maximum flat purity percent bonus captured from the hit that breaks this vein.
+    /// This value is added to each generated ore purity roll.
+    /// </summary>
+    private float LastPurityBonusPercentMax;
 
     /// <summary>
     /// Soft cached reference to the elevator magnet resolved for recent spawns.
@@ -173,12 +368,40 @@ public sealed class OreVein : MonoBehaviour, IMineable
     private ElevatorOreSpawnMagnet CachedElevatorOreSpawnMagnet;
 
     /// <summary>
+    /// True after this vein has resolved its authored data and runtime service.
+    /// </summary>
+    private bool IsInitialized;
+
+    /// <summary>
+    /// Base local scale captured from the authored visual before regrowth animation modifies it.
+    /// </summary>
+    private Vector3 BaseVisualLocalScale = Vector3.one;
+
+    /// <summary>
+    /// Whether the base visual scale has already been captured for this runtime instance.
+    /// </summary>
+    private bool HasCapturedBaseVisualScale;
+
+    /// <summary>
+    /// Renderers controlled by visibility-toggle regrowth mode.
+    /// </summary>
+    private Renderer[] CachedVisualRenderers = Array.Empty<Renderer>();
+
+    /// <summary>
     /// Gets the ore definition currently used by this vein.
     /// This is used by external systems such as the scanner.
     /// </summary>
     public OreDefinition GetOreDefinition()
     {
-        return OreDefinition;
+        return OreDefinition != null ? OreDefinition : AssignedOreDefinition;
+    }
+
+    /// <summary>
+    /// Gets the ore definition authored directly on this scene vein.
+    /// </summary>
+    public OreDefinition GetAssignedOreDefinition()
+    {
+        return AssignedOreDefinition;
     }
 
     /// <summary>
@@ -187,7 +410,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <returns>Required mining tier, or TierI when no definition is available.</returns>
     public MiningTier GetRequiredMiningTier()
     {
-        return OreDefinition != null ? OreDefinition.GetRequiredMiningTier() : MiningTier.TierI;
+        OreDefinition CurrentDefinition = GetOreDefinition();
+        return CurrentDefinition != null ? CurrentDefinition.GetRequiredMiningTier() : MiningTier.TierI;
     }
 
     /// <summary>
@@ -223,6 +447,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <param name="RespawnTimerRemainingValue">Saved remaining regrowth timer.</param>
     public void ApplySavedRuntimeState(bool IsGrowingValue, int MiningDurabilityRemainingValue, float RespawnTimerRemainingValue)
     {
+        EnsureInitialized();
+
         if (OreDefinition == null || OreRuntimeService == null)
         {
             return;
@@ -257,26 +483,58 @@ public sealed class OreVein : MonoBehaviour, IMineable
     }
 
     /// <summary>
-    /// Initializes this ore vein with its definition, runtime service and owner point.
+    /// Initializes this scene-authored ore vein with its definition and runtime service.
     /// </summary>
     /// <param name="OreDefinitionValue">Definition used by this ore vein.</param>
     /// <param name="OreRuntimeServiceValue">Runtime service used to resolve ore values and drops.</param>
-    /// <param name="OwnerSpawnPointValue">Spawn point that owns this vein instance.</param>
-    public void Initialize(OreDefinition OreDefinitionValue, OreRuntimeService OreRuntimeServiceValue, OreSpawnPoint OwnerSpawnPointValue)
+    public void Initialize(OreDefinition OreDefinitionValue, OreRuntimeService OreRuntimeServiceValue)
     {
-        OreDefinition = OreDefinitionValue;
-        OreRuntimeService = OreRuntimeServiceValue;
-        OwnerSpawnPoint = OwnerSpawnPointValue;
+        OreDefinition = OreDefinitionValue != null ? OreDefinitionValue : AssignedOreDefinition;
+        OreRuntimeService = OreRuntimeServiceValue != null ? OreRuntimeServiceValue : ResolveRuntimeService();
         LastMiningHitContext = MiningHitContext.CreateUnknown();
-        LastExtractionQualityMultiplier = 1f;
+        LastPurityBonusPercentMin = 0f;
+        LastPurityBonusPercentMax = 0f;
 
-        if (VisualRoot == null)
+        ResolveVisualRoot();
+        CaptureBaseVisualScale();
+        ResolveFeedbackEmitter();
+
+        IsInitialized = true;
+        ResetReadyState();
+    }
+
+    /// <summary>
+    /// Initializes a visible scene-authored vein if no external spawn point initialized it.
+    /// </summary>
+    private void Start()
+    {
+        if (!AutoInitializeOnStart || IsInitialized)
         {
-            VisualRoot = transform;
+            return;
         }
 
-        ResolveFeedbackEmitter();
-        ResetReadyState();
+        InitializeSceneAuthoredVein();
+    }
+
+    /// <summary>
+    /// Initializes this vein using its directly assigned scene authoring data.
+    /// </summary>
+    public void InitializeSceneAuthoredVein()
+    {
+        Initialize(AssignedOreDefinition, ResolveRuntimeService());
+    }
+
+    /// <summary>
+    /// Ensures this vein has resolved its runtime dependencies before external systems query or restore it.
+    /// </summary>
+    public void EnsureInitialized()
+    {
+        if (IsInitialized)
+        {
+            return;
+        }
+
+        InitializeSceneAuthoredVein();
     }
 
     /// <summary>
@@ -316,6 +574,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <returns>Detailed mining result.</returns>
     public MiningHitResult TryMine(MiningHitRequest MiningRequest)
     {
+        EnsureInitialized();
+
         if (CurrentState != VeinState.Ready || OreDefinition == null || OreRuntimeService == null)
         {
             PlayOreGameFeedback(OreTargetUnavailableEventId, MiningRequest.HitContext, 1f);
@@ -341,7 +601,8 @@ public sealed class OreVein : MonoBehaviour, IMineable
         }
 
         LastMiningHitContext = MiningRequest.HitContext;
-        LastExtractionQualityMultiplier = Mathf.Max(0.01f, MiningRequest.ExtractionQualityMultiplier);
+        LastPurityBonusPercentMin = MiningRequest.PurityBonusPercentMin;
+        LastPurityBonusPercentMax = MiningRequest.PurityBonusPercentMax;
         CurrentMiningDurabilityRemaining -= DamageToApply;
 
         bool IsBreakingHit = CurrentMiningDurabilityRemaining <= 0;
@@ -384,12 +645,12 @@ public sealed class OreVein : MonoBehaviour, IMineable
         PlayOreGameFeedback(OreBreakEventId, LastMiningHitContext, 1f);
         PlayBreakFeedback(LastMiningHitContext);
 
-        int DropCount = OreRuntimeService.ResolveDropCount(OreDefinition);
+        int DropCount = ResolveVeinDropCount();
         List<Vector3> ReservedSpawnPositions = new List<Vector3>(DropCount);
 
         for (int Index = 0; Index < DropCount; Index++)
         {
-            OreItemData OreItemData = OreRuntimeService.CreateOreItemData(OreDefinition, LastExtractionQualityMultiplier);
+            OreItemData OreItemData = OreRuntimeService.CreateOreItemData(OreDefinition, LastPurityBonusPercentMin, LastPurityBonusPercentMax);
 
             if (OreItemData == null)
             {
@@ -404,9 +665,58 @@ public sealed class OreVein : MonoBehaviour, IMineable
         }
 
         LastMiningHitContext = MiningHitContext.CreateUnknown();
-        LastExtractionQualityMultiplier = 1f;
+        LastPurityBonusPercentMin = 0f;
+        LastPurityBonusPercentMax = 0f;
         StartRegrowth();
         Log("Ore vein broken and " + DropCount + " drops were spawned.");
+    }
+
+    /// <summary>
+    /// Resolves the amount of drops produced by this vein after applying the authored vein size profile.
+    /// </summary>
+    /// <returns>Final amount of ore pickups to spawn.</returns>
+    private int ResolveVeinDropCount()
+    {
+        if (OreRuntimeService == null || OreDefinition == null)
+        {
+            return 0;
+        }
+
+        if (!UseVeinSizeDropProfile)
+        {
+            return OreRuntimeService.ResolveDropCount(OreDefinition);
+        }
+
+        VeinSizeDropProfile Profile = GetSelectedVeinSizeProfile();
+
+        if (Profile == null)
+        {
+            return OreRuntimeService.ResolveDropCount(OreDefinition);
+        }
+
+        return Profile.ResolveDropCount(OreDefinition, OreRuntimeService);
+    }
+
+    /// <summary>
+    /// Gets the size/drop profile selected by the current vein category.
+    /// </summary>
+    /// <returns>Configured vein size profile.</returns>
+    private VeinSizeDropProfile GetSelectedVeinSizeProfile()
+    {
+        switch (VeinSizeCategory)
+        {
+            case OreVeinSizeCategory.Small:
+                return SmallVeinProfile;
+
+            case OreVeinSizeCategory.Large:
+                return LargeVeinProfile;
+
+            case OreVeinSizeCategory.Custom:
+                return CustomVeinProfile;
+
+            default:
+                return NormalVeinProfile;
+        }
     }
 
     /// <summary>
@@ -419,18 +729,25 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <returns>Resolved world spawn position.</returns>
     private Vector3 ResolveRobustDropSpawnPosition(int DropIndex, int TotalDropCount, List<Vector3> ReservedSpawnPositions)
     {
-        float BaseJitteredHeight = DropVerticalOffset + Random.Range(-Mathf.Abs(DropVerticalJitter), Mathf.Abs(DropVerticalJitter));
-        Vector3 BasePosition = GetDropOriginPosition() + (Vector3.up * BaseJitteredHeight);
+        DropSpawnBasis SpawnBasis = ResolveDropSpawnBasis();
+        float ForwardJitter = UnityEngine.Random.Range(0f, Mathf.Abs(DropForwardJitter));
+        float VerticalJitter = UnityEngine.Random.Range(-Mathf.Abs(DropVerticalJitter), Mathf.Abs(DropVerticalJitter));
+        Vector3 BasePosition = SpawnBasis.Origin +
+                               (SpawnBasis.Forward * (Mathf.Max(0f, DropForwardOffset) + ForwardJitter)) +
+                               (SpawnBasis.Up * (DropVerticalOffset + VerticalJitter));
 
         float ClearanceRadius = Mathf.Max(0.05f, SpawnClearanceRadius);
         float SeparationDistance = ClearanceRadius * 2f;
-
-        Vector3 LastValidFallback = BasePosition + (Vector3.up * Mathf.Max(0f, SpawnHeightStep));
+        Vector3 LastValidFallback = BasePosition +
+                                    (SpawnBasis.Forward * Mathf.Max(0f, SpawnForwardStep)) +
+                                    (SpawnBasis.Up * Mathf.Max(0f, SpawnHeightStep));
 
         for (int AttemptIndex = 0; AttemptIndex < Mathf.Max(1, MaxSpawnAttemptsPerDrop); AttemptIndex++)
         {
-            Vector3 CandidateOffset = GetSpawnPatternOffset(DropIndex, TotalDropCount, AttemptIndex);
+            Vector3 CandidateOffset = GetSpawnPatternOffset(DropIndex, TotalDropCount, AttemptIndex, SpawnBasis);
             Vector3 CandidatePosition = BasePosition + CandidateOffset;
+
+            LastValidFallback = CandidatePosition;
 
             if (!IsFarEnoughFromReservedSpawns(CandidatePosition, ReservedSpawnPositions, SeparationDistance))
             {
@@ -445,7 +762,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
             return CandidatePosition;
         }
 
-        Log("Failed to resolve a fully clean drop spawn. Using elevated fallback.");
+        Log("Failed to resolve a fully clean drop spawn. Using the last tested fallback position.");
         return LastValidFallback;
     }
 
@@ -455,9 +772,9 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// </summary>
     private Quaternion GetRandomDropRotation()
     {
-        float Yaw = RandomizeYawRotation ? Random.Range(0f, 360f) : 0f;
-        float Pitch = RandomizeTiltRotation ? Random.Range(-Mathf.Abs(MaxRandomPitch), Mathf.Abs(MaxRandomPitch)) : 0f;
-        float Roll = RandomizeTiltRotation ? Random.Range(-Mathf.Abs(MaxRandomRoll), Mathf.Abs(MaxRandomRoll)) : 0f;
+        float Yaw = RandomizeYawRotation ? UnityEngine.Random.Range(0f, 360f) : 0f;
+        float Pitch = RandomizeTiltRotation ? UnityEngine.Random.Range(-Mathf.Abs(MaxRandomPitch), Mathf.Abs(MaxRandomPitch)) : 0f;
+        float Roll = RandomizeTiltRotation ? UnityEngine.Random.Range(-Mathf.Abs(MaxRandomRoll), Mathf.Abs(MaxRandomRoll)) : 0f;
 
         return Quaternion.Euler(Pitch, Yaw, Roll);
     }
@@ -470,25 +787,29 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <param name="TotalDropCount">Total amount of drops spawned in the current break.</param>
     /// <param name="AttemptIndex">Current retry index for this drop.</param>
     /// <returns>Offset from the base drop origin.</returns>
-    private Vector3 GetSpawnPatternOffset(int DropIndex, int TotalDropCount, int AttemptIndex)
+    private Vector3 GetSpawnPatternOffset(int DropIndex, int TotalDropCount, int AttemptIndex, DropSpawnBasis SpawnBasis)
     {
         if (TotalDropCount <= 1 && AttemptIndex == 0)
         {
             return Vector3.zero;
         }
 
-        float BaseAngle = 360f / Mathf.Max(1, TotalDropCount);
-        float AttemptAngleOffset = 41f * AttemptIndex;
+        float SafeTotalDropCount = Mathf.Max(1, TotalDropCount);
+        float BaseAngle = 360f / SafeTotalDropCount;
+        float AttemptAngleOffset = 137.50776f * AttemptIndex;
         float AngleDegrees = (DropIndex * BaseAngle) + AttemptAngleOffset;
         float AngleRadians = AngleDegrees * Mathf.Deg2Rad;
 
-        float Radius = Mathf.Max(0f, DropScatterRadius) + (AttemptIndex * Mathf.Max(0f, SpawnRadiusStep));
-        float Height = AttemptIndex * Mathf.Max(0f, SpawnHeightStep);
+        float SideRadius = Mathf.Max(0f, DropScatterRadius) + (AttemptIndex * Mathf.Max(0f, SpawnRadiusStep));
+        float VerticalRadius = Mathf.Max(0f, DropVerticalScatterRadius);
+        float SideOffset = Mathf.Cos(AngleRadians) * SideRadius;
+        float VerticalOffset = Mathf.Sin(AngleRadians) * VerticalRadius;
+        float ForwardOffset = AttemptIndex * Mathf.Max(0f, SpawnForwardStep);
+        float RetryHeightOffset = AttemptIndex * Mathf.Max(0f, SpawnHeightStep);
 
-        return new Vector3(
-            Mathf.Cos(AngleRadians) * Radius,
-            Height,
-            Mathf.Sin(AngleRadians) * Radius);
+        return (SpawnBasis.Right * SideOffset) +
+               (SpawnBasis.Up * (VerticalOffset + RetryHeightOffset)) +
+               (SpawnBasis.Forward * ForwardOffset);
     }
 
     /// <summary>
@@ -532,7 +853,7 @@ public sealed class OreVein : MonoBehaviour, IMineable
             CandidatePosition,
             ClearanceRadius,
             SpawnOverlapBuffer,
-            ~0,
+            DropSpawnBlockingLayers,
             QueryTriggerInteraction.Ignore);
 
         for (int Index = 0; Index < HitCount; Index++)
@@ -545,11 +866,6 @@ public sealed class OreVein : MonoBehaviour, IMineable
             }
 
             if (HitCollider.transform.IsChildOf(transform))
-            {
-                continue;
-            }
-
-            if (OwnerSpawnPoint != null && HitCollider.transform.IsChildOf(OwnerSpawnPoint.transform))
             {
                 continue;
             }
@@ -568,6 +884,20 @@ public sealed class OreVein : MonoBehaviour, IMineable
     private Vector3 GetDropOriginPosition()
     {
         return DropOrigin != null ? DropOrigin.position : transform.position;
+    }
+
+    /// <summary>
+    /// Resolves the oriented basis used by runtime drop spawning and editor gizmos.
+    /// </summary>
+    /// <returns>World-space spawn basis.</returns>
+    private DropSpawnBasis ResolveDropSpawnBasis()
+    {
+        Transform BasisTransform = UseDropOriginAxes && DropOrigin != null ? DropOrigin : transform;
+        Vector3 Forward = BasisTransform != null ? BasisTransform.forward : Vector3.forward;
+        Vector3 Right = BasisTransform != null ? BasisTransform.right : Vector3.right;
+        Vector3 Up = BasisTransform != null ? BasisTransform.up : Vector3.up;
+
+        return new DropSpawnBasis(GetDropOriginPosition(), Forward, Right, Up);
     }
 
     /// <summary>
@@ -651,14 +981,138 @@ public sealed class OreVein : MonoBehaviour, IMineable
     /// <param name="NormalizedProgress">Normalized growth progress in the [0, 1] range.</param>
     private void UpdateGrowthVisual(float NormalizedProgress)
     {
-        if (!AnimateGrowth || VisualRoot == null)
+        ResolveVisualRoot();
+
+        if (VisualRoot == null)
         {
             return;
         }
 
+        CaptureBaseVisualScale();
+
         float ClampedProgress = Mathf.Clamp01(NormalizedProgress);
+
+        if (VisualRegrowthMode == RegrowthVisualMode.VisibilityToggle)
+        {
+            bool ShouldShowVisual = ClampedProgress >= 1f;
+            SetVisualRenderersVisible(ShouldShowVisual);
+            VisualRoot.localScale = BaseVisualLocalScale;
+            return;
+        }
+
+        SetVisualRenderersVisible(true);
         float ScaleMultiplier = Mathf.Lerp(MinimumGrowthScale, 1f, ClampedProgress);
-        VisualRoot.localScale = Vector3.one * ScaleMultiplier;
+        VisualRoot.localScale = BaseVisualLocalScale * ScaleMultiplier;
+    }
+
+    /// <summary>
+    /// Resolves the visual root used by growth animation and optional size profile helper scaling.
+    /// </summary>
+    private void ResolveVisualRoot()
+    {
+        if (VisualRoot == null)
+        {
+            VisualRoot = transform;
+        }
+    }
+
+    /// <summary>
+    /// Captures the authored base visual scale once so regrowth preserves manually placed vein size.
+    /// </summary>
+    private void CaptureBaseVisualScale()
+    {
+        if (HasCapturedBaseVisualScale)
+        {
+            return;
+        }
+
+        ResolveVisualRoot();
+
+        if (VisualRoot == null)
+        {
+            BaseVisualLocalScale = Vector3.one;
+            CachedVisualRenderers = Array.Empty<Renderer>();
+            HasCapturedBaseVisualScale = true;
+            return;
+        }
+
+        BaseVisualLocalScale = VisualRoot.localScale;
+        CachedVisualRenderers = VisualRoot.GetComponentsInChildren<Renderer>(true);
+        HasCapturedBaseVisualScale = true;
+    }
+
+    /// <summary>
+    /// Shows or hides the renderers controlled by this vein without disabling the GameObject that owns the runtime script.
+    /// </summary>
+    /// <param name="IsVisible">True to show the visual renderers.</param>
+    private void SetVisualRenderersVisible(bool IsVisible)
+    {
+        CaptureBaseVisualScale();
+
+        if (CachedVisualRenderers == null || CachedVisualRenderers.Length == 0)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < CachedVisualRenderers.Length; Index++)
+        {
+            if (CachedVisualRenderers[Index] != null)
+            {
+                CachedVisualRenderers[Index].enabled = IsVisible;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves the runtime service used by this scene-authored vein.
+    /// </summary>
+    /// <returns>Assigned or discovered runtime service.</returns>
+    private OreRuntimeService ResolveRuntimeService()
+    {
+        if (AssignedOreRuntimeService != null)
+        {
+            return AssignedOreRuntimeService;
+        }
+
+        return FindFirstObjectByType<OreRuntimeService>();
+    }
+
+    /// <summary>
+    /// Applies the selected size profile helper scale to the configured scale root.
+    /// This is an authoring utility only; it does not affect dropped ore runtime size.
+    /// </summary>
+    [ContextMenu("Apply Selected Vein Size Profile Scale")]
+    public void ApplySelectedVeinSizeProfileScale()
+    {
+        VeinSizeDropProfile Profile = GetSelectedVeinSizeProfile();
+
+        if (Profile == null)
+        {
+            return;
+        }
+
+        Transform TargetRoot = SizeProfileScaleRoot != null
+            ? SizeProfileScaleRoot
+            : (VisualRoot != null ? VisualRoot : transform);
+
+        TargetRoot.localScale = Vector3.one * Profile.GetVeinVisualScaleMultiplier();
+        HasCapturedBaseVisualScale = false;
+    }
+
+    /// <summary>
+    /// Validates authoring helper data in the editor.
+    /// </summary>
+    private void OnValidate()
+    {
+        if (Application.isPlaying)
+        {
+            return;
+        }
+
+        if (ApplySizeProfileScaleOnValidate)
+        {
+            ApplySelectedVeinSizeProfileScale();
+        }
     }
 
     /// <summary>
@@ -787,13 +1241,41 @@ public sealed class OreVein : MonoBehaviour, IMineable
     }
 
     /// <summary>
-    /// Releases ownership from its spawn point when destroyed.
+    /// Draws an editor-only preview of the ore drop area so authored veins can be placed without spawning drops inside walls.
     /// </summary>
-    private void OnDestroy()
+    private void OnDrawGizmosSelected()
     {
-        if (OwnerSpawnPoint != null)
+        if (!DrawDropSpawnGizmos)
         {
-            OwnerSpawnPoint.NotifyVeinReleased(this);
+            return;
+        }
+
+        DropSpawnBasis SpawnBasis = ResolveDropSpawnBasis();
+        Vector3 BasePosition = SpawnBasis.Origin +
+                               (SpawnBasis.Forward * Mathf.Max(0f, DropForwardOffset)) +
+                               (SpawnBasis.Up * DropVerticalOffset);
+
+        Gizmos.color = Color.cyan;
+        Gizmos.DrawLine(SpawnBasis.Origin, SpawnBasis.Origin + (SpawnBasis.Forward * Mathf.Max(0.25f, DropForwardOffset + SpawnForwardStep)));
+        Gizmos.DrawWireSphere(SpawnBasis.Origin, 0.035f);
+
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawLine(BasePosition - (SpawnBasis.Right * Mathf.Max(0f, DropScatterRadius)), BasePosition + (SpawnBasis.Right * Mathf.Max(0f, DropScatterRadius)));
+        Gizmos.DrawLine(BasePosition - (SpawnBasis.Up * Mathf.Max(0f, DropVerticalScatterRadius)), BasePosition + (SpawnBasis.Up * Mathf.Max(0f, DropVerticalScatterRadius)));
+
+        int PreviewCount = Mathf.Max(1, DropSpawnPreviewCount);
+
+        for (int Index = 0; Index < PreviewCount; Index++)
+        {
+            Vector3 PreviewPosition = BasePosition + GetSpawnPatternOffset(Index, PreviewCount, 0, SpawnBasis);
+            Gizmos.color = Color.green;
+            Gizmos.DrawWireSphere(PreviewPosition, 0.045f);
+
+            if (DrawDropSpawnClearanceGizmos)
+            {
+                Gizmos.color = new Color(0f, 1f, 0f, 0.35f);
+                Gizmos.DrawWireSphere(PreviewPosition, Mathf.Max(0.05f, SpawnClearanceRadius));
+            }
         }
     }
 }

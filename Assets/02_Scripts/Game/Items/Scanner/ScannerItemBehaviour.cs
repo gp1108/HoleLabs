@@ -452,8 +452,8 @@ public sealed class ScannerItemBehaviour : EquippedItemBehaviour
         string MineralType = OreItemData.GetOreDefinition().GetDisplayName();
         float CreditValue = OreItemData.GetCreditValue();
         float LegacyResearchValue = 0f;
-        float Purity = OreItemData.GetPropertyValue(OrePropertyType.Purity, 0f);
-        float Size = OreItemData.GetPropertyValue(OrePropertyType.Size, 0f);
+        float Purity = OreItemData.GetPurityPercent();
+        float Size = OreItemData.GetSizeScale();
         float Weight = OreItemData.GetWeightValue();
 
         if (ScannerDisplayUI != null)

@@ -18,7 +18,7 @@ MonoBehaviour:
   Icon: {fileID: 21300000, guid: 4ca9e709a65faf543a1b376009b64e12, type: 3}
   CreditCost: 100
   OreRequirements:
-  - OreDefinition: {fileID: 11400000, guid: c09d25e1604b3cb4ba893048debb420b, type: 2}
+  - OreDefinition: {fileID: 11400000, guid: 4682a0330487613418910721629c656e, type: 2}
     Amount: 1
     RequireMinimumPurity: 1
     MinimumPurity: 0.2
@@ -28,18 +28,8 @@ MonoBehaviour:
     MinimumWeight: 0
     RequireMaximumWeight: 0
     MaximumWeight: 0
-  - OreDefinition: {fileID: 11400000, guid: c09d25e1604b3cb4ba893048debb420b, type: 2}
+  - OreDefinition: {fileID: 11400000, guid: 4682a0330487613418910721629c656e, type: 2}
     Amount: 1
-    RequireMinimumPurity: 1
-    MinimumPurity: 26
-    RequireMaximumPurity: 0
-    MaximumPurity: 0
-    RequireMinimumWeight: 0
-    MinimumWeight: 0
-    RequireMaximumWeight: 0
-    MaximumWeight: 0
-  - OreDefinition: {fileID: 11400000, guid: c09d25e1604b3cb4ba893048debb420b, type: 2}
-    Amount: 2
     RequireMinimumPurity: 1
     MinimumPurity: 26
     RequireMaximumPurity: 0
@@ -51,7 +41,7 @@ MonoBehaviour:
   RequiresFeatureFlag: 0
   RequiredFeatureFlagId: 
   Prerequisites: []
-  AppliedUpgradeDefinition: {fileID: 11400000, guid: 89f8db3be6ce2da4893852584163e19a, type: 2}
+  AppliedUpgradeDefinition: {fileID: 11400000, guid: d4f18eeb5f06b814cb6ce2202b7e05ae, type: 2}
   ApplyMode: 0
   TargetUpgradeLevel: 1
   UpgradeLevelIncrement: 1

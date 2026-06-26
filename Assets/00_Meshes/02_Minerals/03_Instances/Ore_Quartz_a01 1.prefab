@@ -272,10 +272,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OrePickup
   OreItemData:
     OreDefinition: {fileID: 0}
-    Properties: []
+    PurityPercent: 0
+    SizeScale: 0
     CreditValue: 0
     WeightValue: 0
+    HasBeenPurityProcessed: 0
+    Properties: []
   RuntimeRoot: {fileID: 0}
-  CachedRigidbody: {fileID: 0}
-  CachedColliders: []
+  ApplyOreSizeScale: 1
+  ScaleRoot: {fileID: 7344394972551229020}
+  MinimumAppliedSizeScale: 0.5
+  MaximumAppliedSizeScale: 2
+  DebugScaleLogs: 0
+  CachedRigidbody: {fileID: 1083138029182681754}
+  CachedColliders:
+  - {fileID: 5250354735046629101}
   ScannerInstanceId: 

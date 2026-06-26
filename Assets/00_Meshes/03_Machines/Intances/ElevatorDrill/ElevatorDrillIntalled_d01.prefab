@@ -221,7 +221,8 @@ MonoBehaviour:
   BaseMiningInterval: 0.75
   UseHighestDefinedMiningTier: 1
   FallbackMiningTier: 3
-  ExtractionQualityMultiplier: 1
+  PurityBonusPercentMin: 50
+  PurityBonusPercentMax: 100
   AllowElevatorOreSpawnAssist: 1
   UseUpgradeModifiedValues: 1
   DetectionRadiusStat: 52

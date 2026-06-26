@@ -64,29 +64,20 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
-    private sealed class OrePropertyValueData
-    {
-        [SerializeField] private OrePropertyType PropertyType;
-        [SerializeField] private float Value;
-
-        public OrePropertyType GetPropertyType() => PropertyType;
-        public float GetValue() => Value;
-
-        public OrePropertyValueData(OrePropertyType PropertyTypeValue, float ValueValue)
-        {
-            PropertyType = PropertyTypeValue;
-            Value = ValueValue;
-        }
-    }
-
-    [Serializable]
     private sealed class OreItemDataSaveData
     {
         [SerializeField] private string OreId;
+        [SerializeField] private float PurityPercent;
+        [SerializeField] private float SizeScale;
         [SerializeField] private float CreditValue;
         [SerializeField] private float WeightValue;
-        [SerializeField] private List<OrePropertyValueData> Properties = new();
+        [SerializeField] private bool HasBeenPurityProcessed;
 
+        /// <summary>
+        /// Creates a serializable payload from one runtime ore data object.
+        /// </summary>
+        /// <param name="RuntimeData">Runtime ore data to serialize.</param>
+        /// <returns>Serializable payload, or null when runtime data is invalid.</returns>
         public static OreItemDataSaveData FromRuntime(OreItemData RuntimeData)
         {
             if (RuntimeData == null || RuntimeData.GetOreDefinition() == null)
@@ -94,32 +85,22 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 return null;
             }
 
-            OreItemDataSaveData Result = new OreItemDataSaveData
+            return new OreItemDataSaveData
             {
                 OreId = RuntimeData.GetOreDefinition().GetOreId(),
+                PurityPercent = RuntimeData.GetPurityPercent(),
+                SizeScale = RuntimeData.GetSizeScale(),
                 CreditValue = RuntimeData.GetCreditValue(),
-                WeightValue = RuntimeData.GetWeightValue()
+                WeightValue = RuntimeData.GetWeightValue(),
+                HasBeenPurityProcessed = RuntimeData.GetHasBeenPurityProcessed()
             };
-
-            IReadOnlyList<OreItemData.OrePropertyValue> RuntimeProperties = RuntimeData.GetProperties();
-
-            for (int Index = 0; Index < RuntimeProperties.Count; Index++)
-            {
-                OreItemData.OrePropertyValue Property = RuntimeProperties[Index];
-
-                if (Property == null)
-                {
-                    continue;
-                }
-
-                Result.Properties.Add(new OrePropertyValueData(
-                    Property.GetPropertyType(),
-                    Property.GetValue()));
-            }
-
-            return Result;
         }
 
+        /// <summary>
+        /// Restores runtime ore data from this serializable payload.
+        /// </summary>
+        /// <param name="DefinitionsById">Ore definition lookup by stable ore id.</param>
+        /// <returns>Restored runtime ore data, or null when the definition cannot be resolved.</returns>
         public OreItemData ToRuntime(Dictionary<string, OreDefinition> DefinitionsById)
         {
             if (DefinitionsById == null || string.IsNullOrWhiteSpace(OreId))
@@ -133,21 +114,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
             }
 
             OreItemData Result = new OreItemData(Definition);
+            Result.SetPurityPercent(PurityPercent);
+            Result.SetSizeScale(SizeScale <= 0f ? 1f : SizeScale);
             Result.SetCreditValue(CreditValue);
             Result.SetWeightValue(WeightValue);
-
-            for (int Index = 0; Index < Properties.Count; Index++)
-            {
-                OrePropertyValueData Property = Properties[Index];
-
-                if (Property == null)
-                {
-                    continue;
-                }
-
-                Result.SetProperty(Property.GetPropertyType(), Property.GetValue());
-            }
-
+            Result.SetHasBeenPurityProcessed(HasBeenPurityProcessed);
             return Result;
         }
     }
@@ -503,7 +474,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     [Serializable]
-    private sealed class OreSpawnPointState
+    private sealed class SceneOreVeinState
     {
         [SerializeField] private string SceneId;
         [SerializeField] private bool IsActive;
@@ -512,7 +483,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private int MiningDurabilityRemaining;
         [SerializeField] private float RespawnTimerRemaining;
 
-        public OreSpawnPointState(
+        public SceneOreVeinState(
             string SceneIdValue,
             bool IsActiveValue,
             string OreIdValue,
@@ -710,7 +681,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         [SerializeField] private List<RuntimeWorldItemState> RuntimeWorldItems = new();
         [SerializeField] private List<MoneyPickupState> MoneyPickups = new();
         [SerializeField] private List<OrePickupState> OrePickups = new();
-        [SerializeField] private List<OreSpawnPointState> OreSpawnPoints = new();
+        [SerializeField] private List<SceneOreVeinState> SceneOreVeins = new();
         [SerializeField] private List<WallDrillInstallationSpotState> WallDrillInstallationSpots = new();
         [SerializeField] private List<MineralElevatorHubState> MineralElevatorHubs = new();
         [SerializeField] private List<MineralElevatorAccessPointState> MineralElevatorAccessPoints = new();
@@ -774,8 +745,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
         public List<OrePickupState> GetOrePickups() => OrePickups;
         public void SetOrePickups(List<OrePickupState> Value) => OrePickups = Value ?? new List<OrePickupState>();
 
-        public List<OreSpawnPointState> GetOreSpawnPoints() => OreSpawnPoints;
-        public void SetOreSpawnPoints(List<OreSpawnPointState> Value) => OreSpawnPoints = Value ?? new List<OreSpawnPointState>();
+        public List<SceneOreVeinState> GetSceneOreVeins() => SceneOreVeins;
+        public void SetSceneOreVeins(List<SceneOreVeinState> Value) => SceneOreVeins = Value ?? new List<SceneOreVeinState>();
 
 
     }
@@ -848,7 +819,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
     private readonly Dictionary<string, ItemDefinition> ItemDefinitionsById = new();
     private readonly Dictionary<string, OreDefinition> OreDefinitionsById = new();
     private readonly Dictionary<string, ScenePlacedWorldItemPersistence> SceneWorldItemsById = new();
-    private readonly Dictionary<string, OreSpawnPoint> OreSpawnPointsById = new();
+    private readonly Dictionary<string, OreVein> OreVeinsById = new();
     private readonly Dictionary<string, WallDrillInstallationSpot> WallDrillInstallationSpotsById = new();
     private readonly Dictionary<string, MineralElevatorHub> MineralElevatorHubsById = new();
     private readonly Dictionary<string, MineralElevatorAccessPoint> MineralElevatorAccessPointsById = new();
@@ -1322,7 +1293,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         Data.SetRuntimeWorldItems(CaptureRuntimeWorldItems());
         Data.SetMoneyPickups(CaptureMoneyPickups());
         Data.SetOrePickups(CaptureOrePickups());
-        Data.SetOreSpawnPoints(CaptureOreSpawnPoints());
+        Data.SetSceneOreVeins(CaptureSceneOreVeins());
         Data.SetWallDrillInstallationSpots(CaptureWallDrillInstallationSpots());
         Data.SetMineralElevatorHubs(CaptureMineralElevatorHubs());
         Data.SetMineralElevatorAccessPoints(CaptureMineralElevatorAccessPoints());
@@ -1372,7 +1343,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
             RotationSnapLever.SetSnapIndexWithoutNotify(Data.GetElevator().GetRotationLeverIndex());
         }
 
-        RestoreOreSpawnPoints(Data.GetOreSpawnPoints());
+        RestoreSceneOreVeins(Data.GetSceneOreVeins());
         RestoreSceneWorldItems(Data.GetSceneWorldItems());
 
         if (PlayerController != null && Data.GetPlayer() != null)
@@ -1484,7 +1455,7 @@ public sealed class GameSaveDebugController : MonoBehaviour
         ItemDefinitionsById.Clear();
         OreDefinitionsById.Clear();
         SceneWorldItemsById.Clear();
-        OreSpawnPointsById.Clear();
+        OreVeinsById.Clear();
         WallDrillInstallationSpotsById.Clear();
         MineralElevatorHubsById.Clear();
         MineralElevatorAccessPointsById.Clear();
@@ -1544,27 +1515,41 @@ public sealed class GameSaveDebugController : MonoBehaviour
             SceneWorldItemsById[SaveId.GetId()] = SceneItem;
         }
 
-        OreSpawnPoint[] SpawnPoints = FindObjectsByType<OreSpawnPoint>(
+        OreVein[] SceneAuthoredVeins = FindObjectsByType<OreVein>(
             FindObjectsInactive.Include,
             FindObjectsSortMode.None);
 
-        for (int Index = 0; Index < SpawnPoints.Length; Index++)
+        for (int Index = 0; Index < SceneAuthoredVeins.Length; Index++)
         {
-            OreSpawnPoint SpawnPoint = SpawnPoints[Index];
+            OreVein SceneAuthoredVein = SceneAuthoredVeins[Index];
 
-            if (SpawnPoint == null)
+            if (SceneAuthoredVein == null)
             {
                 continue;
             }
 
-            SceneSaveId SaveId = SpawnPoint.GetComponent<SceneSaveId>();
+            SceneSaveId DirectSaveId = SceneAuthoredVein.GetComponent<SceneSaveId>();
+            SceneSaveId SaveId = DirectSaveId != null ? DirectSaveId : SceneAuthoredVein.GetComponentInParent<SceneSaveId>();
 
             if (SaveId == null || string.IsNullOrWhiteSpace(SaveId.GetId()))
             {
                 continue;
             }
 
-            OreSpawnPointsById[SaveId.GetId()] = SpawnPoint;
+            string SceneAuthoredVeinSceneId = SaveId.GetId();
+
+            if (OreVeinsById.TryGetValue(SceneAuthoredVeinSceneId, out OreVein ExistingSceneAuthoredVein) &&
+                ExistingSceneAuthoredVein != null && ExistingSceneAuthoredVein != SceneAuthoredVein)
+            {
+                Debug.LogError(
+                    "[GameSaveDebugController] Duplicate scene-authored OreVein SceneSaveId detected: " + SceneAuthoredVeinSceneId +
+                    " | Existing: " + ExistingSceneAuthoredVein.name +
+                    " | Duplicate: " + SceneAuthoredVein.name,
+                    this);
+                continue;
+            }
+
+            OreVeinsById[SceneAuthoredVeinSceneId] = SceneAuthoredVein;
         }
 
         WallDrillInstallationSpot[] WallDrillSpots = FindObjectsByType<WallDrillInstallationSpot>(
@@ -1889,26 +1874,27 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
-    /// Captures every ore spawn point state in the scene.
+    /// Captures every scene-authored ore vein state in the scene.
     /// </summary>
-    private List<OreSpawnPointState> CaptureOreSpawnPoints()
+    private List<SceneOreVeinState> CaptureSceneOreVeins()
     {
-        List<OreSpawnPointState> Result = new List<OreSpawnPointState>();
+        List<SceneOreVeinState> Result = new List<SceneOreVeinState>();
 
-        foreach (KeyValuePair<string, OreSpawnPoint> Pair in OreSpawnPointsById)
+        foreach (KeyValuePair<string, OreVein> Pair in OreVeinsById)
         {
-            OreSpawnPoint SpawnPoint = Pair.Value;
+            OreVein SceneVein = Pair.Value;
 
-            if (SpawnPoint == null)
+            if (SceneVein == null)
             {
                 continue;
             }
 
-            OreVein CurrentVein = SpawnPoint.GetCurrentVein();
+            SceneVein.EnsureInitialized();
+            OreDefinition Definition = SceneVein.GetOreDefinition();
 
-            if (!SpawnPoint.GetIsActive() || CurrentVein == null || CurrentVein.GetOreDefinition() == null)
+            if (Definition == null)
             {
-                Result.Add(new OreSpawnPointState(
+                Result.Add(new SceneOreVeinState(
                     Pair.Key,
                     false,
                     string.Empty,
@@ -1918,13 +1904,13 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            Result.Add(new OreSpawnPointState(
+            Result.Add(new SceneOreVeinState(
                 Pair.Key,
                 true,
-                CurrentVein.GetOreDefinition().GetOreId(),
-                CurrentVein.GetIsGrowing(),
-                CurrentVein.GetCurrentMiningDurabilityRemaining(),
-                CurrentVein.GetCurrentRespawnTimer()));
+                Definition.GetOreId(),
+                SceneVein.GetIsGrowing(),
+                SceneVein.GetCurrentMiningDurabilityRemaining(),
+                SceneVein.GetCurrentRespawnTimer()));
         }
 
         return Result;
@@ -2167,19 +2153,11 @@ public sealed class GameSaveDebugController : MonoBehaviour
     }
 
     /// <summary>
-    /// Restores every ore spawn point in the scene from saved state.
-    /// Saved points keep their damaged or regrowing runtime state, while points missing from the save return to their configured deterministic defaults.
+    /// Restores every scene-authored ore vein from saved state.
+    /// Saved veins keep damage and regrowth state, while newly added veins remain on their authored default state.
     /// </summary>
-    private void RestoreOreSpawnPoints(List<OreSpawnPointState> States)
+    private void RestoreSceneOreVeins(List<SceneOreVeinState> States)
     {
-        foreach (KeyValuePair<string, OreSpawnPoint> Pair in OreSpawnPointsById)
-        {
-            if (Pair.Value != null)
-            {
-                Pair.Value.ClearPoint();
-            }
-        }
-
         if (OreRuntimeService == null)
         {
             return;
@@ -2191,15 +2169,19 @@ public sealed class GameSaveDebugController : MonoBehaviour
         {
             for (int Index = 0; Index < States.Count; Index++)
             {
-                OreSpawnPointState State = States[Index];
+                SceneOreVeinState State = States[Index];
 
                 if (State == null || string.IsNullOrWhiteSpace(State.GetSceneId()))
                 {
                     continue;
                 }
 
-                if (!OreSpawnPointsById.TryGetValue(State.GetSceneId(), out OreSpawnPoint SpawnPoint) || SpawnPoint == null)
+                if (!OreVeinsById.TryGetValue(State.GetSceneId(), out OreVein SceneVein) || SceneVein == null)
                 {
+                    Debug.LogWarning(
+                        "[GameSaveDebugController] Saved scene-authored OreVein state could not be matched to any current SceneSaveId: " +
+                        State.GetSceneId(),
+                        this);
                     continue;
                 }
 
@@ -2207,46 +2189,39 @@ public sealed class GameSaveDebugController : MonoBehaviour
 
                 if (!State.GetIsActive() || string.IsNullOrWhiteSpace(State.GetOreId()))
                 {
-                    SpawnPoint.ClearPoint();
+                    SceneVein.EnsureInitialized();
                     continue;
                 }
+
+                SceneVein.EnsureInitialized();
 
                 if (!OreDefinitionsById.TryGetValue(State.GetOreId(), out OreDefinition Definition) || Definition == null)
                 {
-                    SpawnPoint.ClearPoint();
                     continue;
                 }
 
-                bool WasSpawned = SpawnPoint.SpawnVein(Definition, OreRuntimeService);
-
-                if (!WasSpawned)
+                if (SceneVein.GetOreDefinition() != Definition)
                 {
-                    continue;
+                    Log("Scene-authored OreVein kept its authored definition while restoring saved runtime state. SceneId: " + State.GetSceneId());
                 }
 
-                OreVein CurrentVein = SpawnPoint.GetCurrentVein();
-
-                if (CurrentVein != null)
-                {
-                    CurrentVein.ApplySavedRuntimeState(
-                        State.GetIsGrowing(),
-                        State.GetMiningDurabilityRemaining(),
-                        State.GetRespawnTimerRemaining());
-                }
+                SceneVein.ApplySavedRuntimeState(
+                    State.GetIsGrowing(),
+                    State.GetMiningDurabilityRemaining(),
+                    State.GetRespawnTimerRemaining());
             }
         }
 
-        RestoreMissingOreSpawnPointsToConfiguredDefaults(RestoredSceneIds);
+        RestoreMissingSceneOreVeinsToDefaults(RestoredSceneIds);
     }
 
     /// <summary>
-    /// Restores spawn points missing from the save data to their configured deterministic defaults.
-    /// This protects old saves and newly added level-design points from staying empty after load.
+    /// Initializes scene-authored veins missing from the save data to their authored default state.
     /// </summary>
-    /// <param name="RestoredSceneIds">Scene ids already restored from save, or null when no save states existed.</param>
-    private void RestoreMissingOreSpawnPointsToConfiguredDefaults(HashSet<string> RestoredSceneIds)
+    /// <param name="RestoredSceneIds">Scene ids already restored from save.</param>
+    private void RestoreMissingSceneOreVeinsToDefaults(HashSet<string> RestoredSceneIds)
     {
-        foreach (KeyValuePair<string, OreSpawnPoint> Pair in OreSpawnPointsById)
+        foreach (KeyValuePair<string, OreVein> Pair in OreVeinsById)
         {
             if (Pair.Value == null)
             {
@@ -2258,7 +2233,8 @@ public sealed class GameSaveDebugController : MonoBehaviour
                 continue;
             }
 
-            Pair.Value.SpawnAssignedVein(OreRuntimeService);
+            Pair.Value.EnsureInitialized();
+            Log("Scene-authored OreVein initialized from authored defaults because it was missing from save data. SceneId: " + Pair.Key + " | Object: " + Pair.Value.name);
         }
     }
 
