@@ -260,6 +260,39 @@ public sealed class OreRuntimeService : MonoBehaviour
         }
     }
 
+
+
+    /// <summary>
+    /// Applies a flat purity gain to an existing runtime ore payload, marks it as purity processed when requested and recalculates derived value and weight.
+    /// Purity is clamped to the valid 0..100 percent range.
+    /// </summary>
+    /// <param name="OreItemData">Runtime ore payload to modify.</param>
+    /// <param name="PurityGainPercent">Flat purity percent gained by the ore.</param>
+    /// <param name="MarkAsPurityProcessed">If true, the ore is marked as processed by the purity machine.</param>
+    /// <returns>Actual purity percent gained after clamping.</returns>
+    public float ApplyPurityMachineGain(OreItemData OreItemData, float PurityGainPercent, bool MarkAsPurityProcessed)
+    {
+        if (OreItemData == null || OreItemData.GetOreDefinition() == null)
+        {
+            return 0f;
+        }
+
+        float PreviousPurityPercent = OreItemData.GetPurityPercent();
+        float SafePurityGainPercent = Mathf.Max(0f, PurityGainPercent);
+        OreItemData.SetPurityPercent(PreviousPurityPercent + SafePurityGainPercent);
+
+        if (MarkAsPurityProcessed)
+        {
+            OreItemData.SetHasBeenPurityProcessed(true);
+        }
+
+        ResolveOreValues(OreItemData);
+
+        float AppliedPurityGainPercent = OreItemData.GetPurityPercent() - PreviousPurityPercent;
+        Log("Applied purity machine gain. Previous=" + PreviousPurityPercent.ToString("0.##") + "% | Gain=" + SafePurityGainPercent.ToString("0.##") + "% | Applied=" + AppliedPurityGainPercent.ToString("0.##") + "% | Final=" + OreItemData.GetPurityPercent().ToString("0.##") + "%");
+        return AppliedPurityGainPercent;
+    }
+
     /// <summary>
     /// Spawns a physical ore pickup carrying the provided runtime ore payload.
     /// </summary>

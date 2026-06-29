@@ -42,7 +42,11 @@ public enum UpgradeStatType
     // Elevator Drill
     ElevatorDrillMiningDamage = 50,
     ElevatorDrillMiningInterval = 51,
-    ElevatorDrillRange = 52
+    ElevatorDrillRange = 52,
+
+    // Purity Machine
+    PurityMachineConversionRatio = 60,
+    PurityMachineSacrificeCapacity = 61
 }
 
 /// <summary>

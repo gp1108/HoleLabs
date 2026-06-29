@@ -33,6 +33,19 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     [Tooltip("If true, scale operations are logged for debugging pool reuse and save/load restoration.")]
     [SerializeField] private bool DebugScaleLogs = false;
 
+    [Header("Purity Machine Visual")]
+    [Tooltip("Optional visual root enabled only when this ore has already been processed by the purity machine.")]
+    [SerializeField] private GameObject PurityProcessedVisualRoot;
+
+    [Tooltip("If true, the processed visual root is enabled or disabled according to the ore processed state.")]
+    [SerializeField] private bool TogglePurityProcessedVisualRoot = true;
+
+    [Tooltip("Optional renderers enabled only when this ore has already been processed by the purity machine.")]
+    [SerializeField] private Renderer[] PurityProcessedRenderers = new Renderer[0];
+
+    [Tooltip("If true, processed renderers are enabled or disabled according to the ore processed state.")]
+    [SerializeField] private bool TogglePurityProcessedRenderers = true;
+
     [Header("Cached Components")]
     [Tooltip("Optional rigidbody reset when the pickup is reused by the pool.")]
     [SerializeField] private Rigidbody CachedRigidbody;
@@ -97,6 +110,7 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         }
 
         ApplyCurrentOreSizeScale();
+        RefreshPurityProcessedVisualState();
         RuntimeWorldObjectRegistry.RegisterOrePickup(this);
     }
 
@@ -148,6 +162,7 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         ScannerInstanceId = string.Empty;
         OreItemData = null;
         RuntimeRootValue.name = SourcePrefab != null ? SourcePrefab.name + "_Pooled" : "OrePickup_Pooled";
+        RefreshPurityProcessedVisualState();
         RestoreBaseScale();
 
         SetContainedCarryablesDisableResetSuppressed(true);
@@ -211,6 +226,37 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
         }
 
         ScannerInstanceId = ScannerInstanceIdValue;
+    }
+
+
+
+    /// <summary>
+    /// Refreshes optional processed visuals from the current runtime ore data.
+    /// The purity machine calls this after changing the processed state at runtime.
+    /// </summary>
+    public void RefreshPurityProcessedVisualState()
+    {
+        bool IsProcessed = OreItemData != null && OreItemData.GetHasBeenPurityProcessed();
+
+        if (TogglePurityProcessedVisualRoot && PurityProcessedVisualRoot != null)
+        {
+            PurityProcessedVisualRoot.SetActive(IsProcessed);
+        }
+
+        if (!TogglePurityProcessedRenderers || PurityProcessedRenderers == null)
+        {
+            return;
+        }
+
+        for (int Index = 0; Index < PurityProcessedRenderers.Length; Index++)
+        {
+            if (PurityProcessedRenderers[Index] == null)
+            {
+                continue;
+            }
+
+            PurityProcessedRenderers[Index].enabled = IsProcessed;
+        }
     }
 
     /// <summary>
@@ -453,6 +499,15 @@ public sealed class OrePickup : MonoBehaviour, IWeightProvider
     private void DebugApplyCurrentOreSizeScale()
     {
         ApplyCurrentOreSizeScale();
+    }
+
+    /// <summary>
+    /// Debug helper that refreshes optional processed visuals from the current ore processed state.
+    /// </summary>
+    [ContextMenu("Refresh Purity Processed Visual State")]
+    private void DebugRefreshPurityProcessedVisualState()
+    {
+        RefreshPurityProcessedVisualState();
     }
 
     /// <summary>
