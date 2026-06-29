@@ -15,7 +15,6 @@ MonoBehaviour:
   OreId: Ore.Quartz
   DisplayName: Quartz
   Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
-  LegacyVeinPrefab: {fileID: 8730402574253964879, guid: 9f38f1dcc70da804281617434d333adb, type: 3}
   DroppedOrePrefab: {fileID: 7650305570857503147, guid: 33979f33a7e0bce45a6e15a4f092af5a, type: 3}
   DroppedOreVisualPrefabs: []
   RequiredMiningTier: 1
@@ -24,7 +23,7 @@ MonoBehaviour:
   BaseDropCountMin: 2
   BaseDropCountMax: 8
   MinPurityPercent: 0
-  MaxPurityPercent: 100
+  MaxPurityPercent: 20
   MinSizeScale: 0.85
   MaxSizeScale: 1.25
   MinCreditValue: 5

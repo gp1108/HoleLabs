@@ -24,7 +24,8 @@ MonoBehaviour:
   AutoEquipWhenSelected: 1
   MiningDamage: 10
   MiningTier: 2
-  ExtractionQualityMultiplier: 4
+  PurityBonusPercentMin: 20
+  PurityBonusPercentMax: 30
   UsesDurability: 1
   DurabilityCostPerAcceptedHit: 1
   BreaksAtZeroDurability: 1
