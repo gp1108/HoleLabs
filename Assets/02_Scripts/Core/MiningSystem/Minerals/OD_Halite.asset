@@ -12,25 +12,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6979692974f2b1740b6862861ad5e422, type: 3}
   m_Name: OD_Halite
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
-  OreId: Ore.Quartz
-  DisplayName: Quartz
+  OreId: Ore.Halite
+  DisplayName: Halita
   Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
-  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 33979f33a7e0bce45a6e15a4f092af5a, type: 3}
+  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 7e175616ab1a7104cbc3bff06ca8aeff, type: 3}
   DroppedOreVisualPrefabs: []
   RequiredMiningTier: 1
-  BaseMiningDurability: 4
-  BaseRespawnTime: 10
-  BaseDropCountMin: 2
-  BaseDropCountMax: 8
-  MinPurityPercent: 0
-  MaxPurityPercent: 20
+  BaseMiningDurability: 11
+  BaseRespawnTime: 20
+  BaseDropCountMin: 3
+  BaseDropCountMax: 5
+  MinPurityPercent: 5
+  MaxPurityPercent: 30
   MinSizeScale: 0.85
   MaxSizeScale: 1.25
-  MinCreditValue: 5
-  MaxCreditValue: 10
+  MinCreditValue: 2
+  MaxCreditValue: 2.5
   PurityCreditContribution: 0.5
   SizeCreditContribution: 0.5
-  MinWeightValue: 10
-  MaxWeightValue: 20
+  MinWeightValue: 0.5
+  MaxWeightValue: 0.65
   PurityWeightContribution: 0.5
   SizeWeightContribution: 0.5

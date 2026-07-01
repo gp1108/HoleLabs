@@ -13,25 +13,24 @@ MonoBehaviour:
   m_Name: OD_Iron
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
   OreId: Ore.Iron
-  DisplayName: Iron
+  DisplayName: Hierro
   Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
-  VeinPrefab: {fileID: 8730402574253964879, guid: 6d71366a23de6dc419f6765cf1be88e9, type: 3}
-  DroppedOrePrefab: {fileID: 8732322352325557543, guid: b232062c340ba0743b97382b96ef9142, type: 3}
+  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 52052faf5f6c9584c876640adaa27627, type: 3}
   DroppedOreVisualPrefabs: []
   RequiredMiningTier: 1
-  BaseMiningDurability: 4
-  BaseRespawnTime: 10
-  BaseDropCountMin: 10
-  BaseDropCountMax: 20
-  BaseWeightValue: 14
-  BaseCreditValueMin: 5
-  BaseCreditValueMax: 10
-  PropertyRanges:
-  - PropertyType: 1
-    MinValue: 0.9
-    MaxValue: 1.2
-    AffectedByUpgrades: 1
-  - PropertyType: 2
-    MinValue: 0.9
-    MaxValue: 1.2
-    AffectedByUpgrades: 1
+  BaseMiningDurability: 6
+  BaseRespawnTime: 15
+  BaseDropCountMin: 1
+  BaseDropCountMax: 2
+  MinPurityPercent: 5
+  MaxPurityPercent: 25
+  MinSizeScale: 0.85
+  MaxSizeScale: 1.25
+  MinCreditValue: 6
+  MaxCreditValue: 7.5
+  PurityCreditContribution: 0.5
+  SizeCreditContribution: 0.5
+  MinWeightValue: 4
+  MaxWeightValue: 5
+  PurityWeightContribution: 0.5
+  SizeWeightContribution: 0.5

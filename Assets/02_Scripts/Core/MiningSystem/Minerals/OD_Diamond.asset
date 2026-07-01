@@ -12,25 +12,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6979692974f2b1740b6862861ad5e422, type: 3}
   m_Name: OD_Diamond
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
-  OreId: Ore.Quartz
-  DisplayName: Quartz
+  OreId: Ore.Diamond
+  DisplayName: Diamante
   Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
-  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 33979f33a7e0bce45a6e15a4f092af5a, type: 3}
+  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 16c750a25fff08b4b88c471558a6dec6, type: 3}
   DroppedOreVisualPrefabs: []
-  RequiredMiningTier: 1
-  BaseMiningDurability: 4
-  BaseRespawnTime: 10
-  BaseDropCountMin: 2
-  BaseDropCountMax: 8
-  MinPurityPercent: 0
-  MaxPurityPercent: 20
+  RequiredMiningTier: 3
+  BaseMiningDurability: 112
+  BaseRespawnTime: 120
+  BaseDropCountMin: 1
+  BaseDropCountMax: 1
+  MinPurityPercent: 35
+  MaxPurityPercent: 90
   MinSizeScale: 0.85
   MaxSizeScale: 1.25
-  MinCreditValue: 5
-  MaxCreditValue: 10
+  MinCreditValue: 200
+  MaxCreditValue: 250
   PurityCreditContribution: 0.5
   SizeCreditContribution: 0.5
-  MinWeightValue: 10
-  MaxWeightValue: 20
+  MinWeightValue: 13
+  MaxWeightValue: 16.25
   PurityWeightContribution: 0.5
   SizeWeightContribution: 0.5

@@ -26,7 +26,6 @@ Material:
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
   - DR_CEL_EXTRA_ON
-  - DR_ENABLE_LIGHTMAP_DIR
   - DR_OUTLINE_ON
   - DR_OUTLINE_SMOOTH_NORMALS
   - DR_RIM_ON
@@ -151,8 +150,8 @@ Material:
     - _DstBlendAlpha: 0
     - _Em_Control: 5.25
     - _Emissive: 0
-    - _FlatRimEdgeSmoothness: 0.18
-    - _FlatRimLightAlign: 0
+    - _FlatRimEdgeSmoothness: 0
+    - _FlatRimLightAlign: 0.5
     - _FlatRimSize: 0.28
     - _FlatSpecularEdgeSmoothness: 0.54
     - _FlatSpecularSize: 0

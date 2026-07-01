@@ -13,24 +13,24 @@ MonoBehaviour:
   m_Name: OD_Quartz
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
   OreId: Ore.Quartz
-  DisplayName: Quartz
+  DisplayName: Cuarzo
   Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
   DroppedOrePrefab: {fileID: 7650305570857503147, guid: 33979f33a7e0bce45a6e15a4f092af5a, type: 3}
   DroppedOreVisualPrefabs: []
   RequiredMiningTier: 1
-  BaseMiningDurability: 4
+  BaseMiningDurability: 3
   BaseRespawnTime: 10
-  BaseDropCountMin: 2
-  BaseDropCountMax: 8
+  BaseDropCountMin: 1
+  BaseDropCountMax: 1
   MinPurityPercent: 0
   MaxPurityPercent: 20
   MinSizeScale: 0.85
   MaxSizeScale: 1.25
   MinCreditValue: 5
-  MaxCreditValue: 10
+  MaxCreditValue: 6.25
   PurityCreditContribution: 0.5
   SizeCreditContribution: 0.5
-  MinWeightValue: 10
-  MaxWeightValue: 20
+  MinWeightValue: 2
+  MaxWeightValue: 2.5
   PurityWeightContribution: 0.5
   SizeWeightContribution: 0.5

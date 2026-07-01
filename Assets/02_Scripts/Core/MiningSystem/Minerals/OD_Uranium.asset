@@ -12,25 +12,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6979692974f2b1740b6862861ad5e422, type: 3}
   m_Name: OD_Uranium
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
-  OreId: Ore.Quartz
-  DisplayName: Quartz
+  OreId: Ore.Uranium
+  DisplayName: Uranio
   Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
-  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 33979f33a7e0bce45a6e15a4f092af5a, type: 3}
+  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 3ad5b44f9ff9b564686e512b41b6cd49, type: 3}
   DroppedOreVisualPrefabs: []
-  RequiredMiningTier: 1
-  BaseMiningDurability: 4
-  BaseRespawnTime: 10
-  BaseDropCountMin: 2
-  BaseDropCountMax: 8
-  MinPurityPercent: 0
-  MaxPurityPercent: 20
+  RequiredMiningTier: 3
+  BaseMiningDurability: 72
+  BaseRespawnTime: 75
+  BaseDropCountMin: 4
+  BaseDropCountMax: 7
+  MinPurityPercent: 20
+  MaxPurityPercent: 60
   MinSizeScale: 0.85
   MaxSizeScale: 1.25
-  MinCreditValue: 5
-  MaxCreditValue: 10
+  MinCreditValue: 15
+  MaxCreditValue: 18.75
   PurityCreditContribution: 0.5
   SizeCreditContribution: 0.5
-  MinWeightValue: 10
-  MaxWeightValue: 20
+  MinWeightValue: 9
+  MaxWeightValue: 11.25
   PurityWeightContribution: 0.5
   SizeWeightContribution: 0.5

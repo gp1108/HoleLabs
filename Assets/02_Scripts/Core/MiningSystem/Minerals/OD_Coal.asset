@@ -13,25 +13,24 @@ MonoBehaviour:
   m_Name: OD_Coal
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
   OreId: Ore.Coal
-  DisplayName: Coal
+  DisplayName: "Carb\xF3n"
   Icon: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
-  VeinPrefab: {fileID: 3375198301939659550, guid: c06e1715c66ad7042a0da421b692dea7, type: 3}
-  DroppedOrePrefab: {fileID: 7650305570857503147, guid: d270b648a76e000409c11f4e057be77b, type: 3}
+  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 9b64ffd110e8aa947bc0a621a261c6c6, type: 3}
   DroppedOreVisualPrefabs: []
   RequiredMiningTier: 1
-  BaseMiningDurability: 2
-  BaseRespawnTime: 10
+  BaseMiningDurability: 8
+  BaseRespawnTime: 16
   BaseDropCountMin: 1
-  BaseDropCountMax: 2
-  BaseWeightValue: 8
-  BaseCreditValueMin: 3
-  BaseCreditValueMax: 6
-  PropertyRanges:
-  - PropertyType: 1
-    MinValue: 3
-    MaxValue: 10
-    AffectedByUpgrades: 1
-  - PropertyType: 2
-    MinValue: 0.9
-    MaxValue: 1.2
-    AffectedByUpgrades: 1
+  BaseDropCountMax: 3
+  MinPurityPercent: 5
+  MaxPurityPercent: 25
+  MinSizeScale: 0.85
+  MaxSizeScale: 1.25
+  MinCreditValue: 4.5
+  MaxCreditValue: 5.6
+  PurityCreditContribution: 0.5
+  SizeCreditContribution: 0.5
+  MinWeightValue: 3
+  MaxWeightValue: 3.75
+  PurityWeightContribution: 0.5
+  SizeWeightContribution: 0.5

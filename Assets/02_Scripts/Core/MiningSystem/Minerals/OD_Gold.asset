@@ -13,25 +13,24 @@ MonoBehaviour:
   m_Name: OD_Gold
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
   OreId: Ore.Gold
-  DisplayName: Gold
+  DisplayName: Oro
   Icon: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
-  VeinPrefab: {fileID: 8622291342529352686, guid: 2087dcaab6f128149bedefa7b415c935, type: 3}
-  DroppedOrePrefab: {fileID: 7046480720709691670, guid: 1b5a5d4b05379fb49840300b5eb2bb6e, type: 3}
+  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 5209fd45f1a50404a9eb9c6dba431b05, type: 3}
   DroppedOreVisualPrefabs: []
   RequiredMiningTier: 2
-  BaseMiningDurability: 12
-  BaseRespawnTime: 10
+  BaseMiningDurability: 52
+  BaseRespawnTime: 55
   BaseDropCountMin: 1
-  BaseDropCountMax: 2
-  BaseWeightValue: 15
-  BaseCreditValueMin: 15
-  BaseCreditValueMax: 30
-  PropertyRanges:
-  - PropertyType: 1
-    MinValue: 0.95
-    MaxValue: 1.3
-    AffectedByUpgrades: 1
-  - PropertyType: 2
-    MinValue: 0.8
-    MaxValue: 1.1
-    AffectedByUpgrades: 1
+  BaseDropCountMax: 3
+  MinPurityPercent: 18
+  MaxPurityPercent: 60
+  MinSizeScale: 0.85
+  MaxSizeScale: 1.25
+  MinCreditValue: 23
+  MaxCreditValue: 28.75
+  PurityCreditContribution: 0.5
+  SizeCreditContribution: 0.5
+  MinWeightValue: 10
+  MaxWeightValue: 12.5
+  PurityWeightContribution: 0.5
+  SizeWeightContribution: 0.5

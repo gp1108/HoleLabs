@@ -198,7 +198,7 @@ MonoBehaviour:
   VeinSizeCategory: 1
   UseVeinSizeDropProfile: 0
   SizeProfileScaleRoot: {fileID: 8282133489352527078}
-  ApplySizeProfileScaleOnValidate: 0
+  ApplySizeProfileScaleOnValidate: 1
   SmallVeinProfile:
     ProfileLabel: Small
     VeinVisualScaleMultiplier: 0.5

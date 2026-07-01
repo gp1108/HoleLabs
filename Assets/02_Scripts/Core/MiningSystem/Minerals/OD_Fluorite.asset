@@ -12,25 +12,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6979692974f2b1740b6862861ad5e422, type: 3}
   m_Name: OD_Fluorite
   m_EditorClassIdentifier: Assembly-CSharp::OreDefinition
-  OreId: Ore.Quartz
-  DisplayName: Quartz
+  OreId: Ore.Fluorite
+  DisplayName: Fluorita
   Icon: {fileID: 10915, guid: 0000000000000000f000000000000000, type: 0}
-  DroppedOrePrefab: {fileID: 7650305570857503147, guid: 33979f33a7e0bce45a6e15a4f092af5a, type: 3}
+  DroppedOrePrefab: {fileID: 7650305570857503147, guid: c76451ac2536dfe4e8563e0effea3464, type: 3}
   DroppedOreVisualPrefabs: []
-  RequiredMiningTier: 1
-  BaseMiningDurability: 4
-  BaseRespawnTime: 10
-  BaseDropCountMin: 2
-  BaseDropCountMax: 8
-  MinPurityPercent: 0
-  MaxPurityPercent: 20
+  RequiredMiningTier: 2
+  BaseMiningDurability: 22
+  BaseRespawnTime: 30
+  BaseDropCountMin: 1
+  BaseDropCountMax: 3
+  MinPurityPercent: 10
+  MaxPurityPercent: 42
   MinSizeScale: 0.85
   MaxSizeScale: 1.25
-  MinCreditValue: 5
-  MaxCreditValue: 10
+  MinCreditValue: 12
+  MaxCreditValue: 15
   PurityCreditContribution: 0.5
   SizeCreditContribution: 0.5
-  MinWeightValue: 10
-  MaxWeightValue: 20
+  MinWeightValue: 4
+  MaxWeightValue: 5
   PurityWeightContribution: 0.5
   SizeWeightContribution: 0.5

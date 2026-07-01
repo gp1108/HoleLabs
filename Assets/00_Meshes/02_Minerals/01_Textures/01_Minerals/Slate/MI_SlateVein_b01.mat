@@ -20,7 +20,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: MI_PizarraDrop_b01
+  m_Name: MI_SlateVein_b01
   m_Shader: {fileID: 4800000, guid: bee44b4a58655ee4cbff107302a3e131, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -214,7 +214,7 @@ Material:
     - _DetailMapColor: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 1, g: 1, b: 1, a: 1}
     - _FlatRimColor: {r: 0.41568628, g: 0.41568628, b: 0.41568628, a: 1}
-    - _FlatSpecularColor: {r: 4.287021, g: 4.287021, b: 4.287021, a: 1}
+    - _FlatSpecularColor: {r: 1.2337718, g: 1.2337718, b: 1.2337718, a: 1}
     - _LightmapDirection: {r: 0, g: 1, b: 0, a: 0}
     - _OutlineColor: {r: 0, g: 0, b: 0, a: 1}
     - _Prueba: {r: 1, g: 1, b: 1, a: 0}
