@@ -1,0 +1,198 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6eb42dc3f24af6942a7780fadab9f207, type: 3}
+  m_Name: FP_Turquoise
+  m_EditorClassIdentifier: Assembly-CSharp::GameFeedbackProfile
+  Events:
+  - EventId: Ore.Hit
+    Enabled: 1
+    ParticlePrefabs: []
+    ParticleSelectionMode: 0
+    ParticlePositionOffset: {x: 0, y: 0, z: 0}
+    AlignParticlesToSurfaceNormal: 0
+    ParentParticlesToContextParent: 0
+    ParticleDestroyDelay: 0
+    VisualEffectPrefabs:
+    - {fileID: 6352997674844084943, guid: e96f490e623b8634f85f326a4a9f716c, type: 3}
+    VisualEffectSelectionMode: 0
+    VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
+    AlignVisualEffectsToSurfaceNormal: 0
+    ParentVisualEffectsToContextParent: 0
+    ReinitializeVisualEffectsBeforePlay: 0
+    VisualEffectStopDelay: 0
+    VisualEffectDestroyDelay: 0
+    DecalPrefabs: []
+    DecalSelectionMode: 0
+    DecalAlignmentMode: 0
+    DecalPositionOffset: {x: 0, y: 0, z: 0}
+    DecalSurfaceOffset: 0
+    RandomizeDecalRoll: 0
+    DecalRollMin: 0
+    DecalRollMax: 0
+    ParentDecalsToContextParent: 0
+    DecalDestroyDelay: 0
+    AudioEvents:
+    - {fileID: 11400000, guid: ce12ba84e72bc1b458c4da354d1cbf05, type: 2}
+    AudioSelectionMode: 0
+    PlayAudioAtWorldPosition: 0
+    FeelIntensityMultiplier: 0
+  - EventId: Ore.Break
+    Enabled: 1
+    ParticlePrefabs: []
+    ParticleSelectionMode: 0
+    ParticlePositionOffset: {x: 0, y: 0, z: 0}
+    AlignParticlesToSurfaceNormal: 0
+    ParentParticlesToContextParent: 0
+    ParticleDestroyDelay: 0
+    VisualEffectPrefabs:
+    - {fileID: 6352997674844084943, guid: e96f490e623b8634f85f326a4a9f716c, type: 3}
+    VisualEffectSelectionMode: 0
+    VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
+    AlignVisualEffectsToSurfaceNormal: 0
+    ParentVisualEffectsToContextParent: 0
+    ReinitializeVisualEffectsBeforePlay: 0
+    VisualEffectStopDelay: 0
+    VisualEffectDestroyDelay: 0
+    DecalPrefabs: []
+    DecalSelectionMode: 0
+    DecalAlignmentMode: 0
+    DecalPositionOffset: {x: 0, y: 0, z: 0}
+    DecalSurfaceOffset: 0
+    RandomizeDecalRoll: 0
+    DecalRollMin: 0
+    DecalRollMax: 0
+    ParentDecalsToContextParent: 0
+    DecalDestroyDelay: 0
+    AudioEvents: []
+    AudioSelectionMode: 0
+    PlayAudioAtWorldPosition: 0
+    FeelIntensityMultiplier: 0
+  - EventId: Ore.InsufficientTier
+    Enabled: 1
+    ParticlePrefabs: []
+    ParticleSelectionMode: 0
+    ParticlePositionOffset: {x: 0, y: 0, z: 0}
+    AlignParticlesToSurfaceNormal: 0
+    ParentParticlesToContextParent: 0
+    ParticleDestroyDelay: 0
+    VisualEffectPrefabs: []
+    VisualEffectSelectionMode: 0
+    VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
+    AlignVisualEffectsToSurfaceNormal: 0
+    ParentVisualEffectsToContextParent: 0
+    ReinitializeVisualEffectsBeforePlay: 0
+    VisualEffectStopDelay: 0
+    VisualEffectDestroyDelay: 0
+    DecalPrefabs: []
+    DecalSelectionMode: 0
+    DecalAlignmentMode: 0
+    DecalPositionOffset: {x: 0, y: 0, z: 0}
+    DecalSurfaceOffset: 0
+    RandomizeDecalRoll: 0
+    DecalRollMin: 0
+    DecalRollMax: 0
+    ParentDecalsToContextParent: 0
+    DecalDestroyDelay: 0
+    AudioEvents: []
+    AudioSelectionMode: 0
+    PlayAudioAtWorldPosition: 0
+    FeelIntensityMultiplier: 0
+  - EventId: Ore.TargetUnavailable
+    Enabled: 1
+    ParticlePrefabs: []
+    ParticleSelectionMode: 0
+    ParticlePositionOffset: {x: 0, y: 0, z: 0}
+    AlignParticlesToSurfaceNormal: 0
+    ParentParticlesToContextParent: 0
+    ParticleDestroyDelay: 0
+    VisualEffectPrefabs: []
+    VisualEffectSelectionMode: 0
+    VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
+    AlignVisualEffectsToSurfaceNormal: 0
+    ParentVisualEffectsToContextParent: 0
+    ReinitializeVisualEffectsBeforePlay: 0
+    VisualEffectStopDelay: 0
+    VisualEffectDestroyDelay: 0
+    DecalPrefabs: []
+    DecalSelectionMode: 0
+    DecalAlignmentMode: 0
+    DecalPositionOffset: {x: 0, y: 0, z: 0}
+    DecalSurfaceOffset: 0
+    RandomizeDecalRoll: 0
+    DecalRollMin: 0
+    DecalRollMax: 0
+    ParentDecalsToContextParent: 0
+    DecalDestroyDelay: 0
+    AudioEvents: []
+    AudioSelectionMode: 0
+    PlayAudioAtWorldPosition: 0
+    FeelIntensityMultiplier: 0
+  - EventId: Ore.NoDamage
+    Enabled: 1
+    ParticlePrefabs: []
+    ParticleSelectionMode: 0
+    ParticlePositionOffset: {x: 0, y: 0, z: 0}
+    AlignParticlesToSurfaceNormal: 0
+    ParentParticlesToContextParent: 0
+    ParticleDestroyDelay: 0
+    VisualEffectPrefabs: []
+    VisualEffectSelectionMode: 0
+    VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
+    AlignVisualEffectsToSurfaceNormal: 0
+    ParentVisualEffectsToContextParent: 0
+    ReinitializeVisualEffectsBeforePlay: 0
+    VisualEffectStopDelay: 0
+    VisualEffectDestroyDelay: 0
+    DecalPrefabs: []
+    DecalSelectionMode: 0
+    DecalAlignmentMode: 0
+    DecalPositionOffset: {x: 0, y: 0, z: 0}
+    DecalSurfaceOffset: 0
+    RandomizeDecalRoll: 0
+    DecalRollMin: 0
+    DecalRollMax: 0
+    ParentDecalsToContextParent: 0
+    DecalDestroyDelay: 0
+    AudioEvents: []
+    AudioSelectionMode: 0
+    PlayAudioAtWorldPosition: 0
+    FeelIntensityMultiplier: 0
+  - EventId: Ore.Regrown
+    Enabled: 1
+    ParticlePrefabs: []
+    ParticleSelectionMode: 0
+    ParticlePositionOffset: {x: 0, y: 0, z: 0}
+    AlignParticlesToSurfaceNormal: 0
+    ParentParticlesToContextParent: 0
+    ParticleDestroyDelay: 0
+    VisualEffectPrefabs: []
+    VisualEffectSelectionMode: 0
+    VisualEffectPositionOffset: {x: 0, y: 0, z: 0}
+    AlignVisualEffectsToSurfaceNormal: 0
+    ParentVisualEffectsToContextParent: 0
+    ReinitializeVisualEffectsBeforePlay: 0
+    VisualEffectStopDelay: 0
+    VisualEffectDestroyDelay: 0
+    DecalPrefabs: []
+    DecalSelectionMode: 0
+    DecalAlignmentMode: 0
+    DecalPositionOffset: {x: 0, y: 0, z: 0}
+    DecalSurfaceOffset: 0
+    RandomizeDecalRoll: 0
+    DecalRollMin: 0
+    DecalRollMax: 0
+    ParentDecalsToContextParent: 0
+    DecalDestroyDelay: 0
+    AudioEvents: []
+    AudioSelectionMode: 0
+    PlayAudioAtWorldPosition: 0
+    FeelIntensityMultiplier: 0
