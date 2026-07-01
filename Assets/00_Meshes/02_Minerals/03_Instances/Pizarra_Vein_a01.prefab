@@ -72,7 +72,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4235150293461965883}
-  m_Mesh: {fileID: -125988250419348852, guid: 2f78733db2444c6428e97e115456dc12, type: 3}
+  m_Mesh: {fileID: 4300000, guid: 49ded1d32dc49c747b5f48ff90c0584f, type: 2}
 --- !u!23 &4186898802428047685
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -299,4 +299,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6b26a3ae03d2d0b4b825865d3e45a2a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SceneSaveId
-  Id: c667b60f211c439cb0582ea3aa7571d5
+  Id: ae61951669a140f897c999bf637a236a
