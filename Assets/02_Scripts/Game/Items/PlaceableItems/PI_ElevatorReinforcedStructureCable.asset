@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8f853d96537a4f8409a8c5461b842a92, type: 3}
+  m_Name: PI_ElevatorReinforcedStructureCable
+  m_EditorClassIdentifier: Assembly-CSharp::PlaceableItemDefinition
+  ItemId: Elevator.Cable.Reinforced
+  DisplayName: Reinforced cable
+  Icon: {fileID: -6396098458971428934, guid: 72f7a32ac9c7676409eb438757bc6b4a, type: 3}
+  WorldPrefab: {fileID: 0}
+  EquippedPrefab: {fileID: 0}
+  IsStackable: 0
+  MaxStackSize: 1
+  DefaultDurability: 9999
+  BaseWeight: 30
+  AutoEquipWhenSelected: 1
+  PlacementId: Elevator.Cable.Reinforced
+  GhostPrefab: {fileID: 3120099149529401880, guid: e73d0f09a0e684148a63313f37bdcab6, type: 3}
+  InstalledPrefab: {fileID: 4091473161780320503, guid: 4eb4b68f699c8b246ac8a83030c411e3, type: 3}
+  AppliedUpgradeDefinition: {fileID: 0}
+  ApplyMode: 1
+  TargetUpgradeLevel: 1
+  UpgradeLevelIncrement: 1

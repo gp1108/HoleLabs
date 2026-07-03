@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ed8f2731f89212042a9865a75abe2fa6, type: 3}
+  m_Name: RD_MineralElevatorCapacityUpgrade
+  m_EditorClassIdentifier: Assembly-CSharp::ResearchDefinition
+  ResearchId: Machine.MineralElevator.Upgrade.Capacity
+  DisplayName: MineralElevator capacity upgrade
+  Description: Unlocks de ability to rotate the elevator. Must be purchased in shop
+    after unlock.
+  Icon: {fileID: 21300000, guid: 4ca9e709a65faf543a1b376009b64e12, type: 3}
+  CreditCost: 100
+  OreRequirements:
+  - OreDefinition: {fileID: 11400000, guid: 4682a0330487613418910721629c656e, type: 2}
+    Amount: 2
+    RequireMinimumPurity: 0
+    MinimumPurity: 0
+    RequireMaximumPurity: 0
+    MaximumPurity: 0
+    RequireMinimumWeight: 0
+    MinimumWeight: 0
+    RequireMaximumWeight: 0
+    MaximumWeight: 0
+  RequiresFeatureFlag: 0
+  RequiredFeatureFlagId: 
+  Prerequisites:
+  - RequiredUpgradeDefinition: {fileID: 11400000, guid: 40b6d051d59fc094e8a5a3dd636ca769, type: 2}
+    RequiredLevel: 0
+  AppliedUpgradeDefinition: {fileID: 11400000, guid: 528f6a56567691b4185138b36274631f, type: 2}
+  ApplyMode: 0
+  TargetUpgradeLevel: 1
+  UpgradeLevelIncrement: 1

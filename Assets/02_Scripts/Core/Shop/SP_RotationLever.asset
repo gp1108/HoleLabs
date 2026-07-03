@@ -10,25 +10,25 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ca0b29cd0caeff14e8fca15dd5c783f1, type: 3}
-  m_Name: SP_Researcher
+  m_Name: SP_RotationLever
   m_EditorClassIdentifier: Assembly-CSharp::ShopProductDefinition
-  ProductId: Machine.Researcher
-  DisplayName: Researcher
-  Description: Researcher
-  Icon: {fileID: -6396098458971428934, guid: 72f7a32ac9c7676409eb438757bc6b4a, type: 3}
+  ProductId: Elevator.Lever.Rotation
+  DisplayName: Rotation Lever
+  Description: Allows the elevator to rotate after being installed
+  Icon: {fileID: 21300000, guid: 4ca9e709a65faf543a1b376009b64e12, type: 3}
   CurrencyType: 0
   Cost: 100
-  RequiresFeatureFlag: 0
-  RequiredFeatureFlagId: 
+  RequiresFeatureFlag: 1
+  RequiredFeatureFlagId: Shop.Unlock.ElevatorRotationLever
   RequiresDeliveredItemUnlock: 0
   DeliveryMode: 0
-  DeliveredItemDefinition: {fileID: 11400000, guid: 2c333aa06de5a4c41ad05009829156ae, type: 2}
+  DeliveredItemDefinition: {fileID: 11400000, guid: 077f71ad1d3b6d3468581736a9c224a3, type: 2}
   DeliveredAmount: 1
   StockMode: 1
-  UniqueGroupId: Researcher.Main
-  ReissueCostMode: 0
+  UniqueGroupId: 
+  ReissueCostMode: 1
   CustomReissueCost: 0
-  InstalledProductEntryMode: 1
+  InstalledProductEntryMode: 0
   AppliedUpgradeDefinition: {fileID: 0}
   ApplyMode: 0
   TargetUpgradeLevel: 1

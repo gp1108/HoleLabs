@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b14e2cff467300941bec1438b983a8f4, type: 3}
+  m_Name: UD_MoneyMachineAreaUpgrade
+  m_EditorClassIdentifier: Assembly-CSharp::UpgradeDefinition
+  UpgradeId: Machine.MoneyMachine.Upgrade.Area
+  DisplayName: Machine.MoneyMachine.Upgrade.Area
+  Description: Elevator.Rotation.Lever
+  Icon: {fileID: 21300000, guid: 4ca9e709a65faf543a1b376009b64e12, type: 3}
+  ShopId: 
+  Prerequisites: []
+  MaxLevel: 1
+  StatModifiers: []
+  UnlockRewards:
+  - RewardType: 1
+    RewardId: Money.Unlock.AreaCollection
+    ItemDefinition: {fileID: 0}
+    RequiredLevel: 0
