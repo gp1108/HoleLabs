@@ -26,7 +26,8 @@ public sealed class ResearchRuntimeService : MonoBehaviour
         NotEnoughCredits = 9,
         MissingResearchId = 10,
         MissingScannerRuntimeService = 11,
-        MissingDiscoveredOreRequirement = 12
+        MissingDiscoveredOreRequirement = 12,
+        MissingResearchTier = 13
     }
 
     /// <summary>
@@ -526,7 +527,9 @@ public sealed class ResearchRuntimeService : MonoBehaviour
             return ResearchViewState.Completed;
         }
 
-        if (BlockReason != ResearchBlockReason.None && BlockReason != ResearchBlockReason.NotEnoughCredits)
+        if (BlockReason != ResearchBlockReason.None &&
+            BlockReason != ResearchBlockReason.NotEnoughCredits &&
+            BlockReason != ResearchBlockReason.MissingDiscoveredOreRequirement)
         {
             return ResearchViewState.Locked;
         }
@@ -553,7 +556,7 @@ public sealed class ResearchRuntimeService : MonoBehaviour
 
     /// <summary>
     /// Gets the current reason why a research entry cannot currently be activated.
-    /// Ores are not checked here because ores are processed progressively after activation.
+    /// Ore discovery is checked here because unknown ore types must be scanned before the research can become active.
     /// </summary>
     public ResearchBlockReason GetResearchBlockReason(ResearchDefinition ResearchDefinition)
     {
@@ -612,6 +615,11 @@ public sealed class ResearchRuntimeService : MonoBehaviour
         if (!ArePrerequisitesMet(ResearchDefinition))
         {
             return ResearchBlockReason.MissingPrerequisite;
+        }
+
+        if (!IsResearchTierRequirementMet(ResearchDefinition))
+        {
+            return ResearchBlockReason.MissingResearchTier;
         }
 
         if (HasDiscoverableOreRequirements(ResearchDefinition) && ScannerRuntimeService == null)
@@ -673,6 +681,14 @@ public sealed class ResearchRuntimeService : MonoBehaviour
         }
 
         ActiveResearchDefinition = ResearchDefinition;
+
+        if (IsResearchProgressComplete(ResearchDefinition))
+        {
+            CompleteActiveResearch();
+            Log("Research activated and completed instantly: " + ResearchDefinition.GetDisplayName());
+            return true;
+        }
+
         NotifyStateChanged();
         Log("Research activated: " + ResearchDefinition.GetDisplayName());
         return true;
@@ -1101,6 +1117,55 @@ public sealed class ResearchRuntimeService : MonoBehaviour
     private bool HasUndiscoveredOreRequirements(ResearchDefinition ResearchDefinition)
     {
         return CountUndiscoveredOreRequirements(ResearchDefinition) > 0;
+    }
+
+    /// <summary>
+    /// Returns whether the provided research tier requirement is currently satisfied.
+    /// Research entries without a tier gate are considered available at the tier level.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition being evaluated.</param>
+    public bool IsResearchTierRequirementMet(ResearchDefinition ResearchDefinition)
+    {
+        ResolveReferences();
+
+        if (ResearchDefinition == null)
+        {
+            return false;
+        }
+
+        if (!ResearchDefinition.GetRequiresResearchTier())
+        {
+            return true;
+        }
+
+        return IsResearchTierUnlocked(
+            ResearchDefinition.GetRequiredResearchTierUpgradeDefinition(),
+            ResearchDefinition.GetRequiredResearchTierLevel());
+    }
+
+    /// <summary>
+    /// Returns whether the global research tier upgrade has reached the requested level.
+    /// </summary>
+    /// <param name="ResearchTierUpgradeDefinition">Upgrade definition used to store research tier progress.</param>
+    /// <param name="RequiredTierLevel">Minimum required tier level.</param>
+    public bool IsResearchTierUnlocked(UpgradeDefinition ResearchTierUpgradeDefinition, int RequiredTierLevel)
+    {
+        ResolveReferences();
+
+        if (UpgradeManager == null || ResearchTierUpgradeDefinition == null)
+        {
+            return false;
+        }
+
+        UpgradeDefinition RegisteredUpgradeDefinition = UpgradeManager.GetUpgradeDefinition(ResearchTierUpgradeDefinition.GetUpgradeId());
+
+        if (RegisteredUpgradeDefinition != ResearchTierUpgradeDefinition)
+        {
+            return false;
+        }
+
+        int CurrentTierLevel = UpgradeManager.GetUpgradeLevel(ResearchTierUpgradeDefinition);
+        return CurrentTierLevel >= Mathf.Max(1, RequiredTierLevel);
     }
 
     /// <summary>

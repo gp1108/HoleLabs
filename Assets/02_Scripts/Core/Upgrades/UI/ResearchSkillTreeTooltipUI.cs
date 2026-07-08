@@ -296,6 +296,14 @@ public sealed class ResearchSkillTreeTooltipUI : MonoBehaviour
         {
             ResearchButtonText.text = "Missing Credits";
         }
+        else if (BlockReason == ResearchRuntimeService.ResearchBlockReason.MissingDiscoveredOreRequirement)
+        {
+            ResearchButtonText.text = "Scan Required";
+        }
+        else if (BlockReason == ResearchRuntimeService.ResearchBlockReason.MissingResearchTier)
+        {
+            ResearchButtonText.text = "Tier Locked";
+        }
         else if (BlockReason != ResearchRuntimeService.ResearchBlockReason.None)
         {
             ResearchButtonText.text = "Locked";
@@ -406,6 +414,16 @@ public sealed class ResearchSkillTreeTooltipUI : MonoBehaviour
             case ResearchRuntimeService.ResearchViewState.PaidInactive:
                 return "State: Paid, inactive";
             case ResearchRuntimeService.ResearchViewState.Available:
+                if (BlockReason == ResearchRuntimeService.ResearchBlockReason.MissingDiscoveredOreRequirement)
+                {
+                    return "State: Available - scan required ores";
+                }
+
+                if (BlockReason == ResearchRuntimeService.ResearchBlockReason.NotEnoughCredits)
+                {
+                    return "State: Available - missing credits";
+                }
+
                 return "State: Available";
             case ResearchRuntimeService.ResearchViewState.Locked:
                 return "State: Locked - " + BuildBlockReasonText(BlockReason);
@@ -430,6 +448,8 @@ public sealed class ResearchSkillTreeTooltipUI : MonoBehaviour
                 return "missing prerequisite";
             case ResearchRuntimeService.ResearchBlockReason.MissingDiscoveredOreRequirement:
                 return "unknown ore";
+            case ResearchRuntimeService.ResearchBlockReason.MissingResearchTier:
+                return "missing research tier";
             case ResearchRuntimeService.ResearchBlockReason.AlreadyCompleted:
                 return "completed";
             case ResearchRuntimeService.ResearchBlockReason.None:

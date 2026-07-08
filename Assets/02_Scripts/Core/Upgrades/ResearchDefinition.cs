@@ -238,6 +238,16 @@ public sealed class ResearchDefinition : ScriptableObject
     [Tooltip("Upgrade prerequisites required before this research can be activated.")]
     [SerializeField] private List<ResearchPrerequisite> Prerequisites = new();
 
+    [Header("Research Tier Gate")]
+    [Tooltip("If true, this research requires a global research tier upgrade level before it can be activated. Use this for tier I, II, III progression gates.")]
+    [SerializeField] private bool RequiresResearchTier = false;
+
+    [Tooltip("Upgrade definition that stores the unlocked research tier level. Usually one upgrade with max level equal to the amount of research tiers.")]
+    [SerializeField] private UpgradeDefinition RequiredResearchTierUpgradeDefinition;
+
+    [Tooltip("Minimum research tier level required before this research can be activated.")]
+    [SerializeField] private int RequiredResearchTierLevel = 1;
+
     [Header("Result")]
     [Tooltip("Upgrade modified when this research completes. The upgrade must be registered in UpgradeManager.")]
     [SerializeField] private UpgradeDefinition AppliedUpgradeDefinition;
@@ -352,6 +362,30 @@ public sealed class ResearchDefinition : ScriptableObject
     public IReadOnlyList<ResearchPrerequisite> GetPrerequisites()
     {
         return Prerequisites;
+    }
+
+    /// <summary>
+    /// Gets whether this research is blocked by the global research tier progression.
+    /// </summary>
+    public bool GetRequiresResearchTier()
+    {
+        return RequiresResearchTier;
+    }
+
+    /// <summary>
+    /// Gets the upgrade definition used to store unlocked research tier level.
+    /// </summary>
+    public UpgradeDefinition GetRequiredResearchTierUpgradeDefinition()
+    {
+        return RequiredResearchTierUpgradeDefinition;
+    }
+
+    /// <summary>
+    /// Gets the minimum research tier level required by this research.
+    /// </summary>
+    public int GetRequiredResearchTierLevel()
+    {
+        return Mathf.Max(1, RequiredResearchTierLevel);
     }
 
     /// <summary>

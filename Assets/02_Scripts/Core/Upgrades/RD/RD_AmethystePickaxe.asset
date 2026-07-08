@@ -18,6 +18,7 @@ MonoBehaviour:
     after unlock.
   Icon: {fileID: 21300000, guid: 4ca9e709a65faf543a1b376009b64e12, type: 3}
   CreditCost: 100
+  StartsCompletedByDefault: 0
   OreRequirements:
   - OreDefinition: {fileID: 11400000, guid: 4682a0330487613418910721629c656e, type: 2}
     Amount: 2
@@ -32,6 +33,9 @@ MonoBehaviour:
   RequiresFeatureFlag: 0
   RequiredFeatureFlagId: 
   Prerequisites: []
+  RequiresResearchTier: 1
+  RequiredResearchTierUpgradeDefinition: {fileID: 0}
+  RequiredResearchTierLevel: 3
   AppliedUpgradeDefinition: {fileID: 11400000, guid: 38a59764f0972af49b5eda585ed1d948, type: 2}
   ApplyMode: 0
   TargetUpgradeLevel: 1

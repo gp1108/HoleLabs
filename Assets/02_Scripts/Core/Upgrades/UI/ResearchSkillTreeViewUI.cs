@@ -70,6 +70,11 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
     private readonly List<ResearchSkillTreeConnectionUI> RegisteredConnections = new();
 
     /// <summary>
+    /// Tier gates currently registered in this skill tree.
+    /// </summary>
+    private readonly List<ResearchSkillTreeTierGateUI> RegisteredTierGates = new();
+
+    /// <summary>
     /// Currently selected research node.
     /// </summary>
     private ResearchSkillTreeNodeUI SelectedNode;
@@ -185,9 +190,11 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
         UnbindNodeClicks();
         RegisteredNodes.Clear();
         RegisteredConnections.Clear();
+        RegisteredTierGates.Clear();
 
         ResearchSkillTreeNodeUI[] Nodes = GetComponentsInChildren<ResearchSkillTreeNodeUI>(true);
         ResearchSkillTreeConnectionUI[] Connections = GetComponentsInChildren<ResearchSkillTreeConnectionUI>(true);
+        ResearchSkillTreeTierGateUI[] TierGates = GetComponentsInChildren<ResearchSkillTreeTierGateUI>(true);
 
         for (int Index = 0; Index < Nodes.Length; Index++)
         {
@@ -202,6 +209,14 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
             if (Connections[Index] != null && !RegisteredConnections.Contains(Connections[Index]))
             {
                 RegisteredConnections.Add(Connections[Index]);
+            }
+        }
+
+        for (int Index = 0; Index < TierGates.Length; Index++)
+        {
+            if (TierGates[Index] != null && !RegisteredTierGates.Contains(TierGates[Index]))
+            {
+                RegisteredTierGates.Add(TierGates[Index]);
             }
         }
 
@@ -229,6 +244,14 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
             if (RegisteredConnections[Index] != null)
             {
                 RegisteredConnections[Index].RefreshView(PlayStateFeedback);
+            }
+        }
+
+        for (int Index = 0; Index < RegisteredTierGates.Count; Index++)
+        {
+            if (RegisteredTierGates[Index] != null)
+            {
+                RegisteredTierGates[Index].RefreshView();
             }
         }
 
@@ -562,6 +585,14 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
                 RegisteredConnections[Index].Initialize(OwnerStation);
             }
         }
+
+        for (int Index = 0; Index < RegisteredTierGates.Count; Index++)
+        {
+            if (RegisteredTierGates[Index] != null)
+            {
+                RegisteredTierGates[Index].Initialize(OwnerStation);
+            }
+        }
     }
 
     /// <summary>
@@ -719,6 +750,23 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
                 : ResearchRuntimeService.ResearchBlockReason.MissingResearch;
 
             Debug.Log("[ResearchSkillTreeViewUI] Node report | Node=" + Node.name + " | Research=" + Name + " | State=" + State + " | BlockReason=" + BlockReason, Node);
+        }
+
+        for (int Index = 0; Index < RegisteredTierGates.Count; Index++)
+        {
+            ResearchSkillTreeTierGateUI TierGate = RegisteredTierGates[Index];
+
+            if (TierGate == null)
+            {
+                continue;
+            }
+
+            bool IsUnlocked = TierGate.IsUnlocked();
+            string TierUpgradeName = TierGate.GetRequiredResearchTierUpgradeDefinition() != null
+                ? TierGate.GetRequiredResearchTierUpgradeDefinition().GetDisplayName()
+                : "Missing Tier Upgrade";
+
+            Debug.Log("[ResearchSkillTreeViewUI] Tier gate report | Gate=" + TierGate.name + " | TierUpgrade=" + TierUpgradeName + " | RequiredLevel=" + TierGate.GetRequiredResearchTierLevel() + " | Unlocked=" + IsUnlocked, TierGate);
         }
     }
 
