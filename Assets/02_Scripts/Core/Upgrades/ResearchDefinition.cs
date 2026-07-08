@@ -220,6 +220,10 @@ public sealed class ResearchDefinition : ScriptableObject
     [Tooltip("Credit amount spent when this research becomes the active research for the first time.")]
     [SerializeField] private float CreditCost = 100f;
 
+    [Header("Initial State")]
+    [Tooltip("If true, this research is completed automatically when it is registered by the research runtime. Use this for tutorial/root nodes that should appear completed from the start and satisfy prerequisites.")]
+    [SerializeField] private bool StartsCompletedByDefault = false;
+
     [Header("Ore Processing Requirements")]
     [Tooltip("Specific physical ore requirements processed while this research is active.")]
     [SerializeField] private List<OreRequirement> OreRequirements = new();
@@ -285,6 +289,37 @@ public sealed class ResearchDefinition : ScriptableObject
     public float GetCreditCost()
     {
         return CurrencyMath.RoundCurrency(Mathf.Max(0f, CreditCost));
+    }
+
+    /// <summary>
+    /// Gets whether this research should be completed automatically when registered by the runtime.
+    /// </summary>
+    public bool GetStartsCompletedByDefault()
+    {
+        return StartsCompletedByDefault;
+    }
+
+    /// <summary>
+    /// Gets the upgrade level that should be forced when this research starts completed by default.
+    /// </summary>
+    public int GetDefaultCompletedTargetLevel()
+    {
+        if (AppliedUpgradeDefinition == null)
+        {
+            return 0;
+        }
+
+        switch (ApplyMode)
+        {
+            case ResearchApplyMode.SetToLevel:
+                return Mathf.Clamp(GetTargetUpgradeLevel(), 0, AppliedUpgradeDefinition.GetMaxLevel());
+
+            case ResearchApplyMode.AddLevels:
+                return Mathf.Clamp(GetUpgradeLevelIncrement(), 0, AppliedUpgradeDefinition.GetMaxLevel());
+
+            default:
+                return 0;
+        }
     }
 
     /// <summary>

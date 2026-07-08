@@ -10,19 +10,20 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ed8f2731f89212042a9865a75abe2fa6, type: 3}
-  m_Name: RD_InitialPickaxe
+  m_Name: RD_BronzePickaxe
   m_EditorClassIdentifier: Assembly-CSharp::ResearchDefinition
-  ResearchId: Pickaxe.Drill
-  DisplayName: Drill pickaxe
+  ResearchId: Pickaxe.Bronze
+  DisplayName: Bronze pickaxe
   Description: Unlocks de ability to rotate the elevator. Must be purchased in shop
     after unlock.
   Icon: {fileID: 21300000, guid: 4ca9e709a65faf543a1b376009b64e12, type: 3}
   CreditCost: 100
+  StartsCompletedByDefault: 1
   OreRequirements: []
   RequiresFeatureFlag: 0
   RequiredFeatureFlagId: 
   Prerequisites: []
-  AppliedUpgradeDefinition: {fileID: 0}
+  AppliedUpgradeDefinition: {fileID: 11400000, guid: 80997d90eeda9d645bafd6563c007efe, type: 2}
   ApplyMode: 0
   TargetUpgradeLevel: 1
   UpgradeLevelIncrement: 1

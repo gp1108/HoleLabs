@@ -37,6 +37,15 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
     [Tooltip("Normalized screen X threshold used to decide when the tree should shift left. 0 is left edge and 1 is right edge.")]
     [SerializeField, Range(0.1f, 0.95f)] private float RightSideShiftThreshold = 0.66f;
 
+    [Tooltip("If true, shift decisions are measured against the original tree position, not the current animated position. This prevents right-side nodes from resetting the tree after it has already shifted left.")]
+    [SerializeField] private bool MeasureShiftAgainstDefaultTreePosition = true;
+
+    [Tooltip("If true, the selected node is compared against the actual tooltip screen rectangle before falling back to the normalized threshold.")]
+    [SerializeField] private bool UseTooltipOverlapForShift = true;
+
+    [Tooltip("Extra screen-space pixels reserved between the selected node and the tooltip before shifting the tree.")]
+    [SerializeField] private float TooltipOverlapPadding = 24f;
+
     [Tooltip("Anchored offset added to the default tree position while a right-side node is selected.")]
     [SerializeField] private Vector2 ShiftedTreeOffset = new Vector2(-360f, 0f);
 
@@ -348,8 +357,7 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
             return;
         }
 
-        float NormalizedX = GetNodeScreenNormalizedX(Node);
-        Vector2 TargetPosition = NormalizedX >= RightSideShiftThreshold
+        Vector2 TargetPosition = ShouldShiftTreeForNode(Node)
             ? DefaultTreeAnchoredPosition + ShiftedTreeOffset
             : DefaultTreeAnchoredPosition;
 
@@ -357,10 +365,58 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
     }
 
     /// <summary>
+    /// Returns whether the tree should shift left for the provided node.
+    /// </summary>
+    /// <param name="Node">Selected node.</param>
+    private bool ShouldShiftTreeForNode(ResearchSkillTreeNodeUI Node)
+    {
+        if (!ShiftTreeWhenTooltipWouldOverlap || Node == null)
+        {
+            return false;
+        }
+
+        if (UseTooltipOverlapForShift && WouldNodeOverlapTooltipAtDefaultPosition(Node))
+        {
+            return true;
+        }
+
+        float NormalizedX = GetNodeScreenNormalizedX(Node, MeasureShiftAgainstDefaultTreePosition);
+        return NormalizedX >= RightSideShiftThreshold;
+    }
+
+    /// <summary>
+    /// Returns whether the node would overlap the fixed tooltip when the tree is at its original position.
+    /// </summary>
+    /// <param name="Node">Selected node.</param>
+    private bool WouldNodeOverlapTooltipAtDefaultPosition(ResearchSkillTreeNodeUI Node)
+    {
+        RectTransform NodeRectTransform = Node != null ? Node.transform as RectTransform : null;
+        RectTransform TooltipRectTransform = TooltipUI != null ? TooltipUI.transform as RectTransform : null;
+
+        if (NodeRectTransform == null || TooltipRectTransform == null || Screen.width <= 0 || Screen.height <= 0)
+        {
+            return false;
+        }
+
+        Canvas RootCanvas = GetComponentInParent<Canvas>();
+        Camera UiCamera = GetUiCamera(RootCanvas);
+        Vector2 DefaultOffset = GetDefaultTreeScreenOffset(RootCanvas);
+
+        Rect NodeScreenRect = GetScreenRect(NodeRectTransform, UiCamera, DefaultOffset);
+        Rect TooltipScreenRect = GetScreenRect(TooltipRectTransform, UiCamera, Vector2.zero);
+        float Padding = Mathf.Max(0f, TooltipOverlapPadding);
+        bool VerticallyOverlaps = NodeScreenRect.yMax >= TooltipScreenRect.yMin && NodeScreenRect.yMin <= TooltipScreenRect.yMax;
+        bool HorizontallyOverlapsOrTouchesSafeArea = NodeScreenRect.xMax + Padding >= TooltipScreenRect.xMin;
+
+        return VerticallyOverlaps && HorizontallyOverlapsOrTouchesSafeArea;
+    }
+
+    /// <summary>
     /// Gets the normalized screen X coordinate of a node center.
     /// </summary>
     /// <param name="Node">Node being measured.</param>
-    private float GetNodeScreenNormalizedX(ResearchSkillTreeNodeUI Node)
+    /// <param name="MeasureAtDefaultTreePosition">If true, the current tree shift is compensated before measuring.</param>
+    private float GetNodeScreenNormalizedX(ResearchSkillTreeNodeUI Node, bool MeasureAtDefaultTreePosition)
     {
         RectTransform NodeRectTransform = Node.transform as RectTransform;
 
@@ -370,12 +426,65 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
         }
 
         Canvas RootCanvas = GetComponentInParent<Canvas>();
-        Camera UiCamera = RootCanvas != null && RootCanvas.renderMode != RenderMode.ScreenSpaceOverlay
+        Camera UiCamera = GetUiCamera(RootCanvas);
+        Vector3 ScreenPoint = RectTransformUtility.WorldToScreenPoint(UiCamera, NodeRectTransform.TransformPoint(NodeRectTransform.rect.center));
+
+        if (MeasureAtDefaultTreePosition)
+        {
+            ScreenPoint += (Vector3)GetDefaultTreeScreenOffset(RootCanvas);
+        }
+
+        return Mathf.Clamp01(ScreenPoint.x / Screen.width);
+    }
+
+    /// <summary>
+    /// Gets the UI camera required by the root canvas render mode.
+    /// </summary>
+    /// <param name="RootCanvas">Canvas containing this skill tree.</param>
+    private Camera GetUiCamera(Canvas RootCanvas)
+    {
+        return RootCanvas != null && RootCanvas.renderMode != RenderMode.ScreenSpaceOverlay
             ? RootCanvas.worldCamera
             : null;
+    }
 
-        Vector3 ScreenPoint = RectTransformUtility.WorldToScreenPoint(UiCamera, NodeRectTransform.TransformPoint(NodeRectTransform.rect.center));
-        return Mathf.Clamp01(ScreenPoint.x / Screen.width);
+    /// <summary>
+    /// Gets the screen-space offset required to measure nodes as if the tree were still at its default position.
+    /// </summary>
+    /// <param name="RootCanvas">Canvas containing this skill tree.</param>
+    private Vector2 GetDefaultTreeScreenOffset(Canvas RootCanvas)
+    {
+        if (!MeasureShiftAgainstDefaultTreePosition || MovableTreeRoot == null || !HasCapturedDefaultTreePosition)
+        {
+            return Vector2.zero;
+        }
+
+        float ScaleFactor = RootCanvas != null ? RootCanvas.scaleFactor : 1f;
+        return (DefaultTreeAnchoredPosition - MovableTreeRoot.anchoredPosition) * ScaleFactor;
+    }
+
+    /// <summary>
+    /// Gets a rect transform screen rectangle and applies an optional screen-space offset.
+    /// </summary>
+    /// <param name="RectTransform">Rect transform being measured.</param>
+    /// <param name="UiCamera">Camera used by the canvas, or null for overlay canvases.</param>
+    /// <param name="ScreenOffset">Additional screen-space offset in pixels.</param>
+    private Rect GetScreenRect(RectTransform RectTransform, Camera UiCamera, Vector2 ScreenOffset)
+    {
+        Vector3[] Corners = new Vector3[4];
+        RectTransform.GetWorldCorners(Corners);
+
+        Vector2 Min = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
+        Vector2 Max = new Vector2(float.NegativeInfinity, float.NegativeInfinity);
+
+        for (int Index = 0; Index < Corners.Length; Index++)
+        {
+            Vector2 ScreenPoint = RectTransformUtility.WorldToScreenPoint(UiCamera, Corners[Index]) + ScreenOffset;
+            Min = Vector2.Min(Min, ScreenPoint);
+            Max = Vector2.Max(Max, ScreenPoint);
+        }
+
+        return Rect.MinMaxRect(Min.x, Min.y, Max.x, Max.y);
     }
 
     /// <summary>
@@ -438,6 +547,11 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
             if (RegisteredNodes[Index] != null)
             {
                 RegisteredNodes[Index].Initialize(OwnerStation);
+
+                if (OwnerStation != null && RegisteredNodes[Index].GetResearchDefinition() != null)
+                {
+                    OwnerStation.RegisterResearchDefinition(RegisteredNodes[Index].GetResearchDefinition());
+                }
             }
         }
 
@@ -571,6 +685,41 @@ public sealed class ResearchSkillTreeViewUI : MonoBehaviour
     private void HandleResearchStateChanged()
     {
         RefreshAll(true);
+    }
+
+    /// <summary>
+    /// Prints every registered node state and block reason to the Unity console.
+    /// </summary>
+    [ContextMenu("Print Registered Node State Report")]
+    private void PrintRegisteredNodeStateReport()
+    {
+        DiscoverTreeElements();
+        InitializeNodesAndConnections();
+
+        if (OwnerStation == null)
+        {
+            Debug.LogWarning("[ResearchSkillTreeViewUI] Missing OwnerStation. Nodes will render as Invalid and will not open tooltips.", this);
+            return;
+        }
+
+        for (int Index = 0; Index < RegisteredNodes.Count; Index++)
+        {
+            ResearchSkillTreeNodeUI Node = RegisteredNodes[Index];
+
+            if (Node == null)
+            {
+                continue;
+            }
+
+            ResearchDefinition Definition = Node.GetResearchDefinition();
+            string Name = Definition != null ? Definition.GetDisplayName() : "Missing ResearchDefinition";
+            ResearchRuntimeService.ResearchViewState State = Node.GetViewState();
+            ResearchRuntimeService.ResearchBlockReason BlockReason = Definition != null
+                ? OwnerStation.GetResearchBlockReason(Definition)
+                : ResearchRuntimeService.ResearchBlockReason.MissingResearch;
+
+            Debug.Log("[ResearchSkillTreeViewUI] Node report | Node=" + Node.name + " | Research=" + Name + " | State=" + State + " | BlockReason=" + BlockReason, Node);
+        }
     }
 
     /// <summary>

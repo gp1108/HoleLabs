@@ -39,6 +39,44 @@ public sealed class ResearchSkillTreeConnectionUI : MonoBehaviour
         [SerializeField] private bool HideWhenMissingSprite = false;
 
         /// <summary>
+        /// Removes all assigned segment images from this group.
+        /// </summary>
+        public void ClearSegmentImages()
+        {
+            SegmentImages.Clear();
+        }
+
+        /// <summary>
+        /// Adds a segment image if it is valid and not already present.
+        /// </summary>
+        /// <param name="SegmentImage">Image to add to this pipe segment group.</param>
+        public void AddSegmentImage(Image SegmentImage)
+        {
+            if (SegmentImage == null || SegmentImages.Contains(SegmentImage))
+            {
+                return;
+            }
+
+            SegmentImages.Add(SegmentImage);
+        }
+
+        /// <summary>
+        /// Returns true when this group has at least one assigned image.
+        /// </summary>
+        public bool HasAnySegmentImages()
+        {
+            for (int Index = 0; Index < SegmentImages.Count; Index++)
+            {
+                if (SegmentImages[Index] != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Applies a research state to every image in this pipe group.
         /// </summary>
         /// <param name="ViewState">State used by this pipe half.</param>
@@ -112,6 +150,16 @@ public sealed class ResearchSkillTreeConnectionUI : MonoBehaviour
     [Tooltip("Pipe half visually owned by the target node.")]
     [SerializeField] private PipeSegmentGroup TargetSegment = new PipeSegmentGroup();
 
+    [Header("Editor Preview")]
+    [Tooltip("If true, this connection renders the selected preview states in edit mode so pipe composition can be authored without entering Play Mode.")]
+    [SerializeField] private bool PreviewInEditMode = true;
+
+    [Tooltip("State displayed by the source half in edit mode.")]
+    [SerializeField] private ResearchRuntimeService.ResearchViewState SourceEditorPreviewState = ResearchRuntimeService.ResearchViewState.Available;
+
+    [Tooltip("State displayed by the target half in edit mode.")]
+    [SerializeField] private ResearchRuntimeService.ResearchViewState TargetEditorPreviewState = ResearchRuntimeService.ResearchViewState.Locked;
+
     [Header("Feedback")]
     [Tooltip("Optional canvas group used to flash this connection when either pipe half changes state.")]
     [SerializeField] private CanvasGroup PulseCanvasGroup;
@@ -143,6 +191,76 @@ public sealed class ResearchSkillTreeConnectionUI : MonoBehaviour
     /// Coroutine currently animating this connection pulse.
     /// </summary>
     private Coroutine PulseRoutine;
+
+    /// <summary>
+    /// Refreshes editor-only visual preview when serialized values change.
+    /// </summary>
+    private void OnValidate()
+    {
+        if (!Application.isPlaying && PreviewInEditMode)
+        {
+            ApplyEditorPreview();
+        }
+    }
+
+    /// <summary>
+    /// Assigns child images to SourceSegment or TargetSegment by child object names.
+    /// Source images must contain "source", "from", or "a_". Target images must contain "target", "to", or "b_".
+    /// </summary>
+    [ContextMenu("Auto Assign Segment Images From Children")]
+    private void AutoAssignSegmentImagesFromChildren()
+    {
+        SourceSegment.ClearSegmentImages();
+        TargetSegment.ClearSegmentImages();
+
+        Image[] ChildImages = GetComponentsInChildren<Image>(true);
+
+        for (int Index = 0; Index < ChildImages.Length; Index++)
+        {
+            Image CurrentImage = ChildImages[Index];
+
+            if (CurrentImage == null)
+            {
+                continue;
+            }
+
+            string ChildName = CurrentImage.gameObject.name.ToLowerInvariant();
+
+            if (ChildName.Contains("source") || ChildName.Contains("from") || ChildName.Contains("a_"))
+            {
+                SourceSegment.AddSegmentImage(CurrentImage);
+            }
+            else if (ChildName.Contains("target") || ChildName.Contains("to") || ChildName.Contains("b_"))
+            {
+                TargetSegment.AddSegmentImage(CurrentImage);
+            }
+        }
+
+        ApplyEditorPreview();
+    }
+
+    /// <summary>
+    /// Applies the current editor preview state manually from the inspector context menu.
+    /// </summary>
+    [ContextMenu("Apply Editor Preview")]
+    private void ApplyEditorPreviewFromContextMenu()
+    {
+        ApplyEditorPreview();
+    }
+
+    /// <summary>
+    /// Applies non-runtime preview states so artists can see both halves of a pipe in the editor.
+    /// </summary>
+    private void ApplyEditorPreview()
+    {
+        SourceSegment.ApplyState(SourceEditorPreviewState, VisualSet);
+        TargetSegment.ApplyState(TargetEditorPreviewState, VisualSet);
+
+        if (PulseCanvasGroup != null)
+        {
+            PulseCanvasGroup.alpha = 0f;
+        }
+    }
 
     /// <summary>
     /// Initializes this connection with the owning station.

@@ -86,6 +86,13 @@ public sealed class ResearchSkillTreeNodeUI : MonoBehaviour
     [Tooltip("Title plate sprite used while completed. If empty, the visual set is used.")]
     [SerializeField] private Sprite CompletedTitlePlateOverride;
 
+    [Header("Editor Preview")]
+    [Tooltip("If true, this node renders the selected preview state in edit mode so the final composition can be authored without entering Play Mode.")]
+    [SerializeField] private bool PreviewInEditMode = true;
+
+    [Tooltip("State displayed in edit mode when Preview In Edit Mode is enabled. Runtime state still comes from ResearchRuntimeService.")]
+    [SerializeField] private ResearchRuntimeService.ResearchViewState EditorPreviewState = ResearchRuntimeService.ResearchViewState.Available;
+
     [Header("Interaction")]
     [Tooltip("If true, locked nodes can be clicked but will close the tooltip instead of opening it.")]
     [SerializeField] private bool CloseTooltipWhenLockedNodeClicked = true;
@@ -149,6 +156,50 @@ public sealed class ResearchSkillTreeNodeUI : MonoBehaviour
     /// </summary>
     private void Awake()
     {
+        ResolveReferencesFromChildren();
+        BindSelectionButton();
+        SetSelected(false);
+        SetCompletionPulseAlpha(0f);
+    }
+
+    /// <summary>
+    /// Refreshes editor-only visual preview when serialized values change.
+    /// </summary>
+    private void OnValidate()
+    {
+        ResolveReferencesFromChildren();
+
+        if (!Application.isPlaying && PreviewInEditMode)
+        {
+            ApplyEditorPreview();
+        }
+    }
+
+    /// <summary>
+    /// Automatically assigns common child references by name. This is safe to run repeatedly while authoring prefabs.
+    /// </summary>
+    [ContextMenu("Auto Assign References From Children")]
+    private void AutoAssignReferencesFromChildren()
+    {
+        ResolveReferencesFromChildren();
+        ApplyEditorPreview();
+    }
+
+    /// <summary>
+    /// Applies the current editor preview state manually from the inspector context menu.
+    /// </summary>
+    [ContextMenu("Apply Editor Preview")]
+    private void ApplyEditorPreviewFromContextMenu()
+    {
+        ResolveReferencesFromChildren();
+        ApplyEditorPreview();
+    }
+
+    /// <summary>
+    /// Resolves node references from this object and its direct/indirect children using stable semantic names.
+    /// </summary>
+    private void ResolveReferencesFromChildren()
+    {
         if (AnimatedRoot == null)
         {
             AnimatedRoot = transform as RectTransform;
@@ -159,13 +210,117 @@ public sealed class ResearchSkillTreeNodeUI : MonoBehaviour
             SelectionButton = GetComponent<Button>();
         }
 
-        if (SelectionButton != null)
+        Image[] ChildImages = GetComponentsInChildren<Image>(true);
+        TMP_Text[] ChildTexts = GetComponentsInChildren<TMP_Text>(true);
+        CanvasGroup[] ChildCanvasGroups = GetComponentsInChildren<CanvasGroup>(true);
+
+        for (int Index = 0; Index < ChildImages.Length; Index++)
         {
-            SelectionButton.onClick.RemoveListener(HandleSelectionButtonClicked);
-            SelectionButton.onClick.AddListener(HandleSelectionButtonClicked);
+            Image CurrentImage = ChildImages[Index];
+
+            if (CurrentImage == null)
+            {
+                continue;
+            }
+
+            string ChildName = CurrentImage.gameObject.name.ToLowerInvariant();
+
+            if (FrameImage == null && ChildName.Contains("frame"))
+            {
+                FrameImage = CurrentImage;
+            }
+            else if (IconImage == null && ChildName.Contains("icon"))
+            {
+                IconImage = CurrentImage;
+            }
+            else if (TitlePlateImage == null && (ChildName.Contains("title") || ChildName.Contains("plate") || ChildName.Contains("cartel")))
+            {
+                TitlePlateImage = CurrentImage;
+            }
+            else if (LockImage == null && (ChildName.Contains("lock") || ChildName.Contains("candado")))
+            {
+                LockImage = CurrentImage;
+            }
+            else if (ActiveMarkerImage == null && (ChildName.Contains("active") || ChildName.Contains("researching")))
+            {
+                ActiveMarkerImage = CurrentImage;
+            }
+            else if (SelectionRimImage == null && (ChildName.Contains("selection") || ChildName.Contains("rim") || ChildName.Contains("selected")))
+            {
+                SelectionRimImage = CurrentImage;
+            }
         }
 
-        SetSelected(false);
+        for (int Index = 0; Index < ChildTexts.Length; Index++)
+        {
+            TMP_Text CurrentText = ChildTexts[Index];
+
+            if (CurrentText == null)
+            {
+                continue;
+            }
+
+            string ChildName = CurrentText.gameObject.name.ToLowerInvariant();
+
+            if (NameText == null && (ChildName.Contains("name") || ChildName.Contains("title")))
+            {
+                NameText = CurrentText;
+            }
+            else if (StateText == null && ChildName.Contains("state"))
+            {
+                StateText = CurrentText;
+            }
+        }
+
+        for (int Index = 0; Index < ChildCanvasGroups.Length; Index++)
+        {
+            CanvasGroup CurrentCanvasGroup = ChildCanvasGroups[Index];
+
+            if (CurrentCanvasGroup == null)
+            {
+                continue;
+            }
+
+            string ChildName = CurrentCanvasGroup.gameObject.name.ToLowerInvariant();
+
+            if (CompletionPulseCanvasGroup == null && ChildName.Contains("completion"))
+            {
+                CompletionPulseCanvasGroup = CurrentCanvasGroup;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Binds this node button to the selection callback.
+    /// </summary>
+    private void BindSelectionButton()
+    {
+        if (SelectionButton == null)
+        {
+            return;
+        }
+
+        SelectionButton.onClick.RemoveListener(HandleSelectionButtonClicked);
+        SelectionButton.onClick.AddListener(HandleSelectionButtonClicked);
+    }
+
+    /// <summary>
+    /// Applies a non-runtime preview state so artists can see the final node composition in the editor.
+    /// </summary>
+    private void ApplyEditorPreview()
+    {
+        ResearchRuntimeService.ResearchViewState PreviewState = EditorPreviewState;
+        ApplyFrame(PreviewState);
+        ApplyIcon(PreviewState);
+        ApplyTitlePlate(PreviewState);
+        ApplyText(PreviewState);
+        ApplyStateMarkers(PreviewState);
+
+        if (SelectionRimImage != null)
+        {
+            SelectionRimImage.enabled = false;
+        }
+
         SetCompletionPulseAlpha(0f);
     }
 

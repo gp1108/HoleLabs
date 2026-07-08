@@ -73,6 +73,9 @@ public sealed class ResearchSkillTreeTooltipUI : MonoBehaviour
     [Tooltip("Curve used by tooltip fade and slide animation.")]
     [SerializeField] private AnimationCurve FadeCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
+    [Tooltip("If true, selecting a different visible node replays the open animation. If false, the tooltip swaps content in place without sliding from its hidden offset again.")]
+    [SerializeField] private bool ReplayShowAnimationWhenAlreadyVisible = false;
+
     [Header("Debug")]
     [Tooltip("Logs tooltip activation flow.")]
     [SerializeField] private bool DebugLogs = false;
@@ -111,6 +114,11 @@ public sealed class ResearchSkillTreeTooltipUI : MonoBehaviour
     /// True after the shown anchored position has been captured.
     /// </summary>
     private bool HasCapturedShownPosition;
+
+    /// <summary>
+    /// True while the tooltip is intended to be visible.
+    /// </summary>
+    private bool IsVisible;
 
     /// <summary>
     /// Caches references and starts hidden.
@@ -156,12 +164,21 @@ public sealed class ResearchSkillTreeTooltipUI : MonoBehaviour
     /// <param name="Node">Selected research node.</param>
     public void Show(ResearchSkillTreeViewUI View, ResearchStation Station, ResearchSkillTreeNodeUI Node)
     {
+        bool WasAlreadyVisible = IsVisible && TooltipRoot != null && TooltipRoot.activeSelf;
+
         OwnerView = View;
         OwnerStation = Station;
         CurrentNode = Node;
 
         CaptureShownPosition();
         RefreshView();
+
+        if (WasAlreadyVisible && !ReplayShowAnimationWhenAlreadyVisible)
+        {
+            ApplyVisibilityInstant(true);
+            return;
+        }
+
         PlayVisibilityAnimation(true, false);
     }
 
@@ -490,6 +507,8 @@ public sealed class ResearchSkillTreeTooltipUI : MonoBehaviour
             return;
         }
 
+        IsVisible = ShowTooltip;
+
         if (FadeRoutine != null)
         {
             StopCoroutine(FadeRoutine);
@@ -516,6 +535,7 @@ public sealed class ResearchSkillTreeTooltipUI : MonoBehaviour
     /// <param name="ShowTooltip">True to show, false to hide.</param>
     private void ApplyVisibilityInstant(bool ShowTooltip)
     {
+        IsVisible = ShowTooltip;
         TooltipRoot.SetActive(ShowTooltip);
 
         if (TooltipCanvasGroup != null)

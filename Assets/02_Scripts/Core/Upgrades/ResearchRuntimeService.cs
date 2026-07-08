@@ -369,6 +369,7 @@ public sealed class ResearchRuntimeService : MonoBehaviour
     private void Awake()
     {
         ResolveReferences();
+        ApplyDefaultCompletedResearchDefinitions(false);
     }
 
     /// <summary>
@@ -383,6 +384,16 @@ public sealed class ResearchRuntimeService : MonoBehaviour
     /// Registers a research definition in the global lookup table.
     /// </summary>
     public void RegisterResearchDefinition(ResearchDefinition ResearchDefinition)
+    {
+        RegisterResearchDefinitionInternal(ResearchDefinition, true);
+    }
+
+    /// <summary>
+    /// Registers a research definition in the global lookup table and optionally applies default-completed state.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition to register.</param>
+    /// <param name="ApplyDefaultCompletion">If true, researches configured to start completed can apply their result immediately.</param>
+    private void RegisterResearchDefinitionInternal(ResearchDefinition ResearchDefinition, bool ApplyDefaultCompletion)
     {
         if (ResearchDefinition == null || string.IsNullOrWhiteSpace(ResearchDefinition.GetResearchId()))
         {
@@ -404,11 +415,22 @@ public sealed class ResearchRuntimeService : MonoBehaviour
                 string.Equals(ExistingDefinition.GetResearchId(), ResearchId, StringComparison.Ordinal))
             {
                 ResearchDefinitions[Index] = ResearchDefinition;
+
+                if (ApplyDefaultCompletion)
+                {
+                    TryApplyDefaultCompletedResearch(ResearchDefinition, true);
+                }
+
                 return;
             }
         }
 
         ResearchDefinitions.Add(ResearchDefinition);
+
+        if (ApplyDefaultCompletion)
+        {
+            TryApplyDefaultCompletedResearch(ResearchDefinition, true);
+        }
     }
 
     /// <summary>
@@ -446,6 +468,7 @@ public sealed class ResearchRuntimeService : MonoBehaviour
 
         if (SaveData == null)
         {
+            ApplyDefaultCompletedResearchDefinitions(false);
             NotifyStateChanged();
             return;
         }
@@ -479,6 +502,7 @@ public sealed class ResearchRuntimeService : MonoBehaviour
             }
         }
 
+        ApplyDefaultCompletedResearchDefinitions(false);
         NotifyStateChanged();
     }
 
@@ -524,7 +548,7 @@ public sealed class ResearchRuntimeService : MonoBehaviour
             return ResearchViewState.PaidInactive;
         }
 
-        return BlockReason == ResearchBlockReason.NotEnoughCredits ? ResearchViewState.Locked : ResearchViewState.Available;
+        return ResearchViewState.Available;
     }
 
     /// <summary>
@@ -570,7 +594,9 @@ public sealed class ResearchRuntimeService : MonoBehaviour
         }
 
         int CurrentLevel = UpgradeManager.GetUpgradeLevel(AppliedUpgradeDefinition);
-        int TargetLevel = ResearchDefinition.GetResolvedTargetLevel(UpgradeManager);
+        int TargetLevel = ResearchDefinition.GetStartsCompletedByDefault()
+            ? ResearchDefinition.GetDefaultCompletedTargetLevel()
+            : ResearchDefinition.GetResolvedTargetLevel(UpgradeManager);
 
         if (TargetLevel <= CurrentLevel)
         {
@@ -1173,6 +1199,79 @@ public sealed class ResearchRuntimeService : MonoBehaviour
     }
 
     /// <summary>
+    /// Applies every serialized research configured to start completed by default.
+    /// </summary>
+    /// <param name="NotifyIfChanged">If true, listeners are notified when at least one default research applies an upgrade level.</param>
+    private void ApplyDefaultCompletedResearchDefinitions(bool NotifyIfChanged)
+    {
+        bool Changed = false;
+
+        for (int Index = 0; Index < ResearchDefinitions.Count; Index++)
+        {
+            Changed |= TryApplyDefaultCompletedResearch(ResearchDefinitions[Index], false);
+        }
+
+        if (Changed && NotifyIfChanged)
+        {
+            NotifyStateChanged();
+        }
+    }
+
+    /// <summary>
+    /// Applies the result of a research that is configured to start completed, without consuming credits or ores.
+    /// </summary>
+    /// <param name="ResearchDefinition">Research definition being initialized.</param>
+    /// <param name="NotifyIfChanged">If true, listeners are notified when the default completion changes runtime state.</param>
+    /// <returns>True when the runtime upgrade level was changed.</returns>
+    private bool TryApplyDefaultCompletedResearch(ResearchDefinition ResearchDefinition, bool NotifyIfChanged)
+    {
+        ResolveReferences();
+
+        if (ResearchDefinition == null || !ResearchDefinition.GetStartsCompletedByDefault() || UpgradeManager == null)
+        {
+            return false;
+        }
+
+        UpgradeDefinition AppliedUpgradeDefinition = ResearchDefinition.GetAppliedUpgradeDefinition();
+
+        if (AppliedUpgradeDefinition == null || string.IsNullOrWhiteSpace(AppliedUpgradeDefinition.GetUpgradeId()))
+        {
+            return false;
+        }
+
+        UpgradeDefinition RegisteredUpgradeDefinition = UpgradeManager.GetUpgradeDefinition(AppliedUpgradeDefinition.GetUpgradeId());
+
+        if (RegisteredUpgradeDefinition != AppliedUpgradeDefinition)
+        {
+            return false;
+        }
+
+        int TargetLevel = ResearchDefinition.GetDefaultCompletedTargetLevel();
+        int CurrentLevel = UpgradeManager.GetUpgradeLevel(AppliedUpgradeDefinition);
+
+        if (TargetLevel <= 0 || CurrentLevel >= TargetLevel)
+        {
+            return false;
+        }
+
+        UpgradeManager.SetUpgradeLevel(AppliedUpgradeDefinition, TargetLevel);
+
+        if (ActiveResearchDefinition == ResearchDefinition)
+        {
+            ActiveResearchDefinition = null;
+        }
+
+        Log("Default completed research applied: " + ResearchDefinition.GetDisplayName());
+
+        if (NotifyIfChanged)
+        {
+            NotifyStateChanged();
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Registers loaded research definition assets so save/load can resolve active research ids.
     /// </summary>
     private void RegisterLoadedResearchDefinitions()
@@ -1181,7 +1280,7 @@ public sealed class ResearchRuntimeService : MonoBehaviour
 
         for (int Index = 0; Index < LoadedDefinitions.Length; Index++)
         {
-            RegisterResearchDefinition(LoadedDefinitions[Index]);
+            RegisterResearchDefinitionInternal(LoadedDefinitions[Index], false);
         }
     }
 
