@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c931db51455b34748bbe65336e3d9302, type: 3}
+  m_Name: ResearchSkillTreeVisualSet_Default
+  m_EditorClassIdentifier: Assembly-CSharp::ResearchSkillTreeVisualSet
+  LockedNodeFrameSprite: {fileID: 21300000, guid: 449548851e9c53d41b84118a081932cd, type: 3}
+  AvailableNodeFrameSprite: {fileID: 21300000, guid: afccc013ce4d7d349a58341e40f28b09, type: 3}
+  ActiveNodeFrameSprite: {fileID: 21300000, guid: 2aaa6dfda7b5ade4d95d6c1ca1f07286, type: 3}
+  CompletedNodeFrameSprite: {fileID: 21300000, guid: 313b737a397389b429866a5e3f1a7f4b, type: 3}
+  InvalidNodeFrameSprite: {fileID: 21300000, guid: 449548851e9c53d41b84118a081932cd, type: 3}
+  LockedTitlePlateSprite: {fileID: 21300000, guid: b9c2f71ece1028f40a15eb03553178d9, type: 3}
+  AvailableTitlePlateSprite: {fileID: 21300000, guid: 715ee60c4373e3d4f8b4e429220cdf6e, type: 3}
+  ActiveTitlePlateSprite: {fileID: 21300000, guid: a9b9a879ea86198458bafe350b9b9d7b, type: 3}
+  CompletedTitlePlateSprite: {fileID: 21300000, guid: a9b9a879ea86198458bafe350b9b9d7b, type: 3}
+  InvalidTitlePlateSprite: {fileID: 21300000, guid: b9c2f71ece1028f40a15eb03553178d9, type: 3}
+  LockedPipeSprite: {fileID: 21300000, guid: d2ebe51508d712a48b68f103d4673b9c, type: 3}
+  AvailablePipeSprite: {fileID: 21300000, guid: 852787deefcc56149bb6cc9c44db12b2, type: 3}
+  ActivePipeSprite: {fileID: 21300000, guid: 852787deefcc56149bb6cc9c44db12b2, type: 3}
+  CompletedPipeSprite: {fileID: 21300000, guid: 852787deefcc56149bb6cc9c44db12b2, type: 3}
+  InvalidPipeSprite: {fileID: 21300000, guid: d2ebe51508d712a48b68f103d4673b9c, type: 3}
+  LockedColor: {r: 0.78431374, g: 0.78431374, b: 0.78431374, a: 1}
+  AvailableColor: {r: 1, g: 1, b: 1, a: 1}
+  ActiveColor: {r: 1, g: 1, b: 1, a: 1}
+  CompletedColor: {r: 1, g: 0.8235294, b: 0.2901961, a: 1}
+  InvalidColor: {r: 1, g: 0.2, b: 0.2, a: 1}
+  TextColor: {r: 1, g: 1, b: 1, a: 1}
+  LockedTextColor: {r: 0.74509805, g: 0.74509805, b: 0.74509805, a: 1}

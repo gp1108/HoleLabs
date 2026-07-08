@@ -28,6 +28,13 @@ public sealed class ResearchPanelUI : MonoBehaviour
     [Tooltip("Optional text used to display the currently active research.")]
     [SerializeField] private TMP_Text ActiveResearchText;
 
+    [Header("Skill Tree")]
+    [Tooltip("Optional skill tree view used by the final researcher UI. Leave empty if the legacy list UI is still being used.")]
+    [SerializeField] private ResearchSkillTreeViewUI ResearchSkillTreeViewUI;
+
+    [Tooltip("If true, legacy ResearchListEntryUI entries keep refreshing. Disable this after fully migrating the researcher to the skill tree UI.")]
+    [SerializeField] private bool RefreshLegacyListEntries = true;
+
     [Header("Discovery")]
     [Tooltip("If true, research entries are discovered during Awake.")]
     [SerializeField] private bool DiscoverOnAwake = true;
@@ -68,6 +75,11 @@ public sealed class ResearchPanelUI : MonoBehaviour
         if (ScannerRuntimeService == null)
         {
             ScannerRuntimeService = FindFirstObjectByType<ScannerRuntimeService>();
+        }
+
+        if (ResearchSkillTreeViewUI == null)
+        {
+            ResearchSkillTreeViewUI = GetComponentInChildren<ResearchSkillTreeViewUI>(true);
         }
 
         SubscribeToEvents();
@@ -112,6 +124,12 @@ public sealed class ResearchPanelUI : MonoBehaviour
 
         DiscoverManualUi();
         InitializeManualUi();
+
+        if (ResearchSkillTreeViewUI != null)
+        {
+            ResearchSkillTreeViewUI.Initialize(OwnerStation);
+        }
+
         RefreshAll();
     }
 
@@ -151,7 +169,17 @@ public sealed class ResearchPanelUI : MonoBehaviour
                 InitializeManualUi();
             }
 
+            if (ResearchSkillTreeViewUI != null)
+            {
+                ResearchSkillTreeViewUI.Initialize(OwnerStation);
+                ResearchSkillTreeViewUI.HandlePanelShown();
+            }
+
             RefreshAll();
+        }
+        else if (ResearchSkillTreeViewUI != null)
+        {
+            ResearchSkillTreeViewUI.HandlePanelHidden();
         }
     }
 
@@ -163,12 +191,20 @@ public sealed class ResearchPanelUI : MonoBehaviour
         RefreshCurrencyText();
         RefreshActiveResearchText();
 
-        for (int Index = 0; Index < RegisteredResearchEntries.Count; Index++)
+        if (RefreshLegacyListEntries)
         {
-            if (RegisteredResearchEntries[Index] != null)
+            for (int Index = 0; Index < RegisteredResearchEntries.Count; Index++)
             {
-                RegisteredResearchEntries[Index].RefreshView();
+                if (RegisteredResearchEntries[Index] != null)
+                {
+                    RegisteredResearchEntries[Index].RefreshView();
+                }
             }
+        }
+
+        if (ResearchSkillTreeViewUI != null)
+        {
+            ResearchSkillTreeViewUI.RefreshAll(false);
         }
     }
 
